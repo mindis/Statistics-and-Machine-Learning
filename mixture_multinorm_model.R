@@ -68,19 +68,6 @@ Sigma2 <- covmatrix(col=5, corM=corM2, lower=8, upper=14)
 Sigma3 <- covmatrix(col=5, corM=corM3, lower=9, upper=16)
 Sigma4 <- covmatrix(col=5, corM=corM4, lower=4, upper=18)
 
-Sigma1
-cor(Sigma1$covariance)
-corM1
-eigen(corM1)$values
-
-m <- abs(runif(5, 5, 12))
-c <- matrix(0, 5, 5)
-for(i in 1:5){
-  for(j in 1:5){
-    c[i, j] <- m[i] * m[j]
-  }
-}
-
 Sigma1[-2]
 Sigma2[-2]
 Sigma3[-2]
@@ -213,6 +200,7 @@ plot(yy[, 2:6], col=yy[, 1])   #散布図
 Yn <- y[, -1]   
 Yn[1:10, ]; Yn[1001:1010, ]; Yn[2001:2010, ]; Yn[3001:3010, ]
 
+iris
 #説明変数
 head(data_de)   #切片がついたデザイン行列
 head(segment); tail(segment)   #セグメント
@@ -235,7 +223,7 @@ for(i in 1:4){
   bs <- as.matrix(beta_seg[[i]])
   #分散共分散行列を推定
   S_seg[[i]] <- t(as.matrix(yx_s[, 2:6]) - as.matrix(yx_s[, 7:16])%*%bs) %*% 
-    (as.matrix(yx_s[, 2:6]) - as.matrix(yx_s[, 7:16])%*%bs) / nrow(yx_s)
+                 (as.matrix(yx_s[, 2:6]) - as.matrix(yx_s[, 7:16])%*%bs) / nrow(yx_s)
 }
 
 beta_seg   #推定された回帰係数行列
@@ -256,8 +244,8 @@ round(error <- yt - ys, 3)   #誤差
 ##関数を用いて推定
 names(yx)
 res2 <- by(yx, yx$segment, function(x) summary(lm(cbind(y1, y2, y3, y4, y5) ~ 
-                                                    sex + age20 + age30 + age40 + age50 + 
-                                                    work + stud + hwife + s_cnt, data=x)))
+                                                        sex + age20 + age30 + age40 + age50 + 
+                                                        work + stud + hwife + s_cnt, data=x)))
 
 #セグメントごとの推定結果
 res2
@@ -283,27 +271,19 @@ beta_em <- list(B, B, B, B)   #回帰係数を格納するリスト
 S_em <- list(S, S, S, S)   #分散共分散行列を格納するリスト
 r <- c(rep(0, 4))   #混合率を格納するリスト
 
-#多変量正規分布の対数尤度関数
+#多変量正規分布の尤度関数
 dmv <- function(y, x, beta, s){
-  LLo  <-  1/(sqrt((2 * pi)^nrow(s) * det(s))) * 
-    exp(-t(as.matrix(y) - t(beta) %*% as.matrix(x)) %*%
-          solve(as.matrix(s)) %*%
-          (as.matrix(y) - t(beta) %*% as.matrix(x)) / 2)
-  return(LLo)
-}
-
-#多変量正規分布の対数尤度関数
-dmvv <- function(y, x, beta, s){
-  LLo  <-  1/(sqrt((2 * pi)^nrow(s) * det(s))) * 
-    exp(-(as.matrix(y) - as.matrix(x)%*%beta) %*% solve(s) %*%
-          t(as.matrix(y) - as.matrix(x)%*%beta) / 2)
-  return(LLo)
+    LLo  <-  1/(sqrt((2 * pi)^nrow(s) * det(s))) * 
+             exp(-t(as.matrix(y) - t(beta) %*% as.matrix(x)) %*%
+             solve(as.matrix(s)) %*%
+             (as.matrix(y) - t(beta) %*% as.matrix(x)) / 2)
+    return(LLo)
 }
 
 ##観測データの対数尤度と潜在変数zの定義
 LLobz <- function(yx, k, r, beta, s){
   LLind <- matrix(0, nrow=nrow(yx), ncol=k)   #対数尤度を格納する行列
-  
+
   #多変量線形回帰モデルのセグメントごとの対数尤度
   for(kk in 1:k){
     beta_s <- beta[[kk]]
@@ -327,24 +307,18 @@ iter <- 0
 k <- 4   #混合数
 
 #ベータの初期値を設定
-#beta_f1 <- solve(t(emyx[, 6:15]) %*% as.matrix(emyx[, 6:15])) %*% t(emyx[, 6:15]) %*% as.matrix(emyx[, 1:5])
-#beta_f2 <- beta_f1 + runif(50, -0.5, 0.5)
-#beta_f3 <- beta_f1 + runif(50, -0.5, 0.5)
-#beta_f4 <- beta_f1 + runif(50, -0.5, 0.5)
-beta_f1 <- beta_seg[[1]] + runif(50, -1.7, 1.7)
-beta_f2 <- beta_seg[[2]] + runif(50, -1.4, 1.4)
-beta_f3 <- beta_seg[[3]] + runif(50, -1.2, 1.2)
-beta_f4 <- beta_seg[[4]] + runif(50, -1.0, 1.0)
+beta_f1 <- beta_seg[[1]] + matrix(rnorm(50, 0, 1.5), 10, 5)
+beta_f2 <- beta_seg[[2]] + matrix(rnorm(50, 0, 1.5), 10, 5)
+beta_f3 <- beta_seg[[3]] + matrix(rnorm(50, 0, 1.5), 10, 5)
+beta_f4 <- beta_seg[[4]] + matrix(rnorm(50, 0, 1.5), 10, 5)
 beta <- list(beta_f1, beta_f2, beta_f3, beta_f4)
 
-#分散共分散行列の初期値を設定
-#S_f1 <- t(as.matrix(emyx[, 1:5]) - as.matrix(emyx[, 6:15])%*%beta_f) %*% 
-#      (as.matrix(emyx[, 1:5]) - as.matrix(emyx[, 6:15])%*%beta_f) / nrow(emyx)
-S_f1 <- Sigma1$covariance
-S_f2 <- Sigma2$covariance
-S_f3 <- Sigma3$covariance
-S_f4 <- Sigma4$covariance
 
+#分散共分散行列の初期値を設定
+S_f1 <- S_seg[[1]] +  diag(runif(5, -7, 7))
+S_f2 <- S_seg[[2]] +  diag(runif(5, -7, 7))
+S_f3 <- S_seg[[3]] +  diag(runif(5, -7, 7))
+S_f4 <- S_seg[[4]] +  diag(runif(5, -7, 7))
 s <- list(S_f1, S_f2, S_f3, S_f4) 
 
 #混合率の初期値
@@ -352,7 +326,8 @@ r <- c(0.4, 0.2, 0.3, 0.1)
 
 #対数尤度の初期化
 L <- LLobz(yx=emyx, k=k, r=r, beta=beta, s=s)
-LL1 <- L$LLob
+L1 <- L$LLob
+
 #更新ステータス
 dl <- 100   #EMステップでの対数尤度の差の初期値
 tol <- 0.5  
@@ -368,25 +343,23 @@ while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
   for(i in 1:k){
     R <- diag(z[, i])
     betan <- solve(t(emyx[, 6:15]) %*% R %*% as.matrix(emyx[, 6:15])) %*% 
-      t(emyx[, 6:15]) %*% R %*% as.matrix(emyx[, 1:5])
+             t(emyx[, 6:15]) %*% R %*% as.matrix(emyx[, 1:5])
     BETA[[i]] <- betan
   }
-  
+
   #分散共分散行列の推定
-  #SIGMA <- list()
-  #for(j in 1:k){
-  #  for(jj in 1:nrow(emyx)){
-  #    sigmaind <- z[jj, j] * (t(as.matrix(emyx[jj, 1:5]) - as.matrix(emyx[jj, 6:15]) %*% BETA[[j]]) %*%
-  #                              (as.matrix(emyx[jj, 1:5]) - as.matrix(emyx[jj, 6:15]) %*% BETA[[j]]))
-  #    sigmasum <- sigmasum + sigmaind
-  #  }
-  #  SIGMA[[j]] <- sigmasum / sum(z[, j])
+  SIGMA <- list()
+  for(j in 1:k){
+  sigman <- (t(z[, j]*as.matrix(emyx[, 1:5]) - z[, j]*as.matrix(emyx[, 6:15]) %*% BETA[[j]]) %*%
+              (z[, j]*as.matrix(emyx[, 1:5]) - z[, j]*as.matrix(emyx[, 6:15]) %*% BETA[[j]])) / sum(z[, j])
+  SIGMA[[j]] <- sigman 
+  }
   
   #混合率の推定
   r <- apply(L$z, 2, sum) / nrow(emyx) 
   
-  L <- LLobz(yx=emyx, k=k, r=r, beta=BETA, s=s)   #観測データの対数尤度を計算
-  
+  L <- LLobz(yx=emyx, k=k, r=r, beta=BETA, s=SIGMA)   #観測データの対数尤度を計算
+
   LL <- L$LLob   #観測データの対数尤度
   iter <- iter+1
   dl <- LL-LL1
@@ -394,19 +367,26 @@ while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
   print(LL)
 }
 
-BETA[[2]]   #セグメントごとの推定された回帰係数
-beta_seg[[2]]   #セグメントごとの最小二乗法で推定された回帰係数
-a2   #セグメントごとの真の回帰係数
+BETA[[1]]   #セグメントごとの推定された回帰係数
+beta_seg[[1]]   #セグメントごとの最小二乗法で推定された回帰係数
+a1   #セグメントごとの真の回帰係数
+
+SIGMA[[3]]   #セグメントごとの推定された分散共分散行列
+S_seg[[3]]   #セグメントごとの最小二乗法で推定された分散共分散行列
+Sigma3   #セグメントごとの真の分散共分散行列
 
 r   #推定された混合率
+
 round(L$z[1:20, ], 3)   #個人ごとのセグメントへの所属確率(真のセグメント1)
 round(L$z[1001:1020, ], 3)   #個人ごとのセグメントへの所属確率(真のセグメント2)
 round(L$z[2001:2020, ], 3)   #個人ごとのセグメントへの所属確率(真のセグメント3)
 round(L$z[3001:3020, ], 3)   #個人ごとのセグメントへの所属確率(真のセグメント4)
-
+ 
 BETA   #推定された回帰係数
 beta_seg   #最小二乗法で推定された回帰係数
 a1; a2; a3; a4   #真の回帰係数
 
 L$LLob   #観測データの対数尤度
 -2*(L$LLob) + k*nrow(BETA[[1]])*ncol(BETA[[1]])   #AIC
+
+
