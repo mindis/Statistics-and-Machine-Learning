@@ -1,15 +1,15 @@
-#####¬‡³‹K‘½•Ï—Ê‰ñ‹Aƒ‚ƒfƒ‹‚Ì„’è#####
+#####æ··åˆæ­£è¦å¤šå¤‰é‡å›å¸°ãƒ¢ãƒ‡ãƒ«ã®æ¨å®š#####
 library(MASS)
 library(plyr)
 library(lavaan)
-####ƒf[ƒ^‚Ì”­¶####
+####ãƒ‡ãƒ¼ã‚¿ã®ç™ºç”Ÿ####
 #set.seed(4543)
-k <- 4   #¬‡”
-col <- 5   #•Ï””
-n <- 4000   #ƒTƒ“ƒvƒ‹”
+k <- 4   #æ··åˆæ•°
+col <- 5   #å¤‰æ•°æ•°
+n <- 4000   #ã‚µãƒ³ãƒ—ãƒ«æ•°
 
-##‘½•Ï—Ê³‹K•ª•z‚©‚ç‚Ì—”‚ğ”­¶‚³‚¹‚é
-#”CˆÓ‚Ì‘ŠŠÖs—ñ‚ğì‚éŠÖ”‚ğ’è‹`
+##å¤šå¤‰é‡æ­£è¦åˆ†å¸ƒã‹ã‚‰ã®ä¹±æ•°ã‚’ç™ºç”Ÿã•ã›ã‚‹
+#ä»»æ„ã®ç›¸é–¢è¡Œåˆ—ã‚’ä½œã‚‹é–¢æ•°ã‚’å®šç¾©
 corrM <- function(col, lower, upper){
   diag(1, col, col)
   
@@ -23,7 +23,7 @@ corrM <- function(col, lower, upper){
   P <- X.Sigma$vector
   P %*% Lambda %*% t(P)
   
-  #V‚µ‚¢‘ŠŠÖs—ñ‚Ì’è‹`‚Æ‘ÎŠp¬•ª‚ğ1‚É‚·‚é
+  #æ–°ã—ã„ç›¸é–¢è¡Œåˆ—ã®å®šç¾©ã¨å¯¾è§’æˆåˆ†ã‚’1ã«ã™ã‚‹
   (Lambda.modified <- ifelse(Lambda < 0, 10e-6, Lambda))
   x.modified <- P %*% Lambda.modified %*% t(P)
   normalization.factor <- matrix(diag(x.modified),nrow = nrow(x.modified),ncol=1)^0.5
@@ -34,13 +34,13 @@ corrM <- function(col, lower, upper){
   return(Sigma)
 }
 
-#¬‡•ª•z‚²‚Æ‚Ì‘ŠŠÖs—ñ‚ğì¬
+#æ··åˆåˆ†å¸ƒã”ã¨ã®ç›¸é–¢è¡Œåˆ—ã‚’ä½œæˆ
 corM1 <- corrM(col=5, lower=-0, upper=0)
 corM2 <- corrM(col=5, lower=-0, upper=0)
 corM3 <- corrM(col=5, lower=-0, upper=0)
 corM4 <- corrM(col=5, lower=-0, upper=0)
 
-##‘ŠŠÖs—ñ‚©‚ç•ªU‹¤•ªUs—ñ‚ğì¬‚·‚éŠÖ”‚ğ’è‹`
+##ç›¸é–¢è¡Œåˆ—ã‹ã‚‰åˆ†æ•£å…±åˆ†æ•£è¡Œåˆ—ã‚’ä½œæˆã™ã‚‹é–¢æ•°ã‚’å®šç¾©
 covmatrix <- function(col, corM, lower, upper){
   m <- abs(runif(col, lower, upper))
   c <- matrix(0, col, col)
@@ -51,7 +51,7 @@ covmatrix <- function(col, corM, lower, upper){
   }
   diag(c) <- m
   cc <- c * corM
-  #ŒÅ—L’l•ª‰ğ‚Å‹­§“I‚É³’è’ls—ñ‚ÉC³‚·‚é
+  #å›ºæœ‰å€¤åˆ†è§£ã§å¼·åˆ¶çš„ã«æ­£å®šå€¤è¡Œåˆ—ã«ä¿®æ­£ã™ã‚‹
   UDU <- eigen(cc)
   val <- UDU$values
   vec <- UDU$vectors
@@ -62,7 +62,7 @@ covmatrix <- function(col, corM, lower, upper){
   return(data)
 }
 
-#•ªU‹¤•ªUs—ñ‚ğì¬
+#åˆ†æ•£å…±åˆ†æ•£è¡Œåˆ—ã‚’ä½œæˆ
 Sigma1 <- covmatrix(col=5, corM=corM1, lower=5, upper=12)
 Sigma2 <- covmatrix(col=5, corM=corM2, lower=8, upper=14)
 Sigma3 <- covmatrix(col=5, corM=corM3, lower=9, upper=16)
@@ -86,68 +86,68 @@ Sigma2[-2]
 Sigma3[-2]
 Sigma4[-2]
 
-##‘½•Ï—Ê³‹K•ª•z‚Ì•½‹Ï‚ğ‰ñ‹Aƒ‚ƒfƒ‹‚Å•\Œ»‚·‚é
-#“ü—Í‚·‚éƒf[ƒ^‚Ì”­¶
-#«•Ê
+##å¤šå¤‰é‡æ­£è¦åˆ†å¸ƒã®å¹³å‡ã‚’å›å¸°ãƒ¢ãƒ‡ãƒ«ã§è¡¨ç¾ã™ã‚‹
+#å…¥åŠ›ã™ã‚‹ãƒ‡ãƒ¼ã‚¿ã®ç™ºç”Ÿ
+#æ€§åˆ¥
 sex1 <- rbinom(1000, 1, 0.7)
 sex2 <- rbinom(1000, 1, 0.5)
 sex3 <- rbinom(1000, 1, 0.4)
 sex4 <- rbinom(1000, 1, 0.3)
 sex <- c(sex1, sex2, sex3, sex4)
 
-#”N‘ã
+#å¹´ä»£
 age1 <- t(rmultinom(1000, 1, c(0.2, 0.3, 0.2, 0.2, 0.1)))
 age2 <- t(rmultinom(1000, 1, c(0.1, 0.4, 0.3, 0.1, 0.1)))
 age3 <- t(rmultinom(1000, 1, c(0.1, 0.2, 0.2, 0.3, 0.2)))
 age4 <- t(rmultinom(1000, 1, c(0.4, 0.3, 0.1, 0.05, 0.05)))
 age <- rbind(age1, age2, age3, age4)
 
-#E‹Æ
+#è·æ¥­
 job1 <- t(rmultinom(1000, 1, c(0.5, 0.2, 0.2, 0.1)))
 job2 <- t(rmultinom(1000, 1, c(0.6, 0.4, 0.05, 0.05)))
 job3 <- t(rmultinom(1000, 1, c(0.4, 0.4, 0.1, 0.1)))
 job4 <- t(rmultinom(1000, 1, c(0.4, 0.3, 0.1, 0.2)))
 job <- rbind(job1, job2, job3, job4)
 
-#—İÏ—ˆ“X‰ñ”
+#ç´¯ç©æ¥åº—å›æ•°
 cnt1 <- rpois(1000, 9)
 cnt2 <- rpois(1000, 6)
 cnt3 <- rpois(1000, 12)
 cnt4 <- rpois(1000, 4)
 cnt <- c(cnt1, cnt2, cnt3, cnt4)
 
-#ƒZƒOƒƒ“ƒg”Ô†
+#ã‚»ã‚°ãƒ¡ãƒ³ãƒˆç•ªå·
 segment <- rep(1:4, c(rep(1000, 4)))
 
-#ƒf[ƒ^‚ğŒ‹‡
+#ãƒ‡ãƒ¼ã‚¿ã‚’çµåˆ
 data <- as.data.frame(cbind(segment, sex, age, job, cnt))
 head(data, 10); tail(data, 10)
 
-#•Ï”‚É–¼‘O‚ğ‚Â‚¯‚é
+#å¤‰æ•°ã«åå‰ã‚’ã¤ã‘ã‚‹
 names(data)[3:12] <- c("age20", "age30", "age40", "age50", "age60u", "work", "stud", "hwife", "others", "s_cnt")
 head(data, 10); tail(data, 10)
 summary(data)
 
 
-#Šî€•Ï”‚ğíœ‚·‚é
-data1 <- data[, -7]   #60‘ãˆÈã‚ğíœ
-data_n <- data1[, -10]   #‚»‚Ì‘¼‚ÌE‹Æ‚ğíœ
+#åŸºæº–å¤‰æ•°ã‚’å‰Šé™¤ã™ã‚‹
+data1 <- data[, -7]   #60ä»£ä»¥ä¸Šã‚’å‰Šé™¤
+data_n <- data1[, -10]   #ãã®ä»–ã®è·æ¥­ã‚’å‰Šé™¤
 data_de <- cbind(1, data_n[, -1])
 names(data_de)[1] <- ("intercept")
 
-#ƒZƒOƒƒ“ƒg‚²‚Æ‚Ì‰ñ‹AŒW”‚ğŒˆ’è
+#ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã®å›å¸°ä¿‚æ•°ã‚’æ±ºå®š
 v <- dim(data_de)[2]-1
 a1 <- matrix(c(rnorm(v*col, 5.4, 2.5), runif(5, 1.0, 1.6)), nrow=v+1, ncol=col, byrow=T) 
 a2 <- matrix(c(rnorm(v*col, 3.2, 2.2), runif(5, 0.8, 1.8)), nrow=v+1, ncol=col, byrow=T) 
 a3 <- matrix(c(rnorm(v*col, 1.9, 1.9), runif(5, 0.2, 1.2)), nrow=v+1, ncol=col, byrow=T) 
 a4 <- matrix(c(rnorm(v*col, 0.7, 1.4), runif(5, 0.4, 1.0)), nrow=v+1, ncol=col, byrow=T) 
 
-a1; a2; a3; a4   #•Ï”‚ğŠm”F
+a1; a2; a3; a4   #å¤‰æ•°ã‚’ç¢ºèª
 
-#‰ñ‹AŒW”‚ğƒŠƒXƒg\‘¢‚É‚·‚é
+#å›å¸°ä¿‚æ•°ã‚’ãƒªã‚¹ãƒˆæ§‹é€ ã«ã™ã‚‹
 a <- list(a1, a2, a3, a4)
 
-#•½‹Ï\‘¢‚ğ‘½•Ï—Ê‰ñ‹Aƒ‚ƒfƒ‹‚Å”­¶‚³‚¹‚é
+#å¹³å‡æ§‹é€ ã‚’å¤šå¤‰é‡å›å¸°ãƒ¢ãƒ‡ãƒ«ã§ç™ºç”Ÿã•ã›ã‚‹
 y <- matrix(0, 0, 11)
 for(i in 1:k){
   seg_x <- subset(data_de, data_n[, 1] == i)
@@ -158,9 +158,9 @@ for(i in 1:k){
 round(y, 3)
 names(y) <- c("y1", "y2", "y3", "y4", "y5")
 y_seg <- cbind(segment, y)
-by(y_seg[, 2:6], y_seg$segment, colMeans)   #ƒZƒOƒƒ“ƒg‚²‚Æ‚Ì•½‹Ï
+by(y_seg[, 2:6], y_seg$segment, colMeans)   #ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã®å¹³å‡
 
-#ƒZƒOƒƒ“ƒg‚²‚Æ‚Éy‚ğ’Šo
+#ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã«yã‚’æŠ½å‡º
 y1 <- subset(y_seg[, 2:6], y_seg[, 1] == 1)
 y2 <- subset(y_seg[, 2:6], y_seg[, 1] == 2)
 y3 <- subset(y_seg[, 2:6], y_seg[, 1] == 3)
@@ -169,7 +169,7 @@ y4 <- subset(y_seg[, 2:6], y_seg[, 1] == 4)
 n/col
 dim(y_seg)
 
-##‘½•Ï—Ê³‹K•ª•z‚©‚ç‰ñ‹A\‘¢‚Ì‚ ‚é¬‡³‹K—”‚ğ”­¶‚³‚¹‚é
+##å¤šå¤‰é‡æ­£è¦åˆ†å¸ƒã‹ã‚‰å›å¸°æ§‹é€ ã®ã‚ã‚‹æ··åˆæ­£è¦ä¹±æ•°ã‚’ç™ºç”Ÿã•ã›ã‚‹
 k = 4
 n = 4000
 y <- matrix(0, nrow=n, ncol=col+1)
@@ -182,118 +182,117 @@ for(k in 1:4){
     y[r, ] <- c(k, mvrnorm(n=1, as.matrix(yy[i, ]), cc))
   }
 }
-#ƒf[ƒ^‚ğŒ©‚é
+#ãƒ‡ãƒ¼ã‚¿ã‚’è¦‹ã‚‹
 round(y, 3)
 yy <- as.data.frame(y)
-by(y_seg[, 2:6], y_seg[, 1], colMeans)   #Œ³‚Ìƒf[ƒ^‚ÌƒZƒOƒƒ“ƒg‚²‚Æ‚Ì•½‹Ï
-by(yy[, 2:6], yy[, 1], colMeans)   #—””­¶‚³‚¹‚½ƒf[ƒ^‚ÌƒZƒOƒƒ“ƒg‚²‚Æ‚Ì•½‹Ï
-by(yy[, 2:6], yy[, 1], cor)   #—””­¶‚³‚¹‚½ƒf[ƒ^‚ÌƒZƒOƒƒ“ƒg‚²‚Æ‚Ì‘ŠŠÖ
+by(y_seg[, 2:6], y_seg[, 1], colMeans)   #å…ƒã®ãƒ‡ãƒ¼ã‚¿ã®ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã®å¹³å‡
+by(yy[, 2:6], yy[, 1], colMeans)   #ä¹±æ•°ç™ºç”Ÿã•ã›ãŸãƒ‡ãƒ¼ã‚¿ã®ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã®å¹³å‡
+by(yy[, 2:6], yy[, 1], cor)   #ä¹±æ•°ç™ºç”Ÿã•ã›ãŸãƒ‡ãƒ¼ã‚¿ã®ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã®ç›¸é–¢
 
-#Œ‹‰Ê‚ğƒvƒƒbƒg
-boxplot(yy[, 2:6])   #ƒZƒOƒƒ“ƒg‚ğ–³‹‚·‚é‚Æc
+#çµæœã‚’ãƒ—ãƒ­ãƒƒãƒˆ
+boxplot(yy[, 2:6])   #ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã‚’ç„¡è¦–ã™ã‚‹ã¨â€¦
 
-#ƒZƒOƒƒ“ƒg•Ê‚É” ‚Ğ‚°}‚ğ•`‰æ
+#ã‚»ã‚°ãƒ¡ãƒ³ãƒˆåˆ¥ã«ç®±ã²ã’å›³ã‚’æç”»
 par(mfrow=c(2, 3))
 for(i in 2:6){
   boxplot(yy[, i] ~ yy[, 1], data=yy)
 }
 par(mfrow=c(1, 1))
 
-plot(yy[, 2:6], col=yy[, 1])   #U•z}
+plot(yy[, 2:6], col=yy[, 1])   #æ•£å¸ƒå›³
 
-#ƒAƒCƒŠƒXƒf[ƒ^‚Ì” ‚Ğ‚°}
+#ã‚¢ã‚¤ãƒªã‚¹ãƒ‡ãƒ¼ã‚¿ã®ç®±ã²ã’å›³
 #par(mfrow=c(2, 2))
 #for (response in c("Sepal.Length", "Sepal.Width", "Petal.Length", "Petal.Width"))
 #     boxplot(iris[, response] ~ Species, data=iris, ylab=response)
 #par(mfrow=c(1, 1))
 
-#####ƒZƒOƒƒ“ƒg‚²‚Æ‚É‘½•Ï—Ê‰ñ‹Aƒ‚ƒfƒ‹‚ğ“–‚Ä‚Í‚ß‚é####
-##‰ñ‹Aƒ‚ƒfƒ‹‚ğ“–‚Ä‚Í‚ß‚é‘¼‚Ìƒf[ƒ^‚Ì€”õ
-#”½‰•Ï”
+#####ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã«å¤šå¤‰é‡å›å¸°ãƒ¢ãƒ‡ãƒ«ã‚’å½“ã¦ã¯ã‚ã‚‹####
+##å›å¸°ãƒ¢ãƒ‡ãƒ«ã‚’å½“ã¦ã¯ã‚ã‚‹ä»–ã®ãƒ‡ãƒ¼ã‚¿ã®æº–å‚™
+#åå¿œå¤‰æ•°
 Yn <- y[, -1]   
 Yn[1:10, ]; Yn[1001:1010, ]; Yn[2001:2010, ]; Yn[3001:3010, ]
 
-iris
-#à–¾•Ï”
-head(data_de)   #Ø•Ğ‚ª‚Â‚¢‚½ƒfƒUƒCƒ“s—ñ
-head(segment); tail(segment)   #ƒZƒOƒƒ“ƒg
+#èª¬æ˜å¤‰æ•°
+head(data_de)   #åˆ‡ç‰‡ãŒã¤ã„ãŸãƒ‡ã‚¶ã‚¤ãƒ³è¡Œåˆ—
+head(segment); tail(segment)   #ã‚»ã‚°ãƒ¡ãƒ³ãƒˆ
 segment <- as.data.frame(segment)
-data_seg <- cbind(segment, data_de)   #Ø•Ğ‚ÆƒZƒOƒƒ“ƒg‚ª‚Â‚¢‚½ƒfƒUƒCƒ“s—ñ
+data_seg <- cbind(segment, data_de)   #åˆ‡ç‰‡ã¨ã‚»ã‚°ãƒ¡ãƒ³ãƒˆãŒã¤ã„ãŸãƒ‡ã‚¶ã‚¤ãƒ³è¡Œåˆ—
 
-#‚·‚×‚Ä‚ª‚Â‚¢‚½s—ñ
+#ã™ã¹ã¦ãŒã¤ã„ãŸè¡Œåˆ—
 yx <- cbind(segment, Yn, data_de)
 names(yx)[2:6] <- c("y1", "y2", "y3", "y4", "y5")
 head(yx)
 
 
-##ƒZƒOƒƒ“ƒg‚²‚Æ‚Ì‘½•Ï—Ê‰ñ‹Aƒ‚ƒfƒ‹‚ğÀs
-beta_seg <- list()   #‰ñ‹AŒW”‚ğ“ü‚ê‚éƒŠƒXƒg
-S_seg <- list()   #•ªU‹¤•ªUs—ñ‚ğ“ü‚ê‚éƒŠƒXƒg
+##ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã®å¤šå¤‰é‡å›å¸°ãƒ¢ãƒ‡ãƒ«ã‚’å®Ÿè¡Œ
+beta_seg <- list()   #å›å¸°ä¿‚æ•°ã‚’å…¥ã‚Œã‚‹ãƒªã‚¹ãƒˆ
+S_seg <- list()   #åˆ†æ•£å…±åˆ†æ•£è¡Œåˆ—ã‚’å…¥ã‚Œã‚‹ãƒªã‚¹ãƒˆ
 for(i in 1:4){
   yx_s <- subset(yx, yx$segment==i)
-  #‰ñ‹AŒW”‚ğ„’è
+  #å›å¸°ä¿‚æ•°ã‚’æ¨å®š
   beta_seg[[i]] <- solve(t(yx_s[, 7:16]) %*% as.matrix(yx_s[, 7:16])) %*% t(yx_s[, 7:16]) %*% as.matrix(yx_s[, 2:6])
   bs <- as.matrix(beta_seg[[i]])
-  #•ªU‹¤•ªUs—ñ‚ğ„’è
+  #åˆ†æ•£å…±åˆ†æ•£è¡Œåˆ—ã‚’æ¨å®š
   S_seg[[i]] <- t(as.matrix(yx_s[, 2:6]) - as.matrix(yx_s[, 7:16])%*%bs) %*% 
-                 (as.matrix(yx_s[, 2:6]) - as.matrix(yx_s[, 7:16])%*%bs) / nrow(yx_s)
+    (as.matrix(yx_s[, 2:6]) - as.matrix(yx_s[, 7:16])%*%bs) / nrow(yx_s)
 }
 
-beta_seg   #„’è‚³‚ê‚½‰ñ‹AŒW”s—ñ
-S_seg   #„’è‚³‚ê‚½•ªU‹¤•ªUs—ñ
+beta_seg   #æ¨å®šã•ã‚ŒãŸå›å¸°ä¿‚æ•°è¡Œåˆ—
+S_seg   #æ¨å®šã•ã‚ŒãŸåˆ†æ•£å…±åˆ†æ•£è¡Œåˆ—
 S_seg[[1]]
 Sigma1[-2]
 Sigma2[-2]
 Sigma3[-2]
 Sigma4[-2]
 
-#“K‡“x‚ğŠm”F
+#é©åˆåº¦ã‚’ç¢ºèª
 xs <- subset(yx, yx$segment==1)
-ys <- as.matrix(xs[, 7:16]) %*% as.matrix(beta_seg[[1]])   #„’è‚³‚ê‚½”½‰•Ï”
-yt <- xs[, 2:6]   #Œ³‚Ì”½‰•Ï”
+ys <- as.matrix(xs[, 7:16]) %*% as.matrix(beta_seg[[1]])   #æ¨å®šã•ã‚ŒãŸåå¿œå¤‰æ•°
+yt <- xs[, 2:6]   #å…ƒã®åå¿œå¤‰æ•°
 cbind(yt[, 1], ys[, 1])   
-round(error <- yt - ys, 3)   #Œë·
+round(error <- yt - ys, 3)   #èª¤å·®
 
-##ŠÖ”‚ğ—p‚¢‚Ä„’è
+##é–¢æ•°ã‚’ç”¨ã„ã¦æ¨å®š
 names(yx)
 res2 <- by(yx, yx$segment, function(x) summary(lm(cbind(y1, y2, y3, y4, y5) ~ 
-                                                        sex + age20 + age30 + age40 + age50 + 
-                                                        work + stud + hwife + s_cnt, data=x)))
+                                                    sex + age20 + age30 + age40 + age50 + 
+                                                    work + stud + hwife + s_cnt, data=x)))
 
-#ƒZƒOƒƒ“ƒg‚²‚Æ‚Ì„’èŒ‹‰Ê
+#ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã®æ¨å®šçµæœ
 res2
 res2$`1`
 res2$`2`
 res2$`3`
 res2$`4`
 
-####¬‡³‹K‘½•Ï—Ê‰ñ‹Aƒ‚ƒfƒ‹‚Ì„’è####
-##ƒf[ƒ^‚Ì€”õ
+####æ··åˆæ­£è¦å¤šå¤‰é‡å›å¸°ãƒ¢ãƒ‡ãƒ«ã®æ¨å®š####
+##ãƒ‡ãƒ¼ã‚¿ã®æº–å‚™
 head(yx)
-emyx <- yx[, -1]   #‚·‚×‚Ä‚Ì•Ï”
-round(head(emyx), 3)   #ƒf[ƒ^‚ğŠm”F
-emy <- yx[, 2:6]   #”½‰•Ï”
-emx <- yx[, 7:16]   #à–¾•Ï”
-k <- 4   #¬‡”
+emyx <- yx[, -1]   #ã™ã¹ã¦ã®å¤‰æ•°
+round(head(emyx), 3)   #ãƒ‡ãƒ¼ã‚¿ã‚’ç¢ºèª
+emy <- yx[, 2:6]   #åå¿œå¤‰æ•°
+emx <- yx[, 7:16]   #èª¬æ˜å¤‰æ•°
+k <- 4   #æ··åˆæ•°
 
-##•Ï”‚ğŠi”[‚·‚éƒŠƒXƒg
+##å¤‰æ•°ã‚’æ ¼ç´ã™ã‚‹ãƒªã‚¹ãƒˆ
 B <- matrix(0, 10, 5)
 S <- matrix(0, 5, 5)
 
-beta_em <- list(B, B, B, B)   #‰ñ‹AŒW”‚ğŠi”[‚·‚éƒŠƒXƒg
-S_em <- list(S, S, S, S)   #•ªU‹¤•ªUs—ñ‚ğŠi”[‚·‚éƒŠƒXƒg
-r <- c(rep(0, 4))   #¬‡—¦‚ğŠi”[‚·‚éƒŠƒXƒg
+beta_em <- list(B, B, B, B)   #å›å¸°ä¿‚æ•°ã‚’æ ¼ç´ã™ã‚‹ãƒªã‚¹ãƒˆ
+S_em <- list(S, S, S, S)   #åˆ†æ•£å…±åˆ†æ•£è¡Œåˆ—ã‚’æ ¼ç´ã™ã‚‹ãƒªã‚¹ãƒˆ
+r <- c(rep(0, 4))   #æ··åˆç‡ã‚’æ ¼ç´ã™ã‚‹ãƒªã‚¹ãƒˆ
 
-#‘½•Ï—Ê³‹K•ª•z‚Ì‘Î”–Ş“xŠÖ”
+#å¤šå¤‰é‡æ­£è¦åˆ†å¸ƒã®å¯¾æ•°å°¤åº¦é–¢æ•°
 dmv <- function(y, x, beta, s){
-    LLo  <-  1/(sqrt((2 * pi)^nrow(s) * det(s))) * 
-             exp(-t(as.matrix(y) - t(beta) %*% as.matrix(x)) %*%
-             solve(as.matrix(s)) %*%
-             (as.matrix(y) - t(beta) %*% as.matrix(x)) / 2)
-    return(LLo)
+  LLo  <-  1/(sqrt((2 * pi)^nrow(s) * det(s))) * 
+    exp(-t(as.matrix(y) - t(beta) %*% as.matrix(x)) %*%
+          solve(as.matrix(s)) %*%
+          (as.matrix(y) - t(beta) %*% as.matrix(x)) / 2)
+  return(LLo)
 }
 
-#‘½•Ï—Ê³‹K•ª•z‚Ì‘Î”–Ş“xŠÖ”
+#å¤šå¤‰é‡æ­£è¦åˆ†å¸ƒã®å¯¾æ•°å°¤åº¦é–¢æ•°
 dmvv <- function(y, x, beta, s){
   LLo  <-  1/(sqrt((2 * pi)^nrow(s) * det(s))) * 
     exp(-(as.matrix(y) - as.matrix(x)%*%beta) %*% solve(s) %*%
@@ -301,11 +300,11 @@ dmvv <- function(y, x, beta, s){
   return(LLo)
 }
 
-##ŠÏ‘ªƒf[ƒ^‚Ì‘Î”–Ş“x‚Æöİ•Ï”z‚Ì’è‹`
+##è¦³æ¸¬ãƒ‡ãƒ¼ã‚¿ã®å¯¾æ•°å°¤åº¦ã¨æ½œåœ¨å¤‰æ•°zã®å®šç¾©
 LLobz <- function(yx, k, r, beta, s){
-  LLind <- matrix(0, nrow=nrow(yx), ncol=k)   #‘Î”–Ş“x‚ğŠi”[‚·‚és—ñ
-
-  #‘½•Ï—ÊüŒ`‰ñ‹Aƒ‚ƒfƒ‹‚ÌƒZƒOƒƒ“ƒg‚²‚Æ‚Ì‘Î”–Ş“x
+  LLind <- matrix(0, nrow=nrow(yx), ncol=k)   #å¯¾æ•°å°¤åº¦ã‚’æ ¼ç´ã™ã‚‹è¡Œåˆ—
+  
+  #å¤šå¤‰é‡ç·šå½¢å›å¸°ãƒ¢ãƒ‡ãƒ«ã®ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã®å¯¾æ•°å°¤åº¦
   for(kk in 1:k){
     beta_s <- beta[[kk]]
     s_s <- s[[kk]]
@@ -317,17 +316,17 @@ LLobz <- function(yx, k, r, beta, s){
     LLind[, kk] <- as.vector(Li)
   }
   LLho <- matrix(r, nrow=nrow(yx), ncol=k, byrow=T) * LLind
-  z <- LLho/matrix(apply(LLho, 1, sum), nrow=nrow(yx), ncol=k)   #z‚ÌŒvZ
-  LLosum <- sum(log(apply(matrix(r, nrow=nrow(yx), ncol=k, byrow=T) * LLind, 1, sum)))   #ŠÏ‘ªƒf[ƒ^‚Ì‘Î”–Ş“x‚Ì‘˜a 
+  z <- LLho/matrix(apply(LLho, 1, sum), nrow=nrow(yx), ncol=k)   #zã®è¨ˆç®—
+  LLosum <- sum(log(apply(matrix(r, nrow=nrow(yx), ncol=k, byrow=T) * LLind, 1, sum)))   #è¦³æ¸¬ãƒ‡ãƒ¼ã‚¿ã®å¯¾æ•°å°¤åº¦ã®ç·å’Œ 
   rval <- list(LLob=LLosum, z=z, LL=LLind, Li=Li)
   return(rval)
 }
 
-##EMƒAƒ‹ƒSƒŠƒYƒ€‚Ì‰Šú’l‚Ìİ’è
+##EMã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ ã®åˆæœŸå€¤ã®è¨­å®š
 iter <- 0
-k <- 4   #¬‡”
+k <- 4   #æ··åˆæ•°
 
-#ƒx[ƒ^‚Ì‰Šú’l‚ğİ’è
+#ãƒ™ãƒ¼ã‚¿ã®åˆæœŸå€¤ã‚’è¨­å®š
 #beta_f1 <- solve(t(emyx[, 6:15]) %*% as.matrix(emyx[, 6:15])) %*% t(emyx[, 6:15]) %*% as.matrix(emyx[, 1:5])
 #beta_f2 <- beta_f1 + runif(50, -0.5, 0.5)
 #beta_f3 <- beta_f1 + runif(50, -0.5, 0.5)
@@ -338,7 +337,7 @@ beta_f3 <- beta_seg[[3]] + runif(50, -1.2, 1.2)
 beta_f4 <- beta_seg[[4]] + runif(50, -1.0, 1.0)
 beta <- list(beta_f1, beta_f2, beta_f3, beta_f4)
 
-#•ªU‹¤•ªUs—ñ‚Ì‰Šú’l‚ğİ’è
+#åˆ†æ•£å…±åˆ†æ•£è¡Œåˆ—ã®åˆæœŸå€¤ã‚’è¨­å®š
 #S_f1 <- t(as.matrix(emyx[, 1:5]) - as.matrix(emyx[, 6:15])%*%beta_f) %*% 
 #      (as.matrix(emyx[, 1:5]) - as.matrix(emyx[, 6:15])%*%beta_f) / nrow(emyx)
 S_f1 <- Sigma1$covariance
@@ -348,32 +347,32 @@ S_f4 <- Sigma4$covariance
 
 s <- list(S_f1, S_f2, S_f3, S_f4) 
 
-#¬‡—¦‚Ì‰Šú’l
+#æ··åˆç‡ã®åˆæœŸå€¤
 r <- c(0.4, 0.2, 0.3, 0.1)
 
-#‘Î”–Ş“x‚Ì‰Šú‰»
+#å¯¾æ•°å°¤åº¦ã®åˆæœŸåŒ–
 L <- LLobz(yx=emyx, k=k, r=r, beta=beta, s=s)
-
-#XVƒXƒe[ƒ^ƒX
-dl <- 100   #EMƒXƒeƒbƒv‚Å‚Ì‘Î”–Ş“x‚Ì·‚Ì‰Šú’l
+LL1 <- L$LLob
+#æ›´æ–°ã‚¹ãƒ†ãƒ¼ã‚¿ã‚¹
+dl <- 100   #EMã‚¹ãƒ†ãƒƒãƒ—ã§ã®å¯¾æ•°å°¤åº¦ã®å·®ã®åˆæœŸå€¤
 tol <- 0.5  
 
-##EMƒAƒ‹ƒSƒŠƒYƒ€‚É‚æ‚é„’è
-while(abs(dl) >= tol){   #dl‚ªtolˆÈã‚Ìê‡‚ÍŒJ‚è•Ô‚·
-  #EƒXƒeƒbƒv‚ÌŒvZ
-  z <- L$z   #öİ•Ï”z‚Ìo—Í
+##EMã‚¢ãƒ«ã‚´ãƒªã‚ºãƒ ã«ã‚ˆã‚‹æ¨å®š
+while(abs(dl) >= tol){   #dlãŒtolä»¥ä¸Šã®å ´åˆã¯ç¹°ã‚Šè¿”ã™
+  #Eã‚¹ãƒ†ãƒƒãƒ—ã®è¨ˆç®—
+  z <- L$z   #æ½œåœ¨å¤‰æ•°zã®å‡ºåŠ›
   
-  #MƒXƒeƒbƒv‚ÌŒvZ
-  #‰ñ‹AŒW”‚Ì„’è
+  #Mã‚¹ãƒ†ãƒƒãƒ—ã®è¨ˆç®—
+  #å›å¸°ä¿‚æ•°ã®æ¨å®š
   BETA <- list()
   for(i in 1:k){
     R <- diag(z[, i])
     betan <- solve(t(emyx[, 6:15]) %*% R %*% as.matrix(emyx[, 6:15])) %*% 
-             t(emyx[, 6:15]) %*% R %*% as.matrix(emyx[, 1:5])
+      t(emyx[, 6:15]) %*% R %*% as.matrix(emyx[, 1:5])
     BETA[[i]] <- betan
   }
-
-  #•ªU‹¤•ªUs—ñ‚Ì„’è
+  
+  #åˆ†æ•£å…±åˆ†æ•£è¡Œåˆ—ã®æ¨å®š
   #SIGMA <- list()
   #for(j in 1:k){
   #  for(jj in 1:nrow(emyx)){
@@ -382,33 +381,32 @@ while(abs(dl) >= tol){   #dl‚ªtolˆÈã‚Ìê‡‚ÍŒJ‚è•Ô‚·
   #    sigmasum <- sigmasum + sigmaind
   #  }
   #  SIGMA[[j]] <- sigmasum / sum(z[, j])
-
-  #¬‡—¦‚Ì„’è
+  
+  #æ··åˆç‡ã®æ¨å®š
   r <- apply(L$z, 2, sum) / nrow(emyx) 
   
-  L <- LLobz(yx=emyx, k=k, r=r, beta=BETA, s=s)   #ŠÏ‘ªƒf[ƒ^‚Ì‘Î”–Ş“x‚ğŒvZ
-
-  LL <- L$LLob   #ŠÏ‘ªƒf[ƒ^‚Ì‘Î”–Ş“x
+  L <- LLobz(yx=emyx, k=k, r=r, beta=BETA, s=s)   #è¦³æ¸¬ãƒ‡ãƒ¼ã‚¿ã®å¯¾æ•°å°¤åº¦ã‚’è¨ˆç®—
+  
+  LL <- L$LLob   #è¦³æ¸¬ãƒ‡ãƒ¼ã‚¿ã®å¯¾æ•°å°¤åº¦
   iter <- iter+1
   dl <- LL-LL1
   LL1 <- LL
   print(LL)
 }
 
-BETA[[2]]   #ƒZƒOƒƒ“ƒg‚²‚Æ‚Ì„’è‚³‚ê‚½‰ñ‹AŒW”
-beta_seg[[2]]   #ƒZƒOƒƒ“ƒg‚²‚Æ‚ÌÅ¬“ñæ–@‚Å„’è‚³‚ê‚½‰ñ‹AŒW”
-a2   #ƒZƒOƒƒ“ƒg‚²‚Æ‚Ì^‚Ì‰ñ‹AŒW”
+BETA[[2]]   #ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã®æ¨å®šã•ã‚ŒãŸå›å¸°ä¿‚æ•°
+beta_seg[[2]]   #ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã®æœ€å°äºŒä¹—æ³•ã§æ¨å®šã•ã‚ŒãŸå›å¸°ä¿‚æ•°
+a2   #ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã”ã¨ã®çœŸã®å›å¸°ä¿‚æ•°
 
-r   #„’è‚³‚ê‚½¬‡—¦
-round(L$z[1:20, ], 3)   #ŒÂl‚²‚Æ‚ÌƒZƒOƒƒ“ƒg‚Ö‚ÌŠ‘®Šm—¦(^‚ÌƒZƒOƒƒ“ƒg1)
-round(L$z[1001:1020, ], 3)   #ŒÂl‚²‚Æ‚ÌƒZƒOƒƒ“ƒg‚Ö‚ÌŠ‘®Šm—¦(^‚ÌƒZƒOƒƒ“ƒg2)
-round(L$z[2001:2020, ], 3)   #ŒÂl‚²‚Æ‚ÌƒZƒOƒƒ“ƒg‚Ö‚ÌŠ‘®Šm—¦(^‚ÌƒZƒOƒƒ“ƒg3)
-round(L$z[3001:3020, ], 3)   #ŒÂl‚²‚Æ‚ÌƒZƒOƒƒ“ƒg‚Ö‚ÌŠ‘®Šm—¦(^‚ÌƒZƒOƒƒ“ƒg4)
- 
-BETA   #„’è‚³‚ê‚½‰ñ‹AŒW”
-beta_seg   #Å¬“ñæ–@‚Å„’è‚³‚ê‚½‰ñ‹AŒW”
-a1; a2; a3; a4   #^‚Ì‰ñ‹AŒW”
+r   #æ¨å®šã•ã‚ŒãŸæ··åˆç‡
+round(L$z[1:20, ], 3)   #å€‹äººã”ã¨ã®ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã¸ã®æ‰€å±ç¢ºç‡(çœŸã®ã‚»ã‚°ãƒ¡ãƒ³ãƒˆ1)
+round(L$z[1001:1020, ], 3)   #å€‹äººã”ã¨ã®ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã¸ã®æ‰€å±ç¢ºç‡(çœŸã®ã‚»ã‚°ãƒ¡ãƒ³ãƒˆ2)
+round(L$z[2001:2020, ], 3)   #å€‹äººã”ã¨ã®ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã¸ã®æ‰€å±ç¢ºç‡(çœŸã®ã‚»ã‚°ãƒ¡ãƒ³ãƒˆ3)
+round(L$z[3001:3020, ], 3)   #å€‹äººã”ã¨ã®ã‚»ã‚°ãƒ¡ãƒ³ãƒˆã¸ã®æ‰€å±ç¢ºç‡(çœŸã®ã‚»ã‚°ãƒ¡ãƒ³ãƒˆ4)
 
-L$LLob   #ŠÏ‘ªƒf[ƒ^‚Ì‘Î”–Ş“x
+BETA   #æ¨å®šã•ã‚ŒãŸå›å¸°ä¿‚æ•°
+beta_seg   #æœ€å°äºŒä¹—æ³•ã§æ¨å®šã•ã‚ŒãŸå›å¸°ä¿‚æ•°
+a1; a2; a3; a4   #çœŸã®å›å¸°ä¿‚æ•°
+
+L$LLob   #è¦³æ¸¬ãƒ‡ãƒ¼ã‚¿ã®å¯¾æ•°å°¤åº¦
 -2*(L$LLob) + k*nrow(BETA[[1]])*ncol(BETA[[1]])   #AIC
-
