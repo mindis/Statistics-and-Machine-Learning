@@ -38,7 +38,7 @@ corrM <- function(col, lower, upper){
 }
 
 #群ごとの相関行列を作成(群ですべて同じ)
-corM <- corrM(col=6, lower=-0.2, upper=0.4)
+corM <- corrM(col=6, lower=-0.2, upper=0.2)
 eigen(corM)
 
 ##相関行列から分散共分散行列を作成する関数を定義
@@ -71,10 +71,10 @@ Sigma4 <- covmatrix(col=6, corM=corM, lower=10, upper=20)
 S <- list(Sigma1$covariance, Sigma2$covariance, Sigma3$covariance, Sigma4$covariance)
 
 #群ごとの変数の平均を作成
-mu1 <- c(rnorm(6, 11, 10))
-mu2 <- c(rnorm(6, 14, 10))
-mu3 <- c(rnorm(6, 7, 10))
-mu4 <- c(rnorm(6, 17, 10))
+mu1 <- c(rnorm(6, 12, 10))
+mu2 <- c(rnorm(6, 18, 10))
+mu3 <- c(rnorm(6, 6, 10))
+mu4 <- c(rnorm(6, 24, 10))
 mu <- list(mu1, mu2, mu3, mu4)
 
 ##多変量正規分布からの乱数を発生させる
@@ -103,7 +103,7 @@ table(YXl[, 1])
 YXt <- rbind(YX[401:700, ], YX[1101:1400, ], YX[1801:2100, ], YX[2501:2800, ])
 table(YXt[, 1])
 
-##正準判別モデルで学習データから分類器を学習する
+####正準判別モデルで学習データから分類器を学習する####
 #群内平均
 mucat <- matrix(0, k, val)
 for(i in 1:k){
@@ -121,18 +121,28 @@ rownames(covall)[1:6] <- c("v1", "v2", "v3", "v4", "v5", "v6")
 colnames(covall)[1:6] <- c("v1", "v2", "v3", "v4", "v5", "v6")
 
 #群間の分散共分散行列
-covB <- 1/k * (mucat - muallm) %*% t(mucat - muallm)
+covB <- 1/k * t(mucat - muallm) %*% (mucat - muallm)
 covB
 mucat - muallm
 ##固有値問題を解いて群間の分離度を最大化する解を得る
-covA <- covall^-1/2
-M <- eigen(as.matrix(covA) %*% as.matrix(covB) %*% as.matrix(covA))   #固有値問題を解く
+covA <- solve(covall)
+covA
+covB
+M <- eigen(covA %*% as.matrix(covB))   #固有値問題を解く
 R <- M$values   #行列のランクは群数-1
 a <- M$vectors   #固有ベクトルが判別関数の係数
 a
-(cont <- R[1:3]/sum(R[1:3]))   #寄与率
+(cont <- R/sum(R))   #寄与率
 (cumcont <-cumsum(cont))   #累積寄与率
 
 #第2固有値までを用いて、2次元空間上に射影した行列をプロット
-Z <- as.matrix(YXl[, 2:7]) %*% t(a[1:2, ])
-plot(Z)
+#学習データに対する合成変量とプロット
+Z <- as.matrix(YXl[, 2:7]) %*% t(a[1:3, ])
+plot(as.data.frame(Z), col=YXl[, 1])
+
+#テストデータに対する合成変量とプロット
+Z <- as.matrix(YXt[, 2:7]) %*% t(a[1:3, ])
+plot(as.data.frame(Z))
+
+##判別性能を確認
+
