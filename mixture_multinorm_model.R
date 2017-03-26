@@ -46,7 +46,7 @@ covmatrix <- function(col, corM, lower, upper){
   c <- matrix(0, col, col)
   for(i in 1:col){
     for(j in 1:col){
-      c[i, j] <- m[i] * m[j]
+      c[i, j] <- sqrt(m[i]) * sqrt(m[j])
     }
   }
   diag(c) <- m
@@ -330,7 +330,7 @@ L1 <- L$LLob
 
 #更新ステータス
 dl <- 100   #EMステップでの対数尤度の差の初期値
-tol <- 0.5  
+tol <- 1
 
 ##EMアルゴリズムによる推定
 while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
@@ -387,6 +387,6 @@ beta_seg   #最小二乗法で推定された回帰係数
 a1; a2; a3; a4   #真の回帰係数
 
 L$LLob   #観測データの対数尤度
--2*(L$LLob) + k*nrow(BETA[[1]])*ncol(BETA[[1]])   #AIC
+-2*(L$LLob) + 2*k*nrow(BETA[[1]])*ncol(BETA[[1]])   #AIC
 
 
