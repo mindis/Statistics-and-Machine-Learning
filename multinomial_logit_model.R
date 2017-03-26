@@ -184,7 +184,7 @@ maxres <- res[[which.max(value)]]   #最大の対数尤度の推定結果
 round(b <- c(maxres$par, lam), 2)   #推定された回帰係数   
 round(betaT <- c(beta1, beta2, beta3, beta4, beta02, beta03, beta04, lambda), 2)   #真のパラメータ
 
-(tval <- b/sqrt(-diag(solve(maxres$hessian))))   #t値
+(tval <- b[1:7]/sqrt(-diag(solve(maxres$hessian))))   #t値
 (AIC <- -2*maxres$value + 2*length(maxres$par))   #AIC
 (BIC <- -2*maxres$value + log(nrow(BUY))*length(maxres$par))   #BIC
 
