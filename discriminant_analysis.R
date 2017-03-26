@@ -47,8 +47,9 @@ covmatrix <- function(col, corM, lower, upper){
   c <- matrix(0, col, col)
   for(i in 1:col){
     for(j in 1:col){
-      c[i, j] <- m[i] * m[j]
+      c[i, j] <- sqrt(m[i]) * sqrt(m[j])
     }
+    diag(c) <- m   #対角行列を元の分散に戻す
   }
   diag(c) <- m
   cc <- c * corM
@@ -126,8 +127,6 @@ covB
 mucat - muallm
 ##固有値問題を解いて群間の分離度を最大化する解を得る
 covA <- solve(covall)
-covA
-covB
 M <- eigen(covA %*% as.matrix(covB))   #固有値問題を解く
 R <- M$values   #行列のランクは群数-1
 a <- M$vectors   #固有ベクトルが判別関数の係数
