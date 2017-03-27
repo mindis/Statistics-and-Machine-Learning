@@ -82,9 +82,9 @@ mu <- list(mu1, mu2, mu3, mu4)
 k; n; nt
 X <- matrix(0, 0, 6)
 for(kk in 1:k){
-    xx <- mvrnorm(n=n+nt, mu[[kk]], S[[kk]])
-    X <- rbind(X, xx)
-  }
+  xx <- mvrnorm(n=n+nt, mu[[kk]], S[[kk]])
+  X <- rbind(X, xx)
+}
 
 #教師データのベクトルを作成
 y <- rep(1:4, rep(700, 4))
@@ -108,8 +108,8 @@ table(YXt[, 1])
 #群内平均
 mucat <- matrix(0, k, val)
 for(i in 1:k){
-muc <- apply(YXl[YXl[, 1]==i, 2:7], 2, mean)
-mucat[i, ] <- (muc)
+  muc <- apply(YXl[YXl[, 1]==i, 2:7], 2, mean)
+  mucat[i, ] <- (muc)
 }
 
 #群全体の平均
@@ -122,9 +122,8 @@ rownames(covall)[1:6] <- c("v1", "v2", "v3", "v4", "v5", "v6")
 colnames(covall)[1:6] <- c("v1", "v2", "v3", "v4", "v5", "v6")
 
 #群間の分散共分散行列
-covB <- 1/k * t(mucat - muallm) %*% (mucat - muallm)
-covB
-mucat - muallm
+covB <- 1/k * t(mucat - muall) %*% (mucat - muall)
+
 ##固有値問題を解いて群間の分離度を最大化する解を得る
 covA <- solve(covall)
 M <- eigen(covA %*% as.matrix(covB))   #固有値問題を解く
@@ -136,12 +135,99 @@ a
 
 #第2固有値までを用いて、2次元空間上に射影した行列をプロット
 #学習データに対する合成変量とプロット
-Z <- as.matrix(YXl[, 2:7]) %*% t(a[1:3, ])
-plot(as.data.frame(Z), col=YXl[, 1])
+Zl <- as.matrix(YXl[, 2:7]) %*% t(a[1:3, ])
+plot(as.data.frame(Zl), col=YXl[, 1])
 
 #テストデータに対する合成変量とプロット
-Z <- as.matrix(YXt[, 2:7]) %*% t(a[1:3, ])
-plot(as.data.frame(Z))
+Zt <- as.matrix(YXt[, 2:7]) %*% t(a[1:3, ])
+plot(as.data.frame(Zt))
 
-##判別性能を確認
+####判別性能を確認####
+#学習データの正答率を計算
+zm <- matrix(0, k, 3)
+for(i in 1:k){
+  zm[i, ] <- apply(Zl[YXl[, 1]==i, ], 2, mean)
+}
+
+#判別結果を求める
+D <- matrix(0, nrow=nrow(ZZl), ncol=k)
+for(i in 1:k){
+  ZZl <- Zl - matrix(zm[i, ], nrow=nrow(Zl), ncol=ncol(Zl), byrow=T)
+  d <- matrix(apply(ZZl, 1, function(x) t(x) %*% x), nrow=nrow(ZZl), ncol=1)
+  D[, i] <- d
+}
+res <- apply(D, 1, which.min)   #判別結果
+pre <- data.frame(correct=YXl[, 1], predict=res)   #正解データと結合
+table(pre)   #誤判別表
+round(apply(table(pre), 1, function(x) x/sum(x)), 3)   #群ごとの正答率
+sum(diag(table(pre)))/sum(table(pre))   #正答率
+
+####2次判別####
+##異なる共分散行列の多変量正規分布から乱数発生
+#群ごとの相関行列を作成(群で異なる)
+k <- 3   #群数
+val <- 6   #説明変数数
+n <- 500   #群ごとの学習データ
+nt <- 500   #群ごとのテストデータ
+N <- 3000   #全サンプル数
+
+corM1 <- corrM(col=6, lower=-0.25, upper=0.3)
+corM2 <- corrM(col=6, lower=-0.3, upper=0.4)
+corM3 <- corrM(col=6, lower=-0.4, upper=0.55)
+
+#分散共分散行列を作成(群ですべて同じ)
+Sigma1 <- covmatrix(col=6, corM=corM1, lower=12, upper=22)
+Sigma2 <- covmatrix(col=6, corM=corM2, lower=15, upper=28)
+Sigma3 <- covmatrix(col=6, corM=corM3, lower=5, upper=13)
+S <- list(Sigma1$covariance, Sigma2$covariance, Sigma3$covariance)
+
+#群ごとの変数の平均を作成
+mu1 <- c(rnorm(6, 12, 10))
+mu2 <- c(rnorm(6, 18, 10))
+mu3 <- c(rnorm(6, 8, 10))
+mu <- list(mu1, mu2, mu3)
+
+##多変量正規分布からの乱数を発生させる
+X <- matrix(0, 0, 6)
+for(kk in 1:k){
+  xx <- mvrnorm(n=n+nt, mu[[kk]], S[[kk]])
+  X <- rbind(X, xx)
+}
+
+#教師データのベクトルを作成
+y <- rep(1:3, rep(1000, 3))
+
+#データを結合
+YX <- data.frame(y, X)
+by(YX, YX[, 1] , function(x) summary(x))   #群ごとの要約関数
+by(YX[, 2:7], YX[, 1] , function(x) cor(x))   #群ごとの相関
+plot(YX[, 2:7], col=YX[, 1])   #散布図
+
+#テストデータと学習データを分離
+#学習データ
+YXl <- rbind(YX[1:500, ], YX[1001:1500, ], YX[2001:2500, ])
+table(YXl[, 1])
+
+#テストデータ
+YXt <- rbind(YX[501:1000, ], YX[1501:2000, ], YX[2501:3000, ])
+table(YXt[, 1])
+
+####2次判別の推定####
+##群ごとの平均ベクトルと分散共分散行列を計算
+#群ごとの平均ベクトル
+mv <- matrix(0, k, val)
+for(mm in 1:k){
+  m <- apply(YXl[YXl[, 1]==mm, 2:7], 2, mean)
+  mv[mm, ] <- m
+}
+
+#群ごとの分散共分散行列
+Sk <- list()
+for(ss in 1:k){
+  m <- var(YXl[YXl[, 1]==ss, 2:7])
+  Sk[[ss]] <- m
+}
+
+#サンプルごとにそれぞれの群のマハラノビスの汎距離を求めてもっとも小さい群に所属させる
+
 
