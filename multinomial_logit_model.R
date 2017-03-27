@@ -8,6 +8,7 @@ library(reshape2)
 ####データの発生####
 #set.seed(58904)
 ##パラメータの設定
+##ブランド1をベースブランドに設定
 beta1 <- -4.2   #割引率のパラメータ
 beta2 <- 3   #特別陳列のパラメータ
 beta3 <- 2.3   #限定キャンペーンのパラメータ
@@ -162,12 +163,13 @@ fr <- function(x, BUY, PRICE, DISP, CAMP, ROY){
   return(LL)
 }
 
-##ブランドロイヤルティパラメータλを動かしながら対数尤度を最大化(グリッドサーチ)
+##ブランドロイヤルティパラメータλを動かしながら対数尤度を最大化
 res <- list()
-for(i in 1:length(lambdaE)){
 b0 <- rep(0.3, 7)   #初期値を設定
-res[[i]] <- optim(b0, fr, gr=NULL, BUY, PRICE, DISP, CAMP, ROYl[[i]], 
-             method="BFGS", hessian=TRUE, control=list(fnscale=-1))
+for(i in 1:length(lambdaE)){
+  res[[i]] <- optim(b0, fr, gr=NULL, BUY, PRICE, DISP, CAMP, ROYl[[i]], 
+               method="BFGS", hessian=TRUE, control=list(fnscale=-1))
+  b0 <- res[[i]]$par
 }
 
 #対数尤度が最大のlambdaを選ぶ
