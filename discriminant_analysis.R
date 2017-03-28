@@ -162,6 +162,7 @@ table(pre)   #誤判別表
 round(apply(table(pre), 1, function(x) x/sum(x)), 3)   #群ごとの正答率
 sum(diag(table(pre)))/sum(table(pre))   #正答率
 
+
 ####2次判別####
 ##異なる共分散行列の多変量正規分布から乱数発生
 #群ごとの相関行列を作成(群で異なる)
@@ -176,9 +177,9 @@ corM2 <- corrM(col=6, lower=-0.3, upper=0.4)
 corM3 <- corrM(col=6, lower=-0.4, upper=0.55)
 
 #分散共分散行列を作成(群ですべて同じ)
-Sigma1 <- covmatrix(col=6, corM=corM1, lower=12, upper=22)
-Sigma2 <- covmatrix(col=6, corM=corM2, lower=15, upper=28)
-Sigma3 <- covmatrix(col=6, corM=corM3, lower=5, upper=13)
+Sigma1 <- covmatrix(col=6, corM=corM1, lower=15, upper=26)
+Sigma2 <- covmatrix(col=6, corM=corM2, lower=18, upper=30)
+Sigma3 <- covmatrix(col=6, corM=corM3, lower=12, upper=18)
 S <- list(Sigma1$covariance, Sigma2$covariance, Sigma3$covariance)
 
 #群ごとの変数の平均を作成
@@ -228,6 +229,32 @@ for(ss in 1:k){
   Sk[[ss]] <- m
 }
 
-#サンプルごとにそれぞれの群のマハラノビスの汎距離を求めてもっとも小さい群に所属させる
+##サンプルごとにそれぞれの群のマハラノビスの汎距離を求めてもっとも小さい群に所属させる
+##学習データについて求める
+HL <- matrix(0, nrow=nrow(YXl), ncol=k)
+S <- list(solve(Sk[[1]]), solve(Sk[[2]]), solve(Sk[[3]]))
+for(kk in 1:k){
+  h <- apply(YXl[, 2:7], 1, function(x) t(x-mv[kk, ]) %*% S[[kk]] %*% (x-mv[kk, ]))
+  HL[, kk] <- h
+}
+
+#学習データの判別結果
+pred <- apply(HL, 1, which.min)   #判別結果
+res <- data.frame(true=YXl[, 1], pred)   #真の群と結合
+table(res)   #誤判別表
+sum(diag(table(res)))/sum(table(res))   #誤判別率
 
 
+##テストデータについて求める
+HT <- matrix(0, nrow=nrow(YXt), ncol=k)
+S <- list(solve(Sk[[1]]), solve(Sk[[2]]), solve(Sk[[3]]))
+for(kk in 1:k){
+  h <- apply(YXt[, 2:7], 1, function(x) t(x-mv[kk, ]) %*% S[[kk]] %*% (x-mv[kk, ]))
+  HT[, kk] <- h
+}
+
+#テストデータの判別結果
+pred <- apply(HT, 1, which.min)   #判別結果
+res <- data.frame(true=YXt[, 1], pred)   #真の群と結合
+table(res)   #誤判別表
+sum(diag(table(res)))/sum(table(res))   #誤判別率
