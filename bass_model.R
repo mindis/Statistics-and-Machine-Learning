@@ -29,7 +29,6 @@ para <- M2$m$getPars()
 
 Mhat <- m.hat*(1-exp(-(p.hat+q.hat)*t)) / (1+q.hat/p.hat*exp(-(p.hat+q.hat)*t))   #—\‘ª’l
 
-
 #Œ‹‰Ê‚ğƒvƒƒbƒg
 plot(t, Mhat, type="l", lwd=2, ylim=c(0, 85), xlab="Œo‰ß“ú”", ylab="•‹y—¦", main="ƒoƒXƒ‚ƒfƒ‹‚É‚æ‚é•‹y—¦—\‘ª")
 lines(t, Fe, lty=2, lwd=1)   #À‘ª’l
