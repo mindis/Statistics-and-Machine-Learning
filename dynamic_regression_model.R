@@ -1,33 +1,35 @@
-#####“®“I‰ñ‹Aƒ‚ƒfƒ‹#####
+#####QÆ‰¿Ši‚Ì‚ ‚é“®“I‰ñ‹Aƒ‚ƒfƒ‹#####
 library(MASS)
 library(dml)
 library(KFAS)
 library(reshape2)
 library(dplyr)
+
 ####ƒf[ƒ^‚Ì”­¶####
 #set.seed(54390)
-##ƒf[ƒg‚Æƒpƒ‰ƒ[ƒ^[‚Ì‰Šú’l‚Ìİ’è
+##“ú”‚Æƒpƒ‰ƒ[ƒ^[‚Ì‰Šú’l‚Ìİ’è
 n <- 700   #“_”
+rprice <- 108   #”Ì”„’è‰¿
 b0 <- 6.2   #ƒx[ƒX”Ì”„—Í‚Ì‰Šú’l
-b1 <- -0.01   #‰¿Ši’e—Í«‚ÌŒW”
-b2 <- 0.3   #“Á•Ê’Â—ñ‚ÌŒW”
-b3 <- 0.2   #“Á•ÊƒLƒƒƒ“ƒy[ƒ“‚ÌŒW”
-b4 <- 0.007   #‰¿ŠiƒQƒCƒ“‚ÌŒW”
-b5 <- -0.017   #‰¿ŠiƒƒX‚ÌŒW”
+b1 <- 0.3   #“Á•Ê’Â—ñ‚ÌŒW”
+b2 <- 0.2   #“Á•ÊƒLƒƒƒ“ƒy[ƒ“‚ÌŒW”
+b3 <- 1.3   #‰¿ŠiƒQƒCƒ“‚ÌŒW”
+b4 <- -1.9   #‰¿ŠiƒƒX‚ÌŒW”
+thetatrue <- c(b1, b2, b3, b4)   #^‚Ìƒpƒ‰ƒ[ƒ^ƒxƒNƒgƒ‹
 
 #ƒgƒŒƒ“ƒh‚ÌƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“ƒf[ƒ^‚Ì”­¶
 tb <- b0
 trend <- numeric()
-s <- seq(0.8, 0.1, length=n)
+s <- seq(0.7, 0.2, length=n)
 for(i in 1:n){
-  r <- rnorm(5, tb, 0.01)
+  r <- rnorm(5, tb, 0.02)
   sort <- sort(r)
   bi <- rbinom(1, 1, s[i])
   bb <- ifelse(bi == 1, sort[4], sort[2])
   tb <- bb
   trend <- c(trend, bb)
 }
-plot(trend, type="l", lwd=1, ylim=c(4.0, 6.0), xlab="day")
+plot(trend, type="l", lwd=1, xlab="day")
 summary(trend)
 
 ##à–¾•Ï”‚ÌƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“ƒf[ƒ^‚ğ”­¶
@@ -39,7 +41,7 @@ for(i in 1:n){
   rn <- runif(2)   #ˆê—l—”‚ğ”­¶
   
   #‰¿Ši‚Ìİ’è
-  if(rbinom(1, 1, p[i])==1) SP <- 108 else SP <- 108 * runif(1, 0.7, 0.95)
+  if(rbinom(1, 1, p[i])==1) SP <- rprice else SP <- rprice * runif(1, 0.65, 0.95)
   PRICE <- c(PRICE, SP)
   
   #Šm—¦0.25‚Å“Á•Ê’Â—ñ‚ ‚è
@@ -52,13 +54,12 @@ for(i in 1:n){
 summary(X)
 
 ##QÆ‰¿Ši‚ÌƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“ƒf[ƒ^‚Ì”­¶
-#ƒgƒŒƒ“ƒh‚ÌƒVƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“ƒf[ƒ^‚Ì”­¶
-pi <- 0.95   #QÆ‰¿Ši‚ÌŒJ‰zƒpƒ‰ƒ[ƒ^
-pp <- 115   #QÆ‰¿Ši‚Ì‰Šú’l
+alpha <- 0.9   #QÆ‰¿Ši‚ÌŒJ‰zƒpƒ‰ƒ[ƒ^
+pp <- 108   #QÆ‰¿Ši‚Ì‰Šú’l
 rp <- numeric()
 for(i in 1:n){
   if(i==1) rp <- c(rp, pp) else
-  rp <- c(rp, (1-pi)*PRICE[i] + pi*rp[i-1])
+    rp <- c(rp, (1-alpha)*PRICE[i] + alpha*rp[i-1])
 }
 summary(rp)
 plot(rp, type="l", lwd=1, xlab="day", ylab="QÆ‰¿Ši", ylim=c(75, 130))   #QÆ‰¿Ši‚Ìƒvƒƒbƒg
@@ -66,20 +67,285 @@ plot(rp, type="l", lwd=1, xlab="day", ylab="QÆ‰¿Ši", ylim=c(75, 130))   #QÆ‰
 ##ƒQƒCƒ“•Ï”‚ÆƒƒX•Ï”‚Ìİ’è
 GL <- ifelse(rp-PRICE > 0, 1, 0)   #ƒQƒCƒ“EƒƒXw¦•Ï”
 refPRICE <- rp   #QÆ‰¿Ši
-GLvalue <- abs(rp-PRICE)   #QÆ‰¿Ši‚Æ‰¿Ši‚Æ‚Ì·
-
+GLvalue <- 1-PRICE/rp   #QÆ‰¿Ši‚Æ‰¿Ši‚Æ‚Ì·
+GLvalue
 ##”Ì”„”—Ê‚ğ”­¶
 #‘Î”•ÏŠ·‚Ìy‚Ì”Ì”„—Ê
-(y <- trend + b1*log(PRICE) + b2*DISP + b3*CAMP + Z*b4*log(GLvalue) + (1-Z)*b5*log(GLvalue) + rnorm(n, 0, 0.2))
-yy <- round(exp(y), 0)
-max(yy)
-min(yy)
-summary(yy)
+#Š„ˆø—¦‚Ìİ’è
+DISC <- PRICE/rprice
+(y <- trend + b1*DISP + b2*CAMP + b3*GL*GLvalue + b4*(1-GL)*GLvalue + rnorm(n, 0, 0.25))
+yyt <-exp(y)
+max(yyt)
+min(yyt)
+summary(yyt)
 
 #”Ì”„”—Ê‚ÌŒn—ñ‚ğƒvƒƒbƒg
-plot(1:n, yy, type="l", xlab="day", ylab="”Ì”„”—Ê")
+plot(1:n, yyt, type="l", xlab="day", ylab="”Ì”„”—Ê")
 lines(1:n, exp(trend), lwd=2)
- 
+
 ##ƒf[ƒ^‚ğ‚·‚×‚ÄŒ‹‡
-YX <- data.frame(yy, X, GL, refPRICE)
+YX <- data.frame(yyt, X, GL, refPRICE)
 round(YX, 0)
+
+##QÆ‰¿Ši‚ÌŒJ‰zƒpƒ‰ƒ[ƒ^‚ğŒˆ’è‚·‚é‚½‚ß‚ÉV‚µ‚¢à–¾•Ï”‚ğì‚é
+(lambda <- seq(0.3, 1.0, length=15))   #QÆ‰¿Ši‚ÌŒJ‰zƒpƒ‰ƒ[ƒ^
+pp <- 108   #QÆ‰¿Ši‚Ì‰Šú’l
+RP <- list()
+for(lam in 1:length(lambda)){
+  rprice <- numeric()
+  for(i in 1:n){
+    if(i==1) rprice <- c(rprice, pp) else
+      rprice <- c(rprice, (1-lambda[lam])*PRICE[i] + lambda[lam]*rprice[i-1])
+  }
+  RP[[lam]] <- rprice
+}
+
+#ƒQƒCƒ“•Ï”‚ÆƒƒX•Ï”‚Ìİ’è
+z <- list()
+GLvalue <- list()
+for(lam in 1:length(lambda)){
+  z[[lam]] <- ifelse(RP[[lam]]-PRICE > 0, 1, 0)   #ƒQƒCƒ“EƒƒXw¦•Ï”‚Ìİ’è
+  GLvalue[[lam]] <- 1-PRICE/RP[[lam]]
+}
+
+
+
+####ƒJƒ‹ƒ}ƒ“ƒtƒBƒ‹ƒ^[‚Å„’è####
+#Å¬“ñæ–@‚Å„’è
+aic <- numeric()
+estimate <- list()
+res <- list()
+for(lam in 1:length(lambda)){
+  zz <- 1-z[[lam]]
+  inires <- lm(y ~ DISP+CAMP+z[[lam]]:GLvalue[[lam]]+zz:GLvalue[[lam]])
+  res[[lam]] <- inires
+  aic <- c(aic, AIC(inires))   #AIC
+  estimate[[lam]] <- c(inires$coefficients, sum(inires$residuals^2)/inires$df.residual)   #‰ñ‹AŒW”‚Æ•ªU
+}
+aic
+(op <- which.min(aic))
+summary(res[[13]])
+
+##^‚ÌŒ‹‰Ê‚ÆÅ¬“ñæ–@‚Æ‚Ì”äŠr
+par(mfrow=c(2, 1))
+plot(1:n, yyt, type="l", xlab="day", ylab="”Ì”„”—Ê")
+lines(1:n, exp(trend), lwd=2)
+plot(1:700, exp(res[[op]]$fitted.values), type="l", lty=1, col=1, xlab="day", ylab="”Ì”„”—Ê")
+par(mfrow=c(1, 1))
+
+#”Ì”„”—Ê‚ÌŒn—ñ‚ğƒvƒƒbƒg
+plot(1:n, yyt, type="l", xlab="day", ylab="”Ì”„”—Ê")
+lines(1:n, exp(trend), lwd=2)
+
+####ƒJƒ‹ƒ}ƒ“ƒtƒBƒ‹ƒ^[####
+para <- 5   #ƒVƒXƒeƒ€ƒ‚ƒfƒ‹‚Ìƒpƒ‰ƒ[ƒ^”
+
+#ƒfƒUƒCƒ“s—ñ‚Ìİ’è
+YXlist <- list()
+for(i in 1:15){
+  YXlist[[i]] <- data.frame(y, 1, DISP, CAMP, gain=z[[i]]*GLvalue[[i]], loss=(1-z[[i]])*GLvalue[[i]])
+}
+
+
+
+####ƒJƒ‹ƒ}ƒ“ƒtƒBƒ‹ƒ^[####
+#ƒpƒ‰ƒ[ƒ^‚ğŠi”[‚·‚é•Ï”‚ğ’è‹`
+THETAP <- list()
+THETAF <- list()
+VP <- list()
+VF <- list()
+vvpp <- list()
+vvff <- list()
+LLA <- numeric()
+VA <- numeric()
+redidual <- numeric()
+
+for(ind in 1:15){
+  YX <- as.matrix(YXlist[[ind]])
+  thetap <- matrix(0, nrow(YX), ncol(YX)-1)
+  thetaf <- matrix(0, nrow(YX), ncol(YX)-1)
+  SIG2 <- 0
+  LDET <- 0
+  Nsum <- 0
+  E <- 0 
+  
+  ##Ã“Iƒpƒ‰ƒ[ƒ^‚Ì‰Šú’l‚Ìİ’è
+  para <- 5   #ƒVƒXƒeƒ€ƒ‚ƒfƒ‹‚Ìƒpƒ‰ƒ[ƒ^”
+  b1 <- 0.4   #“Á•Ê’Â—ñ
+  b2 <- 0.4   #ƒLƒƒƒ“ƒy[ƒ“
+  b3 <- 1.0   #‰¿ŠiƒQƒCƒ“
+  b4 <- -1.5   #‰¿ŠiƒƒX
+  sigma <- 0.5  #ŠÏ‘ªƒmƒCƒY
+  tau <-0.05    #“®“Iƒpƒ‰ƒ[ƒ^‚ÌƒVƒXƒeƒ€ƒmƒCƒY
+  
+  #“®“Iƒpƒ‰ƒ[ƒ^‚Ì‰Šú’l‚Ìİ’è
+  t <- mean(YX[, 1])
+  V <- diag(para)   #ğŒ•t‚«•ªU‚Ì‰Šú’l
+  
+  #ƒVƒXƒeƒ€ƒ‚ƒfƒ‹‚Ìİ’è
+  x <- c(t, b1, b2, b3, b4)   #ó‘ÔƒxƒNƒgƒ‹
+  v <- c(tau, 0, 0, 0, 0)   #ƒVƒXƒeƒ€ƒmƒCƒY‚ÌƒmƒCƒYƒxƒNƒgƒ‹
+  Q <- diag(c(1, rep(0, 4)))
+  F <- diag(para)
+  G <- diag(para)
+  
+  for(i in 1:nrow(YX)){
+    ##1Šúæ—\‘ª
+    xp <- F %*% x   #ğŒ•t‚«•½‹Ï‚ğŒvZ
+    Vp <- F %*% V %*% t(F) + G %*% (tau^2*Q) %*% t(G)   #ğŒ•t‚«•ªU‚ÌŒvZ
+    
+    ##ƒtƒBƒ‹ƒ^ƒŠƒ“ƒO
+    B <- t(YX[i, -1]) %*% Vp %*% as.matrix(YX[i, -1]) + sigma^2
+    B1 <- solve(B)
+    K <- Vp %*% as.matrix(YX[i, -1]) %*% B1   #ƒJƒ‹ƒ}ƒ“ƒQƒCƒ“
+    e <- YX[i, 1] - t(YX[i, -1]) %*% xp 
+    xx <- xp + K %*% e   #ğŒ•t‚«Šú‘Ò’l‚ÌŒvZ
+    VV <- Vp - K %*% t(YX[i, -1]) %*% Vp   #ğŒ•t‚«•ªU‚ÌŒvZ
+    
+    #ƒpƒ‰ƒ[ƒ^‚Ì•Û‘¶‚ÆXV
+    thetap[i, ] <- xp   #—\‘ª•ª•z‚Ìƒpƒ‰ƒ[ƒ^ƒxƒNƒgƒ‹‚Ì„’è’l‚ğŠi”[
+    thetaf[i, ] <- xx   #ƒtƒBƒ‹ƒ^•ª•z‚Ìƒpƒ‰ƒ[ƒ^ƒxƒNƒgƒ‹‚Ì„’è’l‚ğŠi”[
+    vvpp[[i]] <- VV   #—\‘ª•ª•z‚Ì•ªUƒpƒ‰ƒ[ƒ^‚Ì„’è’l‚ğŠi”[
+    vvff[[i]] <- Vp     #ƒtƒBƒ‹ƒ^•ª•z‚Ì•ªUƒpƒ‰ƒ[ƒ^‚Ì„’è’l‚ğŠi”[
+    x <- xx
+    V <- VV
+    
+    #‘Î”–Ş“x‚ÌŒvZ
+    SIG2 <- SIG2 + t(e) %*% B1 %*% e
+    LDET <- LDET + log(det(B))
+    Nsum <- Nsum + 1
+    E <- E + abs(e)
+  }
+  (LL <- -0.5*(Nsum * (log(2*pi*SIG2)+1) + LDET))
+  LLA <- c(LLA, LL)
+  
+  #‚·‚×‚Ä‚Ìƒpƒ‰ƒ[ƒ^‚ğŠi”[
+  THETAP[[ind]] <- thetap
+  THETAF[[ind]] <- thetaf
+  VP[[ind]] <- vvpp
+  VF[[ind]] <- vvff
+}
+
+#Œ‹‰Ê‚ğ•\¦
+LLA   #ŒJ‰zƒpƒ‰ƒ[ƒ^‚²‚Æ‚Ì‘Î”–Ş“x
+(maxlam <- which.max(LLA))   #‘Î”–Ş“x‚ªÅ‘å‚ÌŒJ‰zƒpƒ‰ƒ[ƒ^‚ğ‘I‘ğ
+THETAP[[maxlam]][700, 2:5]   #„’è‚³‚ê‚½‰ñ‹A¬•ª‚Ìƒpƒ‰ƒ[ƒ^
+head(round(THETAP[[maxlam]][, 1], 3), 10)   #“®“IƒgƒŒƒ“ƒh
+tail(round(THETAP[[maxlam]][, 1], 3), 10)
+lambda[maxlam]
+
+##ŠÏ‘ªƒmƒCƒY‚ğ„’è
+error <- numeric()
+thetalam <- cbind(THETAP[[maxlam]][, 1], matrix(THETAP[[maxlam]][700, 2:5], nrow(THETAP[[maxlam]]), 4))
+for(i in 1:nrow(thetalam)){
+  yy <- y[i] - as.matrix(YXlist[[maxlam]][i, 2:6]) %*% as.matrix(thetalam[i, ])
+  error <- c(error, yy)  
+}
+(sigmas <- sum(error^2)/700)   #ŠÏ‘ªƒmƒCƒY‚Ì„’è’l
+
+#„’è’l‚ğ—\‘ª
+max(error)
+YXlist[[maxlam]][692, 2:6]
+exp(as.matrix(YXlist[[maxlam]][692, 2:6]) %*% as.matrix(thetalam[692, ]))
+exp(y[692])
+
+
+
+####Ã“Iƒpƒ‰ƒ[ƒ^‚ğÅ“K‰»####
+para <- 5   #ƒVƒXƒeƒ€ƒ‚ƒfƒ‹‚Ìƒpƒ‰ƒ[ƒ^”
+b1 <- THETAP[[maxlam]][700, 2]
+b2 <- THETAP[[maxlam]][700, 3]
+b3 <- THETAP[[maxlam]][700, 4]
+b4 <- THETAP[[maxlam]][700, 5]
+
+#“®“Iƒpƒ‰ƒ[ƒ^‚Ì‰Šú’l‚Ìİ’è
+t <- mean(THETAP[[maxlam]][20:100, 1])
+V <- VP[[maxlam]][[700]]  #ğŒ•t‚«•ªU‚Ì‰Šú’l
+
+#ƒVƒXƒeƒ€ƒ‚ƒfƒ‹‚Ìİ’è
+x <- c(t, b1, b2, b3, b4)   #ó‘ÔƒxƒNƒgƒ‹
+v <- c(tau, 0, 0, 0, 0)   #ƒVƒXƒeƒ€ƒmƒCƒY‚ÌƒmƒCƒYƒxƒNƒgƒ‹
+Q <- diag(c(rep(0, 5)))
+F <- diag(para)
+G <- diag(para)
+
+YX <- YXlist[[maxlam]]
+YX <- as.matrix(YX)
+
+##üŒ`ƒKƒEƒXŒ^ó‘Ô‹óŠÔƒ‚ƒfƒ‹‚Ì‘Î”–Ş“x
+fr <- function(b, x, F, V, G, Q, YX){
+  Q[1, 1] <- b[1]
+  Q[1, 1] <- Q[1, 1]^2
+  SIG2 <- 0
+  LDET <- 0
+  Nsum <- 0
+  for(ii in 1:nrow(YX)){
+    ##1Šúæ—\‘ª
+    xp <- F %*% x   #ğŒ•t‚«•½‹Ï‚ğŒvZ
+    Vp <- F %*% V %*% t(F) + G %*% Q %*% t(G)   #ğŒ•t‚«•ªU‚ÌŒvZ
+    
+    ##ƒtƒBƒ‹ƒ^ƒŠƒ“ƒO
+    B <- t(YX[ii, -1]) %*% Vp %*% as.matrix(YX[ii, -1]) + sigmas
+    B1 <- solve(B)
+    K <- Vp %*% as.matrix(YX[ii, -1]) %*% B1   #ƒJƒ‹ƒ}ƒ“ƒQƒCƒ“
+    e <- YX[ii, 1] - t(YX[ii, -1]) %*% xp 
+    xx <- xp + K %*% e   #ğŒ•t‚«Šú‘Ò’l‚ÌŒvZ
+    VV <- Vp - K %*% t(YX[ii, -1]) %*% Vp   #ğŒ•t‚«•ªU‚ÌŒvZ
+    
+    #ƒpƒ‰ƒ[ƒ^‚ÌXV
+    x <- xx
+    V <- VV
+    
+    #‘Î”–Ş“x‚ÌŒvZ
+    SIG2 <- SIG2 + t(e) %*% B1 %*% e
+    LDET <- LDET + log(det(B))
+    Nsum <- Nsum + 1
+  }
+  LL <- LL <- -0.5*(Nsum * (log(2*pi*SIG2)+1) + LDET)
+  return(LL)
+}
+
+##‘Î”–Ş“x‚ğÅ‘å‰»‚·‚é
+b0 <- c(0.05) 
+res <- optim(b0, fr, gr=NULL, x=x, F=F, V=V, G=G, Q=Q, YX=YX,
+             method="Brent", lower=0.0001, upper=0.5, hessian=T, control=list(fnscale=-1))
+(par <- res$par)
+(val <- res$value)
+sigmas   #ŠÏ‘ªƒmƒCƒY‚Ì„’è’l
+
+
+
+####ŒÅ’è‹æŠÔ•½ŠŠ‰»####
+THETAPo <- THETAP[[maxlam]]   
+THETAFo <- THETAF[[maxlam]]
+VPo <- VP[[maxlam]]
+VFo <- VF[[maxlam]]
+
+##ŒÅ’è‹æŠÔ•½ŠŠ‰»ƒpƒ‰ƒ[ƒ^‚ğŠi”[‚·‚é•Ï”
+#•½‹Ïƒpƒ‰ƒ[ƒ^‚ğŠi”[‚µ‚Ä‰Šú’l‚ğİ’è
+THETAfix <- matrix(0, nrow(THETAPo), ncol(THETAPo))
+THETAfix[700, ] <- THETAFo[700, ]   #700“ú–Ú‚Ì‰ñ‹A¬•ª‚ÌŒÅ’è‹æŠÔ•½ŠŠ‰»ƒpƒ‰ƒ[ƒ^(‰Šú’l)
+
+#•ªU‹¤•ªUƒpƒ‰ƒ[ƒ^‚ğŠi”[‚µ‚Ä‰Šú’l‚ğİ’è
+Vfix <- list()
+Vfix[[700]] <- VFo[[700]]   #700“ú–Ú‚Ì•ªU¬•ª‚ÌŒÅ’è‹æŠÔ•½ŠŠ‰»ƒpƒ‰ƒ[ƒ^(‰Šú’l)
+
+##699“ú–Ú‚ÌŠÏ‘ª’l‚©‚ç1“ú–Ú‚ÌŠÏ‘ª’l‚Ü‚Å’€Ÿ“I‚ÉŒÅ’è‹æŠÔ•½ŠŠ‰»‚ğÀs
+cnt <- nrow(THETAfix)-1
+for(i in cnt:1){
+  Afix <- VPo[[i]] %*% F %*% t(VPo[[i]])
+  THETAfix[i, ] <- THETAFo[i, ] + Afix %*% (THETAfix[i+1, ] - THETAPo[i, ])
+  Vfix[[i]] <- VFo[[i]] + Afix %*% (Vfix[[i+1]] - VPo[[i]]) %*% t(Afix)
+}
+
+#Œ‹‰Ê‚ğŠm”F
+round(thetaestimate <- c(colMeans(THETAfix[100:700, 2:5]), lambda[maxlam]), 3)   #100“ú‚©‚ç700“ú‚Ì‰ñ‹A¬•ª‚Ì•½‹Ï„’è’l
+(thetaT <- c(thetatrue, 0.90))   #^‚Ì‰ñ‹A¬•ª
+exp(THETAfix[, 1])   #ƒgƒŒƒ“ƒh‚Ì„’è’l
+exp(trend)   #^‚ÌƒgƒŒƒ“ƒh
+exp(trend) - exp(THETAfix[, 1])   #ƒgƒŒƒ“ƒh‚ÌŒë·
+
+#”Ì”„”—Ê‚ÌŒn—ñ‚ğƒvƒƒbƒg
+plot(1:n, yyt, type="l", xlab="day", ylab="”Ì”„”—Ê", main="ƒJƒ‹ƒ}ƒ“ƒtƒBƒ‹ƒ^‚É‚æ‚é”Ì”„—Ê—\‘ª")   #ŠÏ‘ª’l
+lines(1:n, exp(trend), lwd=2)   #^‚ÌƒgƒŒƒ“ƒh
+lines(1:n, exp(THETAfix[, 1]), pch=3, col=2, lwd=2)   #„’è‚³‚ê‚½ƒgƒŒƒ“ƒh
