@@ -210,6 +210,7 @@ for(i in 1:length(lambdaE)){
 res[[i]] <- optim(b0, frnested, gr=NULL, BUY, PRICE, DISP, CAMP, ROY=ROYl[[i]], 
                   method="BFGS", hessian=TRUE, control=list(fnscale=-1))
 b0 <- res[[i]]$par
+print(res[[i]]$value)
 }
 
 #‘Î”–Þ“x‚ªÅ‘å‚Ìlambda‚ð‘I‚Ô
