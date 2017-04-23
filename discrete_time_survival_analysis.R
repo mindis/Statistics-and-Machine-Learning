@@ -9,7 +9,7 @@ library(lattice)
 #set.seed(324)
 ##データの設定
 t <- 24*4   #半月単位の3年
-n <- 500   #サンプル数
+n <- 1000   #サンプル数
 N <- t*n   #総サンプル数
 col <- 17   #変数数
 
@@ -98,8 +98,8 @@ for(i in 1:n){
     
     if(time[r]==t) 
       {X$hist_l[r+1] <- 0; X$hist_q[r+1] <- 0}
+    print(r)
   }
-    print(i)
 }
 
 ##発生させたデータの確認と集計
@@ -131,7 +131,7 @@ fr <- function(b, q, time, x, y){
 q <- 2   #月数の係数の次数
 para <- ncol(X)+3   #パラメータ数
 b0 <- runif(para, -1, 1)   #初期パラメータの設定
-X
+
 #準ニュートン法で解く
 res <- optim(b0, fr, gr=NULL, q, time=month, X, y,
              method="BFGS", hessian=TRUE, control=list(fnscale=-1))
