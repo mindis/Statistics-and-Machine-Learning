@@ -71,7 +71,7 @@ c(b[1:16], log(b[17]))/sqrt(-diag(solve(fit$hessian)))   #t値
 
 ####両側打ち切りモデル####
 ####データの発生####
-n <- 300000   #サンプル数
+n <- 10000   #サンプル数
 p <- 20   #説明変数数
 
 ##最大値が9以下、最小値が-4以上になるように変数と回帰係数を作成
@@ -153,10 +153,11 @@ round(betaff, 3)   #最小二乗法での係数
 
 #真の平均構造
 round(ym <- X %*% b[1:p] + b[(p+1)], 3)
+round(yy <- ym + rnorm(length(ym), 0, exp(fit$par[length(fit$par)])), 3)
 cbind(score=round(ym, 0), score_true)   #真のスコアとの比較
-table(round(ym, 0))   #推定結果のスコアの分布
+table(round(yy, 0))   #推定結果のスコアの分布
 table(score_true)   #真のスコアの分布
 
-c(b[1:(p+1)], log(b[length(b)]))/sqrt(-diag(solve(fit$hessian)))   #t値
+b/sqrt(-diag(solve(fit$hessian)))   #t値
 (AIC <- -2*fit$value + 2*length(fit$par))   #AIC
 (BIC <- -2*fit$value + log(nrow(X))*length(fit$par))   #BIC
