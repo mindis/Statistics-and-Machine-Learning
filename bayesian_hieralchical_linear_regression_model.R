@@ -175,12 +175,13 @@ for(rp in 1:R){
     #回帰係数の事後分布のサンプリング
     sigma_m <- solve(oldsigma[i] * t(Xind) %*% Xind + solve(sigmapr))
     beta_m <- sigma_m %*% (oldsigma[i] * t(Xind) %*% yind + solve(sigmapr) %*% betapr_h)
-    betan <- mvrnorm(n=1, beta_m, sigma_m)
+    sigma_diag <- diag(diag(sigma_m))   #分散共分散行列を対角化
+    betan <- mvrnorm(n=1, beta_m, sigma_diag)   #多変量正規乱数からbetaをサンプリング
     
     #分散の事後分布のサンプリング
     nu1 <- nu+length(yind)
     s1 <- s0 + t(yind - Xind %*% betan) %*% (yind - Xind %*% betan)
-    sigma_sq <- 1/(rgamma(1, nu1/2, s1/2))
+    sigma_sq <- 1/(rgamma(1, nu1/2, s1/2))   #逆ガンマ分布からsigma^2をサンプリング
 
     oldbetas[i, ] <- betan
     sigmasq.s <- c(sigmasq.s, sigma_sq)
@@ -203,7 +204,7 @@ for(rp in 1:R){
     VSIG[[mkeep]] <- sigmapr
     BETA[, , mkeep] <- oldbetas
     VSIG[[mkeep]] <- sigmasq.s
-    print(round(THETA[mkeep, 1:20], 2))
+    #print(round(THETA[mkeep, 1:20], 2))
   }
 }
 
@@ -216,16 +217,26 @@ matplot(THETA[1:RS, 1:3], type="l", ylab="parameter")
 matplot(t(BETA[1, 1:3, 1:RS]), type="l", ylab="parameter")
 
 ##個人別のパラメータ
-i <- 56   #個人id
-round(rowMeans(BETA[i, , burnin:RS]), 2)   #個人別のパラメータ推定値の事後平均
-round(BETAt.h[i, ], 2)   #個人別の真のパラメータの値
+i <- 155; sum(ID$id==i)   #個人idを抽出
+round(rowMeans(BETA[i, , burnin:RS]), 3)   #個人別のパラメータ推定値の事後平均
+round(BETAt.h[i, ], 3)   #個人別の真のパラメータの値
 apply(BETA[i, , burnin:RS], 1, summary)   #個人別のパラメータ推定値の要約統計
-apply(BETA[i, , burnin:RS], 1, function(x) quantile(x, c(0.025, 0.975)))   #個人別のパラメータ推定値の事後信用区間
+apply(BETA[i, , burnin:RS], 1, function(x) quantile(x, c(0.05, 0.95)))   #個人別のパラメータ推定値の事後信用区間
 
 hist(BETA[i, 10, burnin:RS], col="grey", xlab="beta", main="betaの個人内の事後分布", breaks=20)
 hist(BETA[, 10, 5000], col="grey", xlab="beta", main="betaの個人別の事後分布", breaks=20)
 
-
 ##階層モデルのパラメータ
-round(colMeans(THETA[burnin:RS, 1:20]), 2)   #階層モデルのパラメータ推定値   
-round(as.vector(THETA.h)[1:20], 2)   #階層モデルの真のパラメータの値
+round(colMeans(THETA[burnin:RS, ]), 2)   #階層モデルのパラメータ推定値   
+round(as.vector(THETA.h), 2)   #階層モデルの真のパラメータの値
+
+##事後予測分布でガチャ回数を予測
+Y.pre <- exp(BETA[i, 1, burnin:RS] + t(as.matrix(X[ID$id==i, ]) %*% BETA[i, 2:dim(BETA)[2], burnin:RS]))
+index.c <- as.numeric(colnames(Y.pre)[1])
+summary(Y.pre)
+apply(Y.pre, 2, function(x) round(quantile(x, c(0.05, 0.95)), 3))
+hist(Y.pre[, 1], col="grey", xlab="予測値", main="個人別の事後予測分布", breaks=25)
+Y[index.c]   #真のガチャ回数
+
+
+
