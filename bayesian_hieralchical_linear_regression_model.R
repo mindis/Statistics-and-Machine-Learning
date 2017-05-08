@@ -112,7 +112,7 @@ for(rp in 1:1000){
   
   #個体内回帰モデルの回帰係数
   BETAt.h <- cbind(1, as.matrix(Xh)) %*% THETA.h + matrix(rnorm((coefi+1)*hh, 0, 0.1), hh, (coefi+1))
-
+  
   #応答変数(ガチャ回数)の発生
   Y <- c()
   for(i in 1:hh){
@@ -142,11 +142,13 @@ Xi <- as.matrix(cbind(1, X))
 Zi <- as.matrix(cbind(1, Xh))
 
 #事前分布の設定
-nu <- 0.01
+sigmapr <- 0.01*diag(coefi+1)   #betaの標準偏差の事前分布
+nu <- 0.01  
 s0 <- 0.01
-df <- 15
-V <- df*diag(ncol(X)+1)
-sigmapr <- 0.01*diag(15)   #betaの標準偏差の事前分布
+thetapr <- matrix(rep(0, (coefh+1)*(coefi+1)), nrow=(coefh+1), ncol=(coefi+1))   #階層モデルの回帰係数の事前分布
+deltapr <- 0.01*diag(coefh+1)   #階層モデルの分散の事前分布
+df <- 15   #逆ウィシャート分布の自由度
+V <- df*diag(ncol(X)+1)   #逆ウィシャート分布のパラメータ
 
 #サンプリング結果の保存用
 oldbetas <- matrix(0, hh, (coefi+1))
@@ -159,7 +161,6 @@ VSIG <- list()
 thetapr <- matrix(runif((coefh+1)*(coefi+1), -0.3, 0.5), nrow=(coefh+1), ncol=(coefi+1)) 
 betapr <- Zi %*% thetapr   #betaの事前推定量
 oldsigma <- rep(0.1, hh)
-olddelta <- diag(coefh+1)
 
 
 ####ギブスサンプリングで階層回帰モデルで推定値をサンプリング####
@@ -182,7 +183,7 @@ for(rp in 1:R){
     nu1 <- nu+length(yind)
     s1 <- s0 + t(yind - Xind %*% betan) %*% (yind - Xind %*% betan)
     sigma_sq <- 1/(rgamma(1, nu1/2, s1/2))   #逆ガンマ分布からsigma^2をサンプリング
-
+    
     oldbetas[i, ] <- betan
     sigmasq.s <- c(sigmasq.s, sigma_sq)
   }
@@ -190,7 +191,7 @@ for(rp in 1:R){
   oldsigma <- sigmasq.s
   
   ##多変量回帰モデルによる階層モデルのギブスサンプリング
-  out <- rmultireg(Y=oldbetas, X=Zi, Bbar=oldtheta, A=olddelta, nu=df, V=V)
+  out <- rmultireg(Y=oldbetas, X=Zi, Bbar=thetapr, A=deltapr, nu=df, V=V)
   thetapr <- out$B
   sigmapr <- out$Sigma
   sigmapri <- solve(sigmapr)
@@ -237,6 +238,3 @@ summary(Y.pre)
 apply(Y.pre, 2, function(x) round(quantile(x, c(0.05, 0.95)), 3))
 hist(Y.pre[, 1], col="grey", xlab="予測値", main="個人別の事後予測分布", breaks=25)
 Y[index.c]   #真のガチャ回数
-
-
-
