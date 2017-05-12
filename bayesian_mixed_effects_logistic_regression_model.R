@@ -1,5 +1,7 @@
 #####変量効果ロジスティック回帰モデル#####
 library(MASS)
+library(bayesm)
+library(MCMCpack)
 library(glmm)
 library(lme4)
 library(reshape2)
@@ -89,4 +91,21 @@ lines(val, p.f, type="l", lwd=2, col=2)
 
 
 ####マルコフ連鎖モンテカルロ法で変量効果ロジスティック回帰モデルを推定####
+##変量効果ロジスティック回帰モデルの対数尤度を定義
+loglike <- function(beta, b, y, X, Z){
+  #ロジットの計算
+  logit.fix <- beta[1] + as.matrix(X) %*% beta[2:length(beta)] 
+  logit.random <- rowSums(Z * b)
+  logit <- logit.fix + logit.random
+  
+  #確率の計算
+  p <- exp(logit)/(1+exp(logit))
+  
+  #対数尤度の計算
+  LLs <- y*log(p) + (1-y)*log(1-p)
+  LL <- sum(LL)
+  return(LL)
+}
+
+##MCMCのアルゴリズムの設定
 
