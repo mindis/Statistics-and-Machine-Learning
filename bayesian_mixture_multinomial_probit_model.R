@@ -132,15 +132,15 @@ for(i in 1:seg){
 z.seg <- rep(1:seg, rep(hh, seg))
 
 ##パラメータの設定
-beta1 <- runif(seg, -9.0, -5.0)   #価格のパラメータ
-beta2 <- runif(seg, 6.2, 9.2)   #割引率のパラメータ
-beta3 <- runif(seg, 1.3, 3.2)   #特別陳列のパラメータ
-beta4 <- runif(seg, 1.2, 3.3)   #キャンペーンのパラメータ
+beta1 <- c(-9.0, -7.0, -5.0)   #価格のパラメータ
+beta2 <- c(8.2, 5.5, 9.2)   #割引率のパラメータ
+beta3 <- c(0.7, 2.3, 3.2)   #特別陳列のパラメータ
+beta4 <- c(0.5, 1.2, 3.3)   #キャンペーンのパラメータ
 
 #ブランド1～4の相対ベース販売力
 beta0 <- matrix(0, nrow=seg, ncol=choise-1)
 for(i in 1:seg){
-  beta0[i, ] <- c(runif(1, -0.2, 0.8), runif(1, 0.4, 1.6), runif(1, 1.0, 2.3), runif(1, 1.5, 3.0))   
+  beta0[i, ] <- c(runif(1, -1.2, 2.8), runif(1, -1.5, 3.6), runif(1, -1.0, 4.3), runif(1, -1.5, 4.0))   
 }
 
 #回帰係数を結合
@@ -184,9 +184,6 @@ for(i in 1:H){
   BUY[i, Y[i]] <- 1
 }
 
-
-
-
 table(Y)   #選択ブランドの集計
 round(data.frame(Y, U=U), 1)   #効用と選択ブランドを比較
 
@@ -220,52 +217,175 @@ CAMP.v <- as.numeric(t(CAMP.r))
 X <- data.frame(BP=BP, PRICE.v, DISC.v, DISP.v, CAMP.v)   #データの結合
 XM <- as.matrix(X)   #データ形式を行列に変換
 
+#IDのインデックスを設定
+index <- rep(1:H, rep(choise-1, H))   
+
+#Xをベクトル化しておく
+XV <- matrix(0, nrow=H, ncol=(choise-1)*ncol(XM))
+for(i in 1:H){
+  XV[i, ] <- as.numeric(XM[index==i, ])
+}
+
 ##事前分布の設定
 a <- rep(10, seg)   #ディクレリ事前分布
 
+##サンプリング結果の保存用配列
+Util <- array(0, dim=c(hh, choise-1, R/keep))
+BETA <- matrix(0, nrow=R/keep, length(beta0)+k-1)
+SIGMA <- array(0, dim=c(choise-1, choise-1, R/keep))
+Z <- matrix(0, nrow=R/keep, ncol=hh)
+THETA <- matrix(0, nrow=R/keep, ncol=seg)
 
+##初期パラメータの設定
+#多項プロビットモデルで初期値を設定
+data1 <- list(p=choise, y=Y[g==1], X=XM[1:(length(g[g==1])*(choise-1)), ])
+mcmc1 <- list(R=10000, keep=1)
 
+out <- rmnpGibbs(Data=data1, Mcmc=mcmc1)   #多項プロビットモデルを推定
+betaf <- colMeans(out$betadraw[5000:nrow(out$betadraw), ])   
+sigmaf <- matrix(colMeans(out$sigmadraw[5000:nrow(out$sigmadraw), ]), nrow=choise-1, ncol=choise-1)
 
-set.seed(66)
-p=3
-n=500
-beta=c(-1,1,1,2)
-sigma=matrix(c(1,.5,.5,1),ncol=2)
-k=length(beta)
-X1=matrix(runif(n*p,min=0,max=2),ncol=p); X2=matrix(runif(n*p,min=0,max=2),ncol=p)
-X=createX(p,na=2,nd=NULL,Xa=cbind(X1,X2),Xd=NULL,DIFF=TRUE,base=p)
+#セグメント別に初期値を設定
+#betaの初期値
+betaf.M <- matrix(betaf, nrow=seg, ncol=length(betaf), byrow=T)
+betaold <- betaf.M + matrix(runif(seg*length(betaf), -0.5, 0.5), nrow=seg, ncol=length(betaf))
 
-simmnp= function(X,p,n,beta,sigma) {
-  indmax=function(x) {which(max(x)==x)}
-  Xbeta=X%*%beta
-  w=as.vector(crossprod(chol(sigma),matrix(rnorm((p-1)*n),ncol=n)))+ Xbeta
-  w
-  w=matrix(w,ncol=(p-1),byrow=TRUE)
-  maxw=apply(w,1,max)
-  y=apply(w,1,indmax)
-  y=ifelse(maxw < 0,p,y)
-  return(list(y=y,X=X,beta=beta,sigma=sigma))
+#sigmaの初期値
+sigmaold <- list()
+for(i in 1:seg){
+  sigmaold[[i]] <- sigmaf
 }
-(crossprod(chol(sigma),matrix(rnorm((p-1)*n),ncol=n)))
-Xbeta
-matrix(rnorm((p-1)*n),ncol=n)
-chol(sigma)
 
-simout=simmnp(X,p,500,beta,Sigma)
+#thetaの初期値
+theta <- c(0.3, 0.3, 0.4)
 
-Data1=list(p=p,y=simout$y,X=simout$X)
-Mcmc1=list(R=20000,keep=1)
 
-out=rmnpGibbs(Data=Data1,Mcmc=Mcmc1)
-round(colMeans(out$betadraw[10000:20000, ]), 2)
-beta
+####マルコフ連鎖モンテカルロ法で混合多項プロビットモデルを推定####
+##セグメント別に多項プロビットモデルを推定
+##推定のための準備
+#説明変数のセグメントの指示変数を作成
+gx <- matrix(0, nrow=H, ncol=choise-1)
+for(s in 1:(choise-1)){
+  gx[, s] <- g
+}
+gx <- as.numeric(t(gx))
 
-cat(" Summary of Betadraws ",fill=TRUE)
-betatilde=out$betadraw/sqrt(out$sigmadraw[,1])
-attributes(betatilde)$class="bayesm.mat"
-summary(betatilde,tvalues=beta)
+burnin <- 3000   #バーンイン期間
+R <- 10000
 
-cat(" Summary of Sigmadraws ",fill=TRUE)
-sigmadraw=out$sigmadraw/out$sigmadraw[,1]
-attributes(sigmadraw)$class="bayesm.var"
-summary(sigmadraw,tvalues=as.vector(Sigma[upper.tri(Sigma,diag=TRUE)]))
+#推定結果の格納用配列
+beta.s <- matrix(0, nrow=seg, ncol=length(betaf))
+sigma.s <- list() 
+BETA.S <- list()
+SIGMA.S <- list()
+  
+##多項プロビットモデルをギブスサンプリングでセグメント別に推定
+for(s in 1:seg){
+#データの設定
+  data1 <- list(p=choise, y=Y[g==s], X=XM[gx==s, ])
+  mcmc1 <- list(R=10000, keep=1)
+  
+  #多項プロビットモデルを推定
+  out <- rmnpGibbs(Data=data1, Mcmc=mcmc1)   #多項プロビットモデルを推定
+  beta.s[s, ] <- colMeans(out$betadraw[burnin:nrow(out$betadraw), ])   
+  sigma.s[[s]] <- matrix(colMeans(out$sigmadraw[burnin:nrow(out$sigmadraw), ]), nrow=choise-1, ncol=choise-1)
+  BETA.S[[s]] <- out$betadraw
+  SIGMA.S[[s]] <- out$sigmadraw
+}
+
+####混合多項プロビットモデルの推定結果と要約####
+##パラメータの識別性を確保
+BETA.SI <- list()
+SIGMA.SI <- list()
+
+#共分散行列の(1, 1)要素を1に固定する制約
+for(s in 1:seg){
+  BETA.SI[[s]] <- BETA.S[[s]] / matrix(SIGMA.S[[s]][, 1], nrow=R, ncol=ncol(beta.s))
+  SIGMA.SI[[s]] <- SIGMA.S[[s]] / matrix(SIGMA.S[[s]][, 1], nrow=R, ncol=(choise-1)^2)
+}
+
+##パラメータの要約
+round(colMeans(BETA.SI[[1]][burnin:R, ]), 3)
+
+  
+SIGMA.S[[1]]
+
+matrix(SIGMA.S[[1]])[, 1] / 
+
+round(beta.s, 3)
+round(betat, 3)
+sigma.s
+Cov
+
+##潜在変数Zのサンプリング
+#多項プロビットモデルの確率の計算
+Pr <- list()
+for(s in 1:seg){
+  Pr[[s]] <- t(apply(XV, 1, function(x) abs(mnpProb(betaold[s, ] / sigmaold[[s]][1, 1], 
+                                                    sigmaold[[s]] / sigmaold[[s]][1, 1], 
+                                                    matrix(x, nrow=choise-1, ncol=ncol(XM)), r=25))))
+}
+
+#応答変数Yと対応するセグメントごとの確率を計算
+Pr.y <- matrix(0, nrow=H, ncol=seg)
+for(s in 1:seg){0
+  Pr.y[, s] <- rowSums(Pr[[s]] * BUY)
+}
+
+#潜在変数Zを発生
+z1 <- Pr.y * matrix(theta, nrow=H, ncol=length(theta), byrow=T)
+zp <- z1 / rowSums(z1)
+z <- t(apply(zp, 1, function(x) rmultinom(1, 1, x)))
+Z <- apply(z, 1, which.max)
+
+##ギブスサンプリングで多項プロビットモデルを推定
+#固有値分解で強制的に正定値行列に修正する
+for(i in 1:seg){
+  UDU <- eigen(sigmaold[[s]])
+  val <- UDU$values
+  vec <- UDU$vectors
+  D <- ifelse(val < 0, val + abs(val) + 0.00001, val)
+  sigmaold[[s]] <- vec %*% diag(D) %*% t(vec)
+}
+
+for(s in 1:seg){
+  index.z <- subset(1:length(Z), Z==s)
+  XZ <- XM[index %in% index.z, ]
+  
+  #データの設定
+  Data1 <- list(p=choise, y=Y[index.z], X=XZ)
+  Mcmc1 <- list(beta0=betaold[s, ], sigma0=sigmaold[[s]], R=1000, keep=1)
+  
+  #多項プロビットモデルをギブスサンプリング
+  out=rmnpGibbs(Data=Data1,Mcmc=Mcmc1)
+  betaold[s, ] <- colMeans(out$betadraw[500:1000, ])
+  sigmaold[[s]] <- matrix(colMeans(out$sigmadraw[500:1000, ]), nrow=choise-1, ncol=choise-1)
+}
+
+##thetaをギブスサンプリング
+theta <- table(Z) / sum(table(Z))
+round(Pr.y[1:20, ], 3)
+theta
+betaold
+round(betat, 2)
+
+
+Pr <- list()
+for(s in 1:seg){
+  Pr[[s]] <- t(apply(XV, 1, function(x) abs(mnpProb(betat[s, ] / Cov[[s]][1, 1], 
+                                                    Cov[[s]] / Cov[[s]][1, 1], 
+                                                    matrix(x, nrow=choise-1, ncol=ncol(XM)), r=25))))
+}
+
+#応答変数Yと対応するセグメントごとの確率を計算
+Pr.y <- matrix(0, nrow=H, ncol=seg)
+for(s in 1:seg){
+  Pr.y[, s] <- rowSums(Pr[[s]] * BUY)
+}
+
+cbind(Y, round(Pr.y, 2))
+
+cbind(Y, round(Pr[[1]], 2), round(Pr[[2]], 2))
+
+betat
+betaold
