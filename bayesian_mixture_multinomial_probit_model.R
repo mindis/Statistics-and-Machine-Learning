@@ -279,6 +279,7 @@ sigma.s <- list()
 BETA.S <- list()
 SIGMA.S <- list()
   
+
 ##多項プロビットモデルをギブスサンプリングでセグメント別に推定
 for(s in 1:seg){
 #データの設定
@@ -305,18 +306,43 @@ for(s in 1:seg){
 }
 
 ##パラメータの要約
-round(colMeans(BETA.SI[[1]][burnin:R, ]), 3)
+#betaの推定値
+BETA <- matrix(0, nrow=seg, ncol=ncol(BETA.SI[[1]]))
+for(i in 1:seg){
+  BETA[i, ] <- colMeans(BETA.SI[[i]][burnin:R, ])
+}
+round(BETA, 3)
 
-  
-SIGMA.S[[1]]
+#sigmaの推定値
+SIGMA <- matrix(0, nrow=seg, ncol=ncol(SIGMA.SI[[1]]))
+for(i in 1:seg){
+  SIGMA[i, ] <- colMeans(SIGMA.SI[[i]][burnin:R, ])
+}
+round(SIGMA1 <- matrix(SIGMA[1, ], nrow=choise-1, ncol=choise-1), 3)
+round(SIGMA2 <- matrix(SIGMA[2, ], nrow=choise-1, ncol=choise-1), 3)
+round(SIGMA3 <- matrix(SIGMA[3, ], nrow=choise-1, ncol=choise-1), 3)
 
-matrix(SIGMA.S[[1]])[, 1] / 
+#相関係数を推定
+round(cov2cor(SIGMA1), 3)  
+round(cov2cor(SIGMA2), 3) 
+round(cov2cor(SIGMA3), 3) 
 
-round(beta.s, 3)
-round(betat, 3)
-sigma.s
-Cov
 
+##多項プロビットモデルの確率の計算
+SIGMA.l <- list(SIGMA1, SIGMA2, SIGMA3)
+Pr <- list()
+for(s in 1:seg){
+  Pr[[s]] <- t(apply(XV, 1, function(x) abs(mnpProb(BETA[s, ] / SIGMA.l[[s]][1, 1], 
+                                                    SIGMA.l[[s]] / SIGMA.l[[s]][1, 1], 
+                                                    matrix(x, nrow=choise-1, ncol=ncol(XM))))))
+}
+
+#選択結果とセグメント別の確率の表示
+round(data.frame(z.seg, Y, P1=Pr[[1]], P2=Pr[[2]], P3=Pr[[3]]), 2)
+
+
+
+####マルコフ連鎖モンテカルロ法で混合多項プロビットモデルを推定####
 ##潜在変数Zのサンプリング
 #多項プロビットモデルの確率の計算
 Pr <- list()
@@ -383,9 +409,4 @@ for(s in 1:seg){
   Pr.y[, s] <- rowSums(Pr[[s]] * BUY)
 }
 
-cbind(Y, round(Pr.y, 2))
 
-cbind(Y, round(Pr[[1]], 2), round(Pr[[2]], 2))
-
-betat
-betaold
