@@ -1,4 +1,11 @@
 #####ロジスティック回帰モデル#####
+library(knitr)
+library(caret)
+library(reshape2)
+library(plyr)
+library(ggplot2)
+library(lattice)
+
 ####データの発生####
 #set.seed(4543)
 #説明変数とパラメータの設定
@@ -61,4 +68,8 @@ rbind(beta, b, beta-b)   #パラメータの誤差
 res2 <- glm(choice ~ V1 + V2 + V3 + V4 +V5 + V6 + V7 + V8 + V9 + V10, data = Xy, family=binomial(link=logit))
 summary(res2)
 glmb <- coef(res2)
-round(rbind(beta, b, glmb, beta-b, glmb-b), 3)   #パラメータの誤差
+
+error <- rbind(b, glmb, beta, b-beta, glmb-beta)   #パラメータの誤差
+rownames(error) <- c("beta", "glmb", "btrue", "beta-btrue", "glmb-btrue")
+kable(round(error, 2))
+
