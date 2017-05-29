@@ -143,7 +143,8 @@ rw <- t(chol(sbeta*invH))   #ランダムウォークの分散
 rootBi <- t(chol(B0))   #事前分布の精度
 
 #ディクレリ事前分布の設定
-a <- rep(10, k)
+a <- rep(2, k)
+
 
 ##パラメータの保存用配列
 #推定結果の格納用配列
@@ -214,10 +215,9 @@ for(rp in 1:R){
     }
   }
   
-  print(round(c(rp, alpha, logl, theta), 2))
-  
   ##混合率thetaのサンプリング
-  theta <- colSums(z1) / hh
+  dir.alpha <- a + colSums(z)
+  theta <- as.numeric(rdirichlet(dir.alpha))   #ディクレリ乱数を発生
   
   ##サンプリング結果の保存
   #サンプリングを保存する回数ならbetaを書き込む
@@ -227,6 +227,7 @@ for(rp in 1:R){
     THETA[mkeep, ] <- theta
     ZP[, , mkeep] <- z1
     Z[mkeep, ] <- zi
+    print(round(c(rp, alpha, logl, theta), 2))
   }
 }
 
