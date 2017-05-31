@@ -9,7 +9,7 @@ library(ggplot2)
 library(lattice)
 
 ####データの発生####
-seg <- 2
+k <- seg <- 2
 n <- 2000   #セグメントのサンプル数
 N <- seg*n   #全サンプル数
 seg.z <- rep(1:2, rep(n, seg))
@@ -156,50 +156,52 @@ for(s in 1:seg){
   }
   z <- c(z, zs)
 }
-
+ZZ <- 1-z   #打ち切り指示変数に変換
 
 sum(z[seg.zw==1]); sum(z[seg.zw==2])   #コンバージョン数
 round(cbind(Y, z), 3)
 mean(Y[z==1]); median(Y[z==1])   #コンバージョンした場合の滞在時間平均および滞在時間中央値
 mean(Y[z==0]); median(Y[z==0])   #コンバージョンしていない場合の滞在時間平均および滞在時間中央値
 
-ZZ <- 1-z   #打ち切り指示変数に変換
-
 
 ####EMアルゴリズムで混合ワイブル比例ハザードモデルを推定####
 ##完全データでの混合ワイブル比例ハザードモデルの対数尤度
 fr <- function(b, Y, X, Z, k, col, zpt){
   #パラメータを定義
-  beta0 <- b[1:k]
-  beta1 <- b[(k+1):(k+k*col)]
-  alpha <- b[(k+k*col+1):(k+k*col+2)]
-  betaM <- matrix(beta1, nrow=col, ncol=k, byrow=T)
+  beta10 <- b[1]
+  beta11 <- b[2:(col+1)]
+  alpha1 <- exp(b[col+2])
+  beta20 <- b[col+3]
+  beta21 <- b[(col+4):(2*col+3)]
+  alpha2 <- exp(b[2*col+4])
   
   #線形結合
-  lambda1 <- exp(beta0[1] + as.matrix(X) %*% betaM[1, ])   
-  lambda2 <- exp(beta0[2] + as.matrix(X) %*% betaM[2, ])  
+  lambda1 <- exp(beta10 + as.matrix(X) %*% beta11)   
+  lambda2 <- exp(beta20 + as.matrix(X) %*% beta21)  
   
   #対数尤度を計算
-  LL1 <- sum(Z*(log(lambda1)+log(alpha[1])+(alpha[1]-1)*log(Y)) - lambda1*Y^alpha[1])   #セグメント1の対数尤度を計算
-  LL2 <- sum(Z*(log(lambda2)+log(alpha[2])+(alpha[2]-1)*log(Y)) - lambda2*Y^alpha[2])   #セグメント2の対数尤度を計算
+  LL1 <- Z*(log(lambda1)+log(alpha1)+(alpha1-1)*log(Y)) - lambda1*Y^alpha1   #セグメント1の対数尤度を計算
+  LL2 <- Z*(log(lambda2)+log(alpha2)+(alpha2-1)*log(Y)) - lambda2*Y^alpha2   #セグメント2の対数尤度を計算
   LL <- sum(zpt * cbind(LL1, LL2))   #潜在確率zの重み付き対数尤度
   return(LL)
 }
 
 ##観測データでの尤度と潜在変数zの計算
 obsll <- function(x, Y, X, Z, r, k, hh, col){
-  beta0 <- x[1:k]
-  beta1 <- x[(k+1):(k+k*col)]
-  alpha <- x[(k+k*col+1):(k+k*col+2)]
-  betaM <- matrix(beta1, nrow=k, ncol=col, byrow=T)
+  beta10 <- x[1]
+  beta11 <- x[2:(col+1)]
+  alpha1 <- exp(x[col+2])
+  beta20 <- x[col+3]
+  beta21 <- x[(col+4):(2*col+3)]
+  alpha2 <- exp(x[2*col+4])
   
   #線形結合
-  lambda1 <- exp(beta0[1] + as.matrix(X) %*% betaM[1, ])   
-  lambda2 <- exp(beta0[2] + as.matrix(X) %*% betaM[2, ])  
+  lambda1 <- exp(beta10 + as.matrix(X) %*% beta11)   
+  lambda2 <- exp(beta20 + as.matrix(X) %*% beta21)  
   
   #尤度と対数尤度を計算
-  LLs1 <- Z*(log(lambda1)+log(alpha[1])+(alpha[1]-1)*log(Y)) - lambda1*Y^alpha[1]   #セグメント1の対数尤度を計算
-  LLs2 <- Z*(log(lambda2)+log(alpha[2])+(alpha[2]-1)*log(Y)) - lambda2*Y^alpha[2]   #セグメント2の対数尤度を計算
+  LLs1 <- Z*(log(lambda1)+log(alpha1)+(alpha1-1)*log(Y)) - lambda1*Y^alpha1   #セグメント1の対数尤度を計算
+  LLs2 <- Z*(log(lambda2)+log(alpha2)+(alpha2-1)*log(Y)) - lambda2*Y^alpha2   #セグメント2の対数尤度を計算
   LLe <- exp(cbind(LLs1, LLs2))   #対数尤度を尤度に戻す
   
   #観測データの対数尤度と潜在変数zの計算
@@ -212,8 +214,7 @@ obsll <- function(x, Y, X, Z, r, k, hh, col){
   z1 <- LLr / z0   #潜在変数zの計算
   
   #観測データの対数尤度
-  LLz <- apply(matrix(r, nrow=hh, ncol=k, byrow=T) * LLr, 1, sum)
-  LLz <- ifelse(LLz==0, 10^-300, LLz)   #0の尤度を小さい正の値に置き換える
+  LLz <- apply(matrix(r, nrow=hh, ncol=k, byrow=T) * LLe, 1, sum)
   LLobz <- sum(log(LLz))   #観測データでの対数尤度
   rval <- list(LLobz=LLobz, z1=z1, LLs=LLe)
   return(rval)
@@ -221,28 +222,49 @@ obsll <- function(x, Y, X, Z, r, k, hh, col){
 
 
 ##アルゴリズムの設定
-##EMアルゴリズムの初期値の設定
+#EMアルゴリズムの設定
+hh <- nrow(XW)
+col <- ncol(XW)
 iter <- 0
+dl <- 100   #EMステップでの対数尤度の初期値の設定
+tol <- 1
 
 #パラメータの初期値の設定
-betaf0 <- runif(2, 0.5, 2.0)
-betaf1 <- runif(ncol(XW)*2, -1, 1)
-alphaf <- runif(2, 0.5, 1.5)
-betaf <- c(betaf0, betaf1, alphaf)
-r <- c(0.5, 0.5)   #混合率の初期値
+for(i in 1:10000){
+  print(i)
+  #初期値を設定
+  beta10 <- runif(1, 0.5, 2.0)
+  beta11 <- runif(ncol(XW), -1.5, 1.5)
+  alpha1 <- runif(1, 0.4, 1.4)
+  beta20 <- runif(1, 0.5, 2.0)
+  beta21 <- runif(ncol(XW), -1.5, 1.5)
+  alpha2 <- runif(1, 0.4, 0.4)
+  beta <- c(beta10, beta11, alpha1, beta20, beta21, alpha2)
+  r <- c(0.5, 0.5)   #混合率の初期値
+  
+  obsllz <- obsll(x=beta, Y=Y, X=XW, Z=ZZ, r=r, k=k, hh=nrow(XW), col=ncol(XW))
+  z <- obsllz$z1
+  LL1 <- obsllz$LLobz
+  r <- apply(z, 2, sum) / hh   #混合率の計算
+  
+  #準ニュートン法で対数尤度を最大化
+  res <- try(optim(beta, fr, gr=NULL, Y=Y, X=XW, Z=ZZ, k=k, col=col, zpt=z, method="BFGS", 
+               hessian=FALSE, control=list(fnscale=-1)), silent=TRUE)
+  if(class(res) == "try-error") {next} else {break}   #エラー処理
+}
+
 
 #観測データの尤度と潜在変数zの初期値
-obsllz <- obsll(x=betaf, Y=Y, X=XW, Z=ZZ, r=r, k=k, hh=nrow(XW), col=ncol(XW))
+beta <- res$par <- res$par   #更新されたbetaの初期値
+obsllz <- obsll(x=beta, Y=Y, X=XW, Z=ZZ, r=r, k=k, hh=nrow(XW), col=ncol(XW))
 z <- obsllz$z1
 LL1 <- obsllz$LLobz
 
-dl <- 100   #EMステップでの対数尤度の初期値の設定
-tol <- 0.1
 
 ##EMアルゴリズムによる推定
 while(abs(dl) >= tol){   #dlがtol以上なら繰り返す
   #準ニュートン法で完全データを最適化
-  res <- optim(betaf, fr, gr=NULL, Y=Y, X=XW, Z=ZZ, k=k, col=col, zpt=z, method="BFGS", 
+  res <- optim(beta, fr, gr=NULL, Y=Y, X=XW, Z=ZZ, k=k, col=col, zpt=z, method="BFGS", 
                hessian=FALSE, control=list(fnscale=-1))
   
   beta <- as.numeric(res$par)   #推定されたパラメータ
@@ -258,3 +280,25 @@ while(abs(dl) >= tol){   #dlがtol以上なら繰り返す
   LL1 <- LL
   print(LL)
 }
+
+####推定された結果の要約と統計量
+#推定されたパラメータ
+round(beta1 <- res$par[1:(col+1)], 3)   #seg1の回帰係数
+round(beta2 <- res$par[(col+3):(2*col+3)], 3)   #seg2の回帰係数
+
+round(alpha1 <- exp(res$par[2+col]), 3)   #seg1のスケールパラメータ
+round(exp(beta1), 3)   #seg1のハザード比
+round(alpha2 <- exp(res$par[2*col+4]), 3)   #seg2のスケールパラメータ
+round(exp(beta2), 3)   #seg2のハザード比
+
+#混合率とセグメントへの所属確率
+round(r, 3)   #混合率
+round(z, 3)   #潜在確率
+cbind(apply(z, 1, which.max), seg.zw)   #セグメントへの所属
+
+#AICとBICの計算
+round(LL, 3)   #最大化された観測データの対数尤度
+round(AIC <- -2*LL + 2*(length(res$par)), 3)   #AIC
+round(BIC <- -2*LL + log(hh)*length(res$par), 3) #BIC
+
+
