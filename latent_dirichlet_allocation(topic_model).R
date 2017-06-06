@@ -11,10 +11,10 @@ library(ggplot2)
 ####データの発生####
 #set.seed(423943)
 #データの設定
-k <- 4   #トピック数
+k <- 5   #トピック数
 d <- 200   #文書数
-v <- 50   #語彙数
-w <- 100   #1文書あたりの単語数 
+v <- 100   #語彙数
+w <- 200   #1文書あたりの単語数 
 
 #パラメータの設定
 alpha0 <- runif(k, 0.1, 1.25)   #文書のディレクリ事前分布のパラメータ
@@ -40,7 +40,7 @@ for(i in 1:d){
   ZS[[i]] <- zdn[, 1]
   print(i)
 }
-barplot(colSums(z), names.arg=c("seg1", "seg2", "seg3", "seg4"))
+barplot(colSums(z), names.arg=c("seg1", "seg2", "seg3", "seg4", "seg5"))
 round(colSums(WX)/sum(WX), 3)   #単語の出現頻度
 
 
@@ -56,10 +56,11 @@ alpha <- rep(1.5, k)
 beta <- rep(100/v, v)
 
 #パラメータの初期値
-theta.ini <- matrix(runif(d*k), nrow=d, ncol=k)
-phi.ini <- matrix(runif(v*k), nrow=k, ncol=v)
-theta <- theta.ini/rowSums(theta.ini)   #文書トピックのパラメータの初期値
-phi <- phi.ini/rowSums(phi.ini)   #単語トピックのパラメータの初期値
+theta.ini <- runif(k, 0.5, 2)
+phi.ini <- runif(v, 0.5, 1)
+theta <-    rdirichlet(d, theta.ini)   #文書トピックのパラメータの初期値
+phi <- rdirichlet(k, phi.ini)   #単語トピックのパラメータの初期値
+
 
 #パラメータの格納用配列
 THETA <- array(0, dim=c(d, k, R/keep))
@@ -80,9 +81,9 @@ for(i in 1:v){
     v.vec <- c(v.vec, rep(i, WX[j, i]))
   }
 }
+
 index.vec <- cbind(v.vec, d.vec)
 id.w <- cbind(id2, id1)
-
 
 #抽出する潜在確率の行を取得
 index.z <- apply(index.vec, 1, function(x) subset(1:nrow(id.w), id.w[, 1]==x[1] & id.w[, 2]==x[2]))
@@ -114,10 +115,10 @@ for(rp in 1:R){
   for(i in 1:k){
     zpt[, , i] <- burden.seg[, , i] / burden.sum
   }
-  
+
   ZP <- matrix(zpt, nrow=v*d, ncol=k)   #潜在確率を単語順に配列
   ZW <- ZP[index.z, ]
-  
+
   #単語ごとにトピックzをサンプリング
   Z <- t(apply(ZW, 1, function(x) rmultinom(1, 1, x)))
   
@@ -126,12 +127,13 @@ for(rp in 1:R){
   for(i in 1:d){
    dir.theta[i, ] <- colSums(Z[d.vec==i, ]) + alpha 
   }
+  
   theta <- t(apply(dir.theta, 1, function(x) rdirichlet(1, x)))   #ディレクリ分布からthetaをサンプリング
 
   ##単語トピック分布phiをサンプリング
   #ディレクリ分布のパラメータを決定
   for(i in 1:v){
-   dir.phi[, i] <- colSums(matrix(WX[, i], nrow=length(v.vec[v.vec==i]), ncol=k) * Z[v.vec==i, ]) + beta[i]
+   dir.phi[, i] <- colSums(Z[v.vec==i, ]) + beta[i]
   }
   
   phi <- t(apply(dir.phi, 1, function(x) rdirichlet(1, x)))   #ディレクリ分布からphiをサンプリング
@@ -151,22 +153,24 @@ for(rp in 1:R){
 
 
 ####推定結果と適合度####
-burnin <- 1000
+burnin <- 1500
 Rkeep <- R/keep
 
 ##サンプリング結果のプロット
 matplot(t(THETA[1:3, 1, ]), type="l", lty=1, ylab="value")
-matplot(t(THETA[1:3, 2, ]), type="l", lty=1, ylab="value")
+matplot(t(THETA[4:6, 2, ]), type="l", lty=1, ylab="value")
 matplot(t(PHI[1, 1:3, ]), type="l", lty=1, ylab="value")
 matplot(t(PHI[2, 1:3, ]), type="l", lty=1, ylab="value")
 
 #thetaの事後平均と真のthetaの比較
 round(THETA1 <- cbind(theta0, rowMeans(THETA[, 1, burnin:Rkeep]), rowMeans(THETA[, 2, burnin:Rkeep]), 
-      rowMeans(THETA[, 3, burnin:Rkeep]), rowMeans(THETA[, 4, burnin:Rkeep])), 3)
+      rowMeans(THETA[, 3, burnin:Rkeep]), rowMeans(THETA[, 4, burnin:Rkeep]), 
+      rowMeans(THETA[, 5, burnin:Rkeep])), 3)
 
 #phiの事後平均と真のphiの比較
 round(PHI1 <- rbind(phi0, rowMeans(PHI[1, , burnin:Rkeep]), rowMeans(PHI[2, , burnin:Rkeep]),
-      rowMeans(PHI[3, , burnin:Rkeep]), rowMeans(PHI[4, , burnin:Rkeep])), 3)
+      rowMeans(PHI[3, , burnin:Rkeep]), rowMeans(PHI[4, , burnin:Rkeep]), 
+      rowMeans(PHI[5, , burnin:Rkeep])), 3)
 
 #トピックの事後分布
 segment <- apply(W.SEG[, (burnin/2):(Rkeep/2)], 1, table)
