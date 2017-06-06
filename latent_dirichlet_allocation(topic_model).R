@@ -138,6 +138,9 @@ for(rp in 1:R){
   
   phi <- t(apply(dir.phi, 1, function(x) rdirichlet(1, x)))   #ディレクリ分布からphiをサンプリング
   
+  ##ハイパーパラメータの更新
+  
+  
   ##サンプリング結果の保存
   #サンプリングを保存する回数ならbetaを書き込む
   if(rp%%keep==0){
@@ -158,7 +161,7 @@ Rkeep <- R/keep
 
 ##サンプリング結果のプロット
 matplot(t(THETA[1:3, 1, ]), type="l", lty=1, ylab="value")
-matplot(t(THETA[4:6, 2, ]), type="l", lty=1, ylab="value")
+matplot(t(THETA[4:6, 1, ]), type="l", lty=1, ylab="value")
 matplot(t(PHI[1, 1:3, ]), type="l", lty=1, ylab="value")
 matplot(t(PHI[2, 1:3, ]), type="l", lty=1, ylab="value")
 
