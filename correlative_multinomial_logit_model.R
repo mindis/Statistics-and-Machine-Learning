@@ -37,6 +37,7 @@ corrM <- function(col, lower, upper){
 }
 
 ##相関行列から分散共分散行列を作成する関数を定義
+
 covmatrix <- function(col, corM, lower, upper){
   m <- abs(runif(col, lower, upper))
   c <- matrix(0, col, col)
@@ -92,7 +93,7 @@ for(i in 1:choise){
 ROYL <- matrix(runif(hh), nrow=hh, ncol=1)
 
 ##分散共分散行列の設定
-corM <- corrM(col=choise, lower=0.7, upper=0.8)   #相関行列を作成
+corM <- corrM(col=choise, lower=-0.7, upper=0.8)   #相関行列を作成
 Sigma <- covmatrix(col=choise, corM=corM, lower=1, upper=1.5)   #分散共分散行列
 Cov <- Sigma$covariance
 
@@ -190,35 +191,83 @@ oldcov <- Sigma.f$covariance
 
 #効用の平均構造の初期値
 b <- oldbeta[(choise+1):length(oldbeta)]
-u <- XM %*% betat#oldbeta
-
-old.util0 <- matrix(u, nrow=hh, ncol=choise, byrow=T) + mvrnorm(hh, rep(0, choise), oldcov)
-old.util1 <- matrix(u, nrow=hh, ncol=choise, byrow=T) + mvrnorm(hh, rep(0, choise), Cov)
-old.util2 <- matrix(u, nrow=hh, ncol=choise, byrow=T) + mvrnorm(hh, rep(0, choise), diag(diag(Cov)))
-old.util3 <- matrix(u, nrow=hh, ncol=choise, byrow=T)
 
 round(cbind(Y, Pr, exp(old.util)/rowSums(exp(old.util)), 
 exp(matrix(u, nrow=hh, ncol=choise, byrow=T))/rowSums(exp(matrix(u, nrow=hh, ncol=choise, byrow=T)))), 2)
 
+
 ####マルコフ連鎖モンテカルロ法で推定####
-d0 <- exp(old.util0)
-LLs0 <- rowSums(Y*old.util0) - log(rowSums(d0))
-LL0 <- sum(LLs0)
+##データ拡大法で多変量正規分布から潜在効用を発生させる
+u <- XM %*% oldbeta   #ベクトル形式の効用の平均構造
+U <- matrix(u, nrow=hh, ncol=choise, byrow=T)   #行列形式の効用の平均構造
+util.M <- t(apply(U, 1, function(x) mvrnorm(1, x, oldcov)))   #多変量正規乱数で潜在効用を発生
+U.old <- as.numeric(t(util.M))
+I <- diag(hh)
 
-d1 <- exp(old.util1)
-LLs1 <- rowSums(Y*old.util1) - log(rowSums(d1))
-LL1 <- sum(LLs1)
+for(rp in 1:50000){
+##回帰モデルのギブスサンプリングでbetaとsigmaを推定
+  u.vec <- as.numeric(t(util.M))   #潜在効用をベクトルに変更
+  
+  ##betaのギブスサンプリング
+  oldcovi <- solve(oldcov)
+  SIGMA.B <- kronecker(I, oldcovi)
+  
+  #回帰係数の平均構造
+  B <- solve(t(XM) %*% SIGMA.B %*% XM) %*% t(XM) %*% SIGMA.B %*% u.vec   #回帰係数の最小二乗推定量
+  XVX <- t(XM) %*% SIGMA.B %*% XM
+  BETA.M <- solve(XVX + solve(Adelta)) %*% (XVX %*% B + solve(Adelta) %*% Deltabar)
+  
+  #回帰係数の分散共分散行列
+  BETA.SIG <- solve(XVX + solve(Adelta))
+  
+  #多変量正規分布から回帰係数をサンプリング
+  oldbeta <- mvrnorm(1, as.numeric(BETA.M), BETA.SIG)
+  
+  ##sigmaのギブスサンプリング
+  #逆ウィシャート分布の自由度を計算
+  Sn <- nu + hh
 
-d2 <- exp(old.util2)
-LLs2 <- rowSums(Y*old.util2) - log(rowSums(d2))
-LL2 <- sum(LLs2)
+  #逆ウィシャート分布のパラメータを計算
+  #二乗誤差を計算して和を取る
+  Vi <- solve(V) 
+  EE <- matrix(0, nrow=choise, ncol=choise)
+  redi <- u.vec - XM %*% oldbeta
+  
+  for(i in 1:hh){
+    r <- (i-1)*(choise)
+    error <- redi[(r+1):(r+choise)] %*% t(redi[(r+1):(r+choise)])
+    EE <- EE + error
+  }
+  R <- solve(EE + Vi)
+  
+  #逆ウィシャート乱数を発生
+  oldcov <- rwishart(Sn, R)$IW
+ 
+  u <- XM %*% oldbeta   #ベクトル形式の効用の平均構造
+  U <- matrix(u, nrow=hh, ncol=choise, byrow=T)   #行列形式の効用の平均構造
+  util.new <- t(apply(U, 1, function(x) mvrnorm(1, x, oldcov)))   #多変量正規乱数で潜在効用を発生
+  util.old <- util.M
+  
+  dnew <- exp(util.new[, 1]) + exp(util.new[, 2]) + exp(util.new[, 3]) + 
+          exp(util.new[, 4]) + exp(util.new[, 5])
+  dold <- exp(util.old[, 1]) + exp(util.old[, 2]) + exp(util.old[, 3]) + 
+          exp(util.old[, 4]) + exp(util.old[, 5])
+  
+  LLind.new <- Y[, 1]*util.new[, 1] + Y[, 2]*util.new[, 2] + Y[, 3]*util.new[, 3] + 
+               Y[, 4]*util.new[, 4] + Y[, 5]*util.new[, 5] - log(dnew)
+  LLind.old <- Y[, 1]*util.old[, 1] + Y[, 2]*util.old[, 2] + Y[, 3]*util.old[, 3] + 
+               Y[, 4]*util.old[, 4] + Y[, 5]*util.old[, 5] - log(dold)                                                                        
 
-d3 <- exp(old.util3)
-LLs3 <- rowSums(Y*old.util3) - log(rowSums(d3))
-LL3 <- sum(LLs3)
-LL0
-LL1
-LL2
-LL3
+  rand <- matrix(runif(hh), nrow=hh, ncol=choise)
+  LLind.diff <- exp(LLind.new - LLind.old)
+  alpha <- matrix(ifelse(LLind.diff > 1, 1, LLind.diff), nrow=hh, ncol=choise)
 
-
+  util.M <- ifelse(alpha > rand, util.M <- util.new, util.M <- util.old)
+  logl <- ifelse(alpha > rand, logl <- LLind.new, logl <- LLind.old)
+  LL <- sum(logl)
+  
+  print(LL)
+  print(rp)
+  print(rbind(round(oldbeta, 3), round(betat, 3)))
+  print(cbind(round(cov2cor(oldcov), 3), round(cov2cor(Cov), 3)))
+}
