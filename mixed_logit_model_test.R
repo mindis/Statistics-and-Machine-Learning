@@ -104,9 +104,10 @@ beta2 <- 6.3   #割引率のパラメータ
 beta3 <- 2.0   #特別陳列のパラメータ
 beta4 <- 1.8   #キャンペーンのパラメータ
 beta5 <- c(1.1, 0.6, 0.7, 0.3)   #カテゴリーロイヤルティのパラメータ
-betat0 <- matrix(c(0.5, 1.1, 1.4, 2.2), nrow=hh, ncol=choise-1, byrow=T) + R   #ブランド1～4の相対ベース販売力
+beta0 <- c(0.5, 1.1, 1.4, 2.2)   #ブランド1～4の相対ベース販売力
 betat <- c(beta1, beta2, beta3, beta4)
 
+beta0.r <- matrix(beta0, nrow=hh, ncol=choise-1, byrow=T) + R
 
 ##効用を発生させ、選択されたブランドを決定
 #多変量正規分布からロジットを発生
@@ -284,13 +285,13 @@ for(rp in 1:R){
   DeltaM <- matrix(Deltabar, 2, choise-1, byrow=T)   #仮想的な0の回帰係数の事前分布を作成
   
   out <- rmultireg(oldbeta.r, M, DeltaM, Adelta, nu, V)   #多変量回帰モデルのギブスサンプラー
-  cov.random <- out$Sigma
+  cov.random <- cov2cor(out$Sigma)
   beta.random <- matrix(out$B[1, ], nrow=hh, ncol=choise-1, byrow=T)
   
   if(rp%%keep==0){
     mkeep <- rp/keep
     BETA[mkeep, ] <- oldbeta.f
-    BETA0[mkeep, ] <- beta0.mv
+    BETA0[mkeep, ] <- out$B[1, ]
     SIGMA[mkeep, ] <- as.numeric(cov.random)
     Util[, , mkeep] <- oldbeta.r
     
@@ -302,6 +303,6 @@ for(rp in 1:R){
   }
 }
 
-matplot(SIGMA[, 4:6], type="l")
+matplot(SIGMA[, 7:10], type="l")
 
 
