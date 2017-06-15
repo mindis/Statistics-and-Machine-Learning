@@ -1,4 +1,4 @@
-#####相関のある多項ロジットモデル#####
+####相関のある多項ロジットモデル#####
 library(MASS)
 library(mlogit)
 library(MCMCpack)
@@ -90,30 +90,32 @@ for(i in 1:choise){
 }
 
 #カテゴリーロイヤルティ
-ROYL <- matrix(runif(hh, -1, 1), nrow=hh, ncol=1)
+ROYL <- matrix(runif(hh, 0, 1), nrow=hh, ncol=1)
 
 ##分散共分散行列の設定
 corM <- corrM(col=choise-1, lower=0, upper=0.8)   #相関行列を作成
 Sigma <- covmatrix(col=choise-1, corM=corM, lower=1, upper=1)   #分散共分散行列
 Cov <- Sigma$covariance
-R <- mvrnorm(hh, rep(0, choise-1), Cov)   #分散成分
+Rmv <- mvrnorm(hh, rep(0, choise-1), Cov)   #分散成分
 
 ##パラメータの設定
 beta1 <- -6.5   #価格のパラメータ
 beta2 <- 6.3   #割引率のパラメータ
 beta3 <- 2.0   #特別陳列のパラメータ
 beta4 <- 1.8   #キャンペーンのパラメータ
-beta5 <- c(1.1, 0.6, 0.7, 0.3)   #カテゴリーロイヤルティのパラメータ
-beta0 <- c(0.5, 1.1, 1.4, 2.2)   #ブランド1～4の相対ベース販売力
 betat <- c(beta1, beta2, beta3, beta4)
 
-beta0.r <- matrix(beta0, nrow=hh, ncol=choise-1, byrow=T) + R
+##階層モデルの設定
+b1 <- c(1.1, 0.6, -0.7, -0.3)   #カテゴリーロイヤルティのパラメータ
+b0 <- c(0.5, 0.8, 1.2, 2.0)   #ブランド1～4の相対ベース販売力
+
+beta0 <- matrix(b0, nrow=hh, ncol=choise-1, byrow=T) + Rmv
 
 ##効用を発生させ、選択されたブランドを決定
 #多変量正規分布からロジットを発生
 logit <- matrix(0, nrow=hh, ncol=st)
 for(i in 1:(st-1)){
-  logit[, i] <- betat0[, i] + beta1*PRICE[, i]  + beta2*DISC[, i] + beta3*DISP[, i] + beta4*CAMP[, i]
+  logit[, i] <- beta0[, i] + beta1*PRICE[, i]  + beta2*DISC[, i] + beta3*DISP[, i] + beta4*CAMP[, i]
 }
 #基準変数のロジットを計算
 logit[, st] <- beta1*PRICE[, st]  + beta2*DISC[, st] + beta3*DISP[, st] + beta4*CAMP[, st]
@@ -181,13 +183,14 @@ Deltabar <- rep(0, hh*choise)
 Adelta <- 0.01*diag(2)
 nu <- choise   #逆ウィシャート分布の自由度
 V <- nu * diag(rep(1, choise-1))
-beta.random <- matrix(0, nrow=hh, ncol=choise)   #変量効果の事前分布の平均を0に固定
+beta.random <- matrix(0, nrow=hh, ncol=choise-1)   #変量効果の事前分布の平均を0に固定
 
 
 ##サンプリング結果の保存用
 Util <- array(0, dim=c(hh, choise-1, R/keep))
 BETA <- matrix(0, nrow=R/keep, ncol=ncol(XM))
-BETA0 <- matrix(0, R/keep, ncol=choise-1)
+BETA00 <- matrix(0, R/keep, ncol=choise-1)
+BETA01 <- matrix(0, R/keep, ncol=choise-1)
 SIGMA <- matrix(0, nrow=R/keep, ncol=(choise-1)^2)
 
 ##初期値の設定
@@ -213,6 +216,7 @@ LLike <- function(beta, b, X, Z, Y, hh, choise){
   LL.val<- list(LLl=LLl, LL=LL)
   return(LL.val)
 }
+
 
 for(rp in 1:R){
   ##MHサンプリングで固定効果betaのサンプリング
@@ -243,9 +247,11 @@ for(rp in 1:R){
     logl.f <- logold.f
   }
   
+  
   ##MHサンプリングで個人別に変量効果betaをサンプリング
   betad.random <- oldbeta.r 
-  rw <- t(0.5 * chol(cov.random) %*% t(matrix(rnorm(hh*choise), nrow=hh, ncol=choise-1)))
+  rw <- t(0.5 * chol(cov.random) %*% t(matrix(rnorm(hh*(choise-1)), nrow=hh, ncol=choise-1)))
+  
   betan.random <- betad.random + rw
   betad.r <- as.numeric(t(betad.random))
   betan.r <- as.numeric(t(betan.random))
@@ -253,8 +259,8 @@ for(rp in 1:R){
   #対数尤度と対数事前分布を計算
   lognew.r <- LLike(beta=oldbeta.f, b=betan.r, X=XM, Z=Z, Y=Y, hh=hh, choise=choise)$LLl
   logold.r <- LLike(beta=oldbeta.f, b=betad.r, X=XM, Z=Z, Y=Y, hh=hh, choise=choise)$LLl
-  logpnew.r <- -0.5 * apply((betan.random - beta.random), 1, function(x) x %*% solve(cov.random) %*% x)
-  logpold.r <- -0.5 * apply((betad.random - beta.random), 1, function(x) x %*% solve(cov.random) %*% x)
+  logpnew.r <- apply((betan.random - beta.random), 1, function(x) -0.5 * x %*% solve(cov.random) %*% x)
+  logpold.r <- apply((betad.random - beta.random), 1, function(x) -0.5 * x %*% solve(cov.random) %*% x)
   
   #MHサンプリング
   rand <- matrix(runif(hh), nrow=hh, ncol=choise-1)
@@ -263,15 +269,15 @@ for(rp in 1:R){
   
   oldbeta.r <- ifelse(alpha > rand, oldbeta.r <- betan.random, oldbeta.r <- betad.random)   #alphaがrandを上回っていたら採択
   logl <- ifelse(alpha[, 1] > rand[, 1], logl <- lognew.r, logl <- logold.r)
-
-    
+  
+  
   ##正規分布からbeta0をサンプリング
   #beta0 <- colMeans(oldbeta.r)
   #ohm <- cov.random/hh
   #beta0.mv <-  mvrnorm(1, beta0, ohm)
   #beta0.mv + t(chol(cov.random/hh))*rnorm(choise-1)
   #beta.random <- matrix(beta0.mv, nrow=hh, ncol=choise-1, byrow=T)
-
+  
   ##逆ウィシャート分布からsigmaをサンプリング
   #V <- var(oldbeta.r)
   #VK <- (choise-1) * diag(choise-1) + hh * V
@@ -285,24 +291,33 @@ for(rp in 1:R){
   DeltaM <- matrix(Deltabar, 2, choise-1, byrow=T)   #仮想的な0の回帰係数の事前分布を作成
   
   out <- rmultireg(oldbeta.r, M, DeltaM, Adelta, nu, V)   #多変量回帰モデルのギブスサンプラー
-  cov.random <- cov2cor(out$Sigma)
+  cov.random <- out$Sigma
   beta.random <- matrix(out$B[1, ], nrow=hh, ncol=choise-1, byrow=T)
   
   if(rp%%keep==0){
     mkeep <- rp/keep
     BETA[mkeep, ] <- oldbeta.f
-    BETA0[mkeep, ] <- out$B[1, ]
+    BETA00[mkeep, ] <- out$B[1, ]
     SIGMA[mkeep, ] <- as.numeric(cov.random)
     Util[, , mkeep] <- oldbeta.r
     
     print(sum(logl))
     print(rp)
     print(mean(alpha))
-    print(round(rbind(c(beta.random[1, ], oldbeta.f), c(0.5, 1.1, 1.4, 2.2, betat)), 3))
-    print(cbind(round(cov2cor(cov.random), 2), round(cov2cor(Cov), 2)))
+    print(round(rbind(oldbeta.f, betat), 3))
+    print(round(rbind(out$B[1, ], c(0.5, 0.8, 1.2, 2.0)), 3))
+    print(round(cbind(out$Sigma, cov2cor(out$Sigma), Cov), 3))
   }
 }
 
-matplot(SIGMA[, 7:10], type="l")
+burnin <- 5000
+
+matplot(BETA, type="l")
+matplot(BETA00, type="l")
+
+cor(BETA00[burnin:nrow(BETA00), ])
+colMeans(BETA00[burnin:nrow(BETA00), ])
 
 
+b1 <- c(1.1, 0.6, -0.7, -0.3)   #カテゴリーロイヤルティのパラメータ
+b0 <- c(0.5, 0.8, 1.2, 2.0) #ブランド1～4の相対ベース販売力
