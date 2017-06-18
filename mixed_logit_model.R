@@ -1,4 +1,4 @@
-#####相関のある多項ロジットモデル#####
+####相関のある多項ロジットモデル#####
 library(MASS)
 library(mlogit)
 library(MCMCpack)
@@ -70,10 +70,10 @@ k <- 5   #説明変数の数
 
 ##説明変数の発生
 #通常価格の発生
-PRICE <- matrix(runif(hh*choise, 0.7, 1), nrow=hh, ncol=choise)   
+PRICE <- matrix(runif(hh*choise, 0.6, 1), nrow=hh, ncol=choise)   
 
 #ディスカウント率の発生
-DISC <- matrix(runif(hh*choise, 0, 0.3), nrow=hh, ncol=choise)
+DISC <- matrix(runif(hh*choise, 0, 0.5), nrow=hh, ncol=choise)
 
 #特別陳列の発生
 DISP <- matrix(0, nrow=hh, ncol=choise)
@@ -90,42 +90,42 @@ for(i in 1:choise){
 }
 
 #カテゴリーロイヤルティ
-ROYL <- matrix(runif(hh, -1, 1), nrow=hh, ncol=1)
+ROYL <- matrix(runif(hh, 0, 1), nrow=hh, ncol=1)
 
 ##分散共分散行列の設定
-corM <- corrM(col=choise, lower=0, upper=0.8)   #相関行列を作成
-Sigma <- covmatrix(col=choise, corM=corM, lower=1, upper=1)   #分散共分散行列
-Cov <- Sigma$covariance
+MU <- matrix(c(1, 1, 0, 1, 1), nrow=hh, ncol=choise, byrow=T)
+Cov <- matrix(c(3.5, 0, 0, 1), nrow=2, ncol=2)
+RMV <- mvrnorm(hh, rep(0, 2), Cov)   #分散成分
+MU <- cbind(RMV[, 1], RMV[, 1], 0, RMV[, 2], RMV[, 2])
+
 
 ##パラメータの設定
-beta1 <- -6.5   #価格のパラメータ
-beta2 <- 6.3   #割引率のパラメータ
+beta1 <- -5.8   #価格のパラメータ
+beta2 <- 5.5   #割引率のパラメータ
 beta3 <- 2.0   #特別陳列のパラメータ
 beta4 <- 1.8   #キャンペーンのパラメータ
-beta5 <- c(1.1, 0.6, 0.7, 0.3)   #カテゴリーロイヤルティのパラメータ
-beta0 <- c(0.5, 1.1, 1.4, 2.2)   #ブランド1～4の相対ベース販売力
-betat <- c(beta0, beta1, beta2, beta3, beta4, beta5)
+betat <- c(beta1, beta2, beta3, beta4)
+
+##階層モデルの設定
+b1 <- c(1.1, 0.6, -0.7, -0.3)   #カテゴリーロイヤルティのパラメータ
+b0 <- c(0.5, 0.8, 1.2, 2.0)   #ブランド1～4の相対ベース販売力
+beta0 <- matrix(b0, nrow=hh, ncol=choise-1, byrow=T)
 
 ##効用を発生させ、選択されたブランドを決定
 #多変量正規分布からロジットを発生
-logit.l <- matrix(0, nrow=hh, ncol=st)
+logit <- matrix(0, nrow=hh, ncol=st)
 for(i in 1:(st-1)){
-  logit.l[, i] <- beta0[i] + beta1*PRICE[, i]  + beta2*DISC[, i] + beta3*DISP[, i] + 
-    beta4*CAMP[, i] + beta5[i]*ROYL
+  logit[, i] <- beta0[, i] + beta1*PRICE[, i]  + beta2*DISC[, i] + beta3*DISP[, i] + beta4*CAMP[, i] + MU[, i]
 }
 #基準変数のロジットを計算
-logit.l[, st] <- beta1*PRICE[, st]  + beta2*DISC[, st] + beta3*DISP[, st] + beta4*CAMP[, st]
-
-##多変量正規乱数を発生
-eta <- mvrnorm(n=hh, rep(0, choise), Cov)
-logit <- logit.l + eta
-
-round(cbind(exp(logit)/rowSums(exp(logit)), exp(logit.l)/rowSums(exp(logit.l))), 3)
+logit[, st] <- beta1*PRICE[, st]  + beta2*DISC[, st] + beta3*DISP[, st] + beta4*CAMP[, st] + MU[, st]
 
 ##発生させたロジットから選択ブランドを決定
 #ブランド選択確率を計算
 Pr <- exp(logit)/rowSums(exp(logit))
 colMeans(Pr); apply(Pr, 2, summary)
+
+round(cbind(Pr, Pr1), 3)
 
 #選択ブランドを発生
 Y <- t(apply(Pr, 1, function(x) rmultinom(1, 1, x)))
@@ -157,7 +157,7 @@ DISC.v <- as.numeric(t(DISC))
 DISP.v <- as.numeric(t(DISP))
 CAMP.v <- as.numeric(t(CAMP))
 
-round(X <- data.frame(BP=BP, PRICE=PRICE.v, DISC=DISC.v, DISP=DISP.v, CAMP=CAMP.v, ROYL=ROYL.v), 2)   #データの結合
+round(X <- data.frame(BP, PRICE=PRICE.v, DISC=DISC.v, DISP=DISP.v, CAMP=CAMP.v), 2)   #データの結合
 XM <- as.matrix(X)
 
 #IDの設定
@@ -166,43 +166,46 @@ id <- rep(1:hh, rep(choise, hh))
 ID <- data.frame(id, brand)
 
 #Zの設定
-Z <- diag(hh*choise)
+z <- cbind(c(1, 1, 0, 0, 0), c(rep(0, choise)), c(0, 0, 0, 1, 1))
+Z <- kronecker(diag(hh), z)
+index.z <- subset(1:ncol(Z), colSums(Z)==0)
+Z <- Z[, -index.z]
 
 ##MCMCアルゴリズムの設定
-R <- 50000
+R <- 20000
 sbeta <- 1.5
-keep <- 4
+keep <- 2
 llike <- c()   #対数尤度の保存用
 
 ##事前分布の設定
 #固定効果の事前分布
-betas.fix <- rep(0, ncol(X))  #回帰係数の平均の事前分布
-sigma.fix <- diag(rep(0.01, ncol(X)))   #回帰係数の事前分布の分散
+betas.fix <- rep(0, ncol(XM))  #回帰係数の平均の事前分布
+sigma.fix <- diag(rep(0.01, ncol(XM)))   #回帰係数の事前分布の分散
 
 #変量効果の事前分布
-sigma.random <- diag(rep(0.01, choise))   #変量効果の事前分布の分散
-beta.random <- matrix(0, nrow=hh, ncol=choise)
 Deltabar <- rep(0, hh*choise)
 Adelta <- 0.01*diag(2)
-nu <- sum(1:choise)   #逆ウィシャート分布の自由度
-V <- nu * diag(rep(1, choise))
+nu <- 2   #逆ウィシャート分布の自由度
+V <- nu * diag(rep(1, 2))
+beta.random <- matrix(0, nrow=hh, ncol=2)   #変量効果の事前分布の平均を0に固定
 
-Wdelta <- 10*diag(rep(1, choise))
 
 ##サンプリング結果の保存用
-Util <- array(0, dim=c(hh, choise, R/keep))
+Util <- array(0, dim=c(hh, choise-1, R/keep))
 BETA <- matrix(0, nrow=R/keep, ncol=ncol(XM))
-SIGMA <- array(0, dim=c(choise, choise, R/keep))
+BETA0 <- matrix(0, R/keep, ncol=2)
+SIGMA <- matrix(0, nrow=R/keep, ncol=2^2)
 
 ##初期値の設定
 #回帰係数の初期値
-oldbeta.f <- c(runif(choise-1, 0, 3), -3.0, 3.0, runif(2, 0, 2), runif(choise-1, -2, 3))  
+oldbeta.f <- c(c(runif(choise-1, 0, 3)), -3.0, 3.0, runif(2, 0, 2))  
 
 #変量効果の初期値
-corM.r <- corrM(col=choise, lower=-0.5, upper=0.9)   #相関行列を作成
-Sigma.r <- covmatrix(col=choise, corM=corM.r, lower=1, upper=1)   #分散共分散行列
-cov.random <- Sigma.r$covariance   #変量効果の分散成分の初期値
-oldbeta.r <- matrix(mvrnorm(hh, rep(0, choise), cov.random), nrow=hh, ncol=choise, byrow=T)   #変量効果の初期値
+cov.random <- diag(runif(2, 0.1, 1))
+oldbeta.r <- matrix(mvrnorm(hh, rep(0, 2), cov.random), nrow=hh, ncol=2, byrow=T)   #変量効果の初期値
+
+#階層モデルの初期値
+beta.random <- matrix(0, nrow=hh, ncol=2)
 
 ####マルコフ連鎖モンテカルロ法で推定####
 ##mixed logitモデルの対数尤度
@@ -213,6 +216,7 @@ LLike <- function(beta, b, X, Z, Y, hh, choise){
   LL.val<- list(LLl=LLl, LL=LL)
   return(LL.val)
 }
+
 
 for(rp in 1:R){
   ##MHサンプリングで固定効果betaのサンプリング
@@ -243,47 +247,74 @@ for(rp in 1:R){
     logl.f <- logold.f
   }
   
+  
   ##MHサンプリングで個人別に変量効果betaをサンプリング
   betad.random <- oldbeta.r 
-  betan.random <- mvrnorm(hh, rep(0, choise), cov.random)   #ランダムウォーク
+  rw <- t(1.25 * chol(cov.random) %*% t(matrix(rnorm(hh*(2)), nrow=hh, ncol=2)))
+  
+  betan.random <- betad.random + rw
   betad.r <- as.numeric(t(betad.random))
   betan.r <- as.numeric(t(betan.random))
-  
   
   #対数尤度と対数事前分布を計算
   lognew.r <- LLike(beta=oldbeta.f, b=betan.r, X=XM, Z=Z, Y=Y, hh=hh, choise=choise)$LLl
   logold.r <- LLike(beta=oldbeta.f, b=betad.r, X=XM, Z=Z, Y=Y, hh=hh, choise=choise)$LLl
-  logpnew.r <- -0.5 * apply((betan.random - beta.random), 1, function(x) x %*% solve(cov.random) %*% x)
-  logpold.r <- -0.5 * apply((betad.random - beta.random), 1, function(x) x %*% solve(cov.random) %*% x)
+  logpnew.r <- apply((betan.random - beta.random), 1, function(x) -0.5 * x %*% solve(cov.random) %*% x)
+  logpold.r <- apply((betad.random - beta.random), 1, function(x) -0.5 * x %*% solve(cov.random) %*% x)
   
   #MHサンプリング
-  rand <- matrix(runif(hh), nrow=hh, ncol=choise)
+  rand <- matrix(runif(hh), nrow=hh, ncol=2)
   LLind.diff <- exp(lognew.r + logpnew.r - logold.r - logpold.r)   #棄却率を計算
-  alpha <- matrix(ifelse(LLind.diff > 1, 1, LLind.diff), nrow=hh, ncol=choise)      
+  alpha <- matrix(ifelse(LLind.diff > 1, 1, LLind.diff), nrow=hh, ncol=2)      
   
   oldbeta.r <- ifelse(alpha > rand, oldbeta.r <- betan.random, oldbeta.r <- betad.random)   #alphaがrandを上回っていたら採択
   logl <- ifelse(alpha[, 1] > rand[, 1], logl <- lognew.r, logl <- logold.r)
   
+ 
+  ##正規分布からbeta0をサンプリング
+  #beta0 <- colMeans(oldbeta.r)
+  #ohm <- cov.random/hh
+  #beta0.mv <-  mvrnorm(1, beta0, ohm)
+  #beta0.mv + t(chol(cov.random/hh))*rnorm(choise-1)
+  #beta.random <- matrix(beta0.mv, nrow=hh, ncol=choise-1, byrow=T)
+  
+  ##逆ウィシャート分布からsigmaをサンプリング
+  V <- var(oldbeta.r)
+  VK <- 2 * diag(2) + hh * V
+  nu1 <- hh + nu - 1 
+  
+  cov.random <- rwishart(nu1, solve(VK))$IW   #逆ウィシャート分布から分散共分散行列を発生
+
   
   ##ギブスサンプリングでDeltaをサンプリング
-  random.M <- matrix(oldbeta.r, nrow=hh, ncol=choise, byrow=T)   #ランダム効果係数を行列に変換
-  M <- matrix(c(1, 0), hh, 2, byrow=T)   #仮想的な0の説明変数を作成
-  DeltaM <- matrix(Deltabar, 2, choise, byrow=T)   #仮想的な0の回帰係数の事前分布を作成
+  #M <- matrix(c(1, 0), hh, 2, byrow=T)   #仮想的な0の説明変数を作成
+  #DeltaM <- matrix(Deltabar, 2, 2, byrow=T)   #仮想的な0の回帰係数の事前分布を作成
   
-  out <- rmultireg(betan.random, M, DeltaM, Adelta, nu, V)   #多変量回帰モデルのギブスサンプラー
-  cov2cor(out$Sigma)
-  
-  cov.random <- out$Sigma
-  beta.random <- matrix(out$B[1, ], nrow=hh, ncol=choise, byrow=T)
+  #out <- rmultireg(oldbeta.r, M, DeltaM, Adelta, nu, V)   #多変量回帰モデルのギブスサンプラー
+  #cov.random <- out$Sigma
   
   if(rp%%keep==0){
+    mkeep <- rp/keep
+    BETA[mkeep, ] <- oldbeta.f
+    BETA0[mkeep, ] <- beta.random[1, ]
+    SIGMA[mkeep, ] <- as.numeric(cov.random)
+    Util[, , mkeep] <- oldbeta.r
     
     print(sum(logl))
     print(rp)
-    print(mean(alpha))
-    print(rbind(round(oldbeta.f, 3), round(betat, 3)))
-    print(cbind(round(cov2cor(cov.random), 2), round(cov2cor(Cov), 2)))
+    print(round(mean(alpha), 3)); print(round(alpha.f, 3))
+    print(round(rbind(oldbeta.f, c(b0, betat)), 3))
+    print(round(cbind(cov.random, Cov), 3))
   }
 }
+
+burnin <- 5000
+
+matplot(BETA[, 1:4], type="l")
+matplot(BETA[, 5:8], type="l")
+matplot(SIGMA[, c(1, 4)], type="l")
+
+colMeans(SIGMA[, c(1, 4)]) - pi^2/6
+
 
 
