@@ -12,8 +12,8 @@ library(lattice)
 ####データの発生####
 #set.seed(8437)
 ##データの設定
-hh <- 500   #サンプル数
-pt <- rpois(hh, 10); pt <- ifelse(pt==0, 1, pt)   #購買機会(購買機会数が0なら1に置き換え)
+hh <- 250   #サンプル数
+pt <- rpois(hh, 15); pt <- ifelse(pt==0, 1, pt)   #購買機会(購買機会数が0なら1に置き換え)
 hhpt <- sum(pt)
 choise <- 5   #選択可能数
 st <- 5   #基準ブランド
@@ -58,12 +58,14 @@ beta3 <- 2.0   #特別陳列のパラメータ
 beta4 <- 1.8   #キャンペーンのパラメータ
 b1 <- c(1.1, 0.6, -0.7, -0.3)   #カテゴリーロイヤルティのパラメータ
 b0 <- c(0.5, 0.9, 1.4, 2.1)   #ブランド1～4の相対ベース販売力
-betat <- c(b1, beta1, beta2, beta3, beta4, b0)
+betat <- c(b0, beta1, beta2, beta3, beta4)
 
 ##変量効果の設定
 k.random <- 5   #変量効果の変数数
-b1.random <- matrix(b0, nrow=hh, ncol=choise-1, byrow=T) + matrix(rnorm(hh*(choise-1), 0, 0.5), nrow=hh, ncol=choise-1, byrow=T)
-beta1.random <- matrix(beta1, nrow=hh, ncol=1, byrow=T) + matrix(rnorm(hh, 0, 1.25), nrow=hh, ncol=choise-1, byrow=T)
+b0.random <- matrix(b0, nrow=hh, ncol=choise-1, byrow=T) + 
+  matrix(rnorm(hh*(choise-1), 0, 1), nrow=hh, ncol=choise-1, byrow=T)
+beta1.random <- matrix(beta1, nrow=hh, ncol=1, byrow=T) + 
+  matrix(rnorm(hh, 0, sqrt(3.5)), nrow=hh, ncol=1, byrow=T)
 
 
 ##効用を発生させ、選択されたブランドを決定
@@ -72,7 +74,7 @@ logit <- matrix(0, nrow=hhpt, ncol=st)
 for(i in 1:hh){
   r <- subset(1:hhpt, ID[, 2]==i)
   for(j in 1:(st-1)){
-    logit[r, j] <- b1.random[i, j] + beta1.random[i]*PRICE[r, j]  + beta2*DISC[r, j] + beta3*DISP[r, j] + beta4*CAMP[r, j] 
+    logit[r, j] <- b0.random[i, j] + beta1.random[i]*PRICE[r, j]  + beta2*DISC[r, j] + beta3*DISP[r, j] + beta4*CAMP[r, j] 
   }
 }
 
@@ -138,7 +140,7 @@ for(i in 1:hh){
 ##MCMCアルゴリズムの設定
 R <- 20000
 sbeta <- 1.5
-keep <- 2
+keep <- 4
 llike <- c()   #対数尤度の保存用
 
 ##事前分布の設定
@@ -161,7 +163,7 @@ SIGMA <- matrix(0, nrow=R/keep, ncol=k.random^2)
 
 ##初期値の設定
 #回帰係数の初期値
-oldbeta.f <- c(c(runif(choise-1, 0, 3)), -3.0, 3.0, runif(2, 0, 2))  
+oldbeta.f <- c(c(runif(choise-1, 0, 3)), -5.0, 5.0, runif(2, 1, 2))  
 
 #変量効果の初期値
 cov.random <- diag(runif(k.random, 0.5, 2))
@@ -186,7 +188,8 @@ for(rp in 1:R){
   ##MHサンプリングで固定効果betaのサンプリング
   oldbeta.rv <- as.numeric(t(oldbeta.r))
   betad.f <- oldbeta.f
-  betan.f <- betad.f + rnorm(length(betad.f), 0, 0.05)   #ランダムウォークサンプリング
+  betan.f <- betad.f + rnorm(length(betad.f), 0, 0.025)
+  #ランダムウォークサンプリング
   
   #対数尤度と対数事前分布を計算
   lognew.f <- LLike(beta=betan.f, b=oldbeta.rv, X=XM, Z=Z, Y=Y, hh=hhpt, choise=choise)$LL
@@ -214,75 +217,77 @@ for(rp in 1:R){
   
   ##MHサンプリングで個人別に変量効果betaをサンプリング
   betad.random <- oldbeta.r 
-  rw <- t(1.25 * chol(cov.random) %*% t(matrix(rnorm(hh*(k.random)), nrow=hh, ncol=k.random)))
-
+  rw <- t(0.5 * chol(cov.random) %*% t(matrix(rnorm(hh*(k.random)), nrow=hh, ncol=k.random)))
+  
   betan.random <- betad.random + rw
   betad.r <- as.numeric(t(betad.random))
   betan.r <- as.numeric(t(betan.random))
-
+  
   #対数尤度と対数事前分布を計算
   lognew.r <- LLike(beta=oldbeta.f, b=betan.r, X=XM, Z=Z, Y=Y, hh=hhpt, choise=choise)$LLl
   logold.r <- LLike(beta=oldbeta.f, b=betad.r, X=XM, Z=Z, Y=Y, hh=hhpt, choise=choise)$LLl
   logpnew.r <- apply((betan.random - beta.random), 1, function(x) -0.5 * x %*% solve(cov.random) %*% x)
   logpold.r <- apply((betad.random - beta.random), 1, function(x) -0.5 * x %*% solve(cov.random) %*% x)
-
+  
   #ID別に対数尤度の和を取る
-  lognew.rind <- as.numeric(tapply(lognew.r, ID[, 2], sum))
-  logold.rind <- as.numeric(tapply(logold.r, ID[, 2], sum))
-
+  #lognew.rind <- as.numeric(tapply(lognew.r, ID[, 2], sum))
+  #logold.rind <- as.numeric(tapply(logold.r, ID[, 2], sum))
+  
+  lognew.rind <- data.frame(logl=lognew.r, id=ID[, 2]) %>%
+                  dplyr::group_by(id) %>%
+                  dplyr::summarize(sum=sum(logl))
+  
+  logold.rind <- data.frame(logl=logold.r, id=ID[, 2]) %>%
+                  dplyr::group_by(id) %>%
+                  dplyr::summarize(sum=sum(logl))
+  
   #MHサンプリング
-  rand <- matrix(runif(hh), nrow=hh, ncol=2)
-  LLind.diff <- exp(lognew.r + logpnew.r - logold.r - logpold.r)   #棄却率を計算
-  alpha <- matrix(ifelse(LLind.diff > 1, 1, LLind.diff), nrow=hh, ncol=2)      
+  rand <- matrix(runif(hh), nrow=hh, ncol=k.random)
+  LLind.diff <- exp(lognew.rind$sum + logpnew.r - logold.rind$sum - logpold.r)   #棄却率を計算
+  alpha <- matrix(ifelse(LLind.diff > 1, 1, LLind.diff), nrow=hh, ncol=k.random)      
   
   oldbeta.r <- ifelse(alpha > rand, oldbeta.r <- betan.random, oldbeta.r <- betad.random)   #alphaがrandを上回っていたら採択
   logl <- ifelse(alpha[, 1] > rand[, 1], logl <- lognew.r, logl <- logold.r)
-  pt
   
-  ##正規分布からbeta0をサンプリング
-  #beta0 <- colMeans(oldbeta.r)
-  #ohm <- cov.random/hh
-  #beta0.mv <-  mvrnorm(1, beta0, ohm)
-  #beta0.mv + t(chol(cov.random/hh))*rnorm(choise-1)
-  #beta.random <- matrix(beta0.mv, nrow=hh, ncol=choise-1, byrow=T)
   
   ##逆ウィシャート分布からsigmaをサンプリング
+  #逆ウィシャート分布のパラメータ
   V <- var(oldbeta.r)
-  VK <- 2 * diag(2) + hh * V
+  VK <- k.random * diag(k.random) + hh * V
   nu1 <- hh + nu - 1 
   
-  cov.random <- rwishart(nu1, solve(VK))$IW   #逆ウィシャート分布から分散共分散行列を発生
+  #逆ウィシャート分布から分散共分散行列を発生
+  cov.random <- rwishart(nu1, solve(VK))$IW   
   
-  
-  ##ギブスサンプリングでDeltaをサンプリング
-  #M <- matrix(c(1, 0), hh, 2, byrow=T)   #仮想的な0の説明変数を作成
-  #DeltaM <- matrix(Deltabar, 2, 2, byrow=T)   #仮想的な0の回帰係数の事前分布を作成
-  
-  #out <- rmultireg(oldbeta.r, M, DeltaM, Adelta, nu, V)   #多変量回帰モデルのギブスサンプラー
-  #cov.random <- out$Sigma
-  
+
   if(rp%%keep==0){
     mkeep <- rp/keep
     BETA[mkeep, ] <- oldbeta.f
-    BETA0[mkeep, ] <- beta.random[1, ]
+    B.random[, , mkeep] <- oldbeta.r
     SIGMA[mkeep, ] <- as.numeric(cov.random)
-    Util[, , mkeep] <- oldbeta.r
     
     print(sum(logl))
     print(rp)
     print(round(mean(alpha), 3)); print(round(alpha.f, 3))
-    print(round(rbind(oldbeta.f, c(b0, betat)), 3))
-    print(round(cbind(cov.random, Cov), 3))
+    print(round(rbind(oldbeta.f, betat), 3))
+    print(round(cov.random, 3))
   }
 }
 
-burnin <- 5000
+
+burnin <- 2500
+i <- 6
+pt[i]
 
 matplot(BETA[, 1:4], type="l")
 matplot(BETA[, 5:8], type="l")
-matplot(SIGMA[, c(1, 4)], type="l")
+matplot(SIGMA[, c(1, 7, 13)], type="l")
+matplot(SIGMA[, c(19, 25)], type="l")
+matplot(t(B.random[i, 1:2, ]), type="l")
+matplot(t(B.random[i, 3:4, ]), type="l")
+plot(1:5000, t(B.random[i, 5, ]), type="l")
 
-colMeans(SIGMA[, c(1, 4)]) - pi^2/6
-
-
-
+#変量効果の分散の事後平均
+colMeans(SIGMA[burnin:nrow(SIGMA), c(1, 7, 13, 19, 25)]) 
+colMeans(t(B.random[i, , burnin:nrow(SIGMA)])) 
+c(b0.random[i, ]-b0, beta1.random[i, ]-beta1)
