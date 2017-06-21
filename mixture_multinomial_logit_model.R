@@ -1,178 +1,211 @@
-#####多項-ディクレリ混合分布モデル#####
+#####混合多項ロジットモデル#####
 library(MASS)
-library(vcd)
-library(gtools)
+library(mlogit)
+library(flexmix)
 library(caret)
 library(reshape2)
-library(plyr)
+library(dplyr)
 library(ggplot2)
 library(lattice)
 
 ####データの発生####
-##モデルの設定
-k <- 4   #セグメント数
-hh <- 500   #セグメントのサンプル数
-n <- hh * k   #総サンプル数
-pt <- rpois(n, 10)   #サンプルごとのセッション数
-pt <- ifelse(pt < 2, 2, pt)
-N <- sum(pt)   #総サンプル数
+#set.seed(8437)
+##データの設定
+sg <- 4
+hh <- 2000   #サンプル数
+pt <- rpois(hh, 5); pt <- ifelse(pt==0, 1, pt)   #購買機会(購買機会数が0なら1に置き換え)
+hhpt <- sum(pt)
+member <- 10   #選択可能メンバー数
+st <- 10   #基準メンバー
+k <- 5   #説明変数の数
 
-th <- 20   #セグメント別のパラメータ数
-freq <- rpois(N, 25)   #個人ごとのの頻度
 
-##IDの設定
-id <- rep(1:n, pt)   #idの設定
-t <- c()   #セッション数の設定
-for(i in 1:n){
+##IDとセグメントの設定
+id <- rep(1:hh, pt)
+t <- c()
+for(i in 1:hh){
   t <- c(t, 1:pt[i])
-}  
-no <- 1:N   #整理番号を設定
-ID <- data.frame(no, id, t)   #データを結合
+}
+seg <- rep(0, hhpt)
+for(i in 1:sg){
+  r <- ((i-1)*(hh/sg)+1):((i-1)*(hh/sg)+hh/sg)
+  seg[id %in% r] <- i
+}
+ID <- data.frame(no=1:hhpt, id=id, t=t, seg=seg)   #データの結合
 
-#セグメントの設定
-seg.z <- rep(1:4, rep(hh, k))
+##説明変数の発生
+#衣装の設定
+c.num <- 8
+CLOTH <- list()
+for(i in 1:(member-1)){
+  CLOTH[[i]] <- t(rmultinom(hhpt, 1, runif(c.num)))
+}
+CLOTH[[member]] <- matrix(0, nrow=hhpt, ncol=c.num)
 
-##セグメントごとに確率ベクトルを定義
-#確率ベクトルの係数の設定
-x <- matrix(rnorm(th*k, 0, 1), nrow=k, ncol=th, byrow=T)
-a.vec <- matrix(0, nrow=k, ncol=th)
-a <- c(0.2, 0.5, 0.9, 1.2)
-for(i in 1:k){
-  a.vec[i, ] <- rnorm(th, 0, a[i]) 
+#レベルの対数
+lv.weib <- round(rweibull(hh*2, 1.8, 280), 0)
+index.lv <- sample(subset(1:length(lv.weib), lv.weib > 80), hh)
+lv <- log(lv.weib[index.lv])
+
+#パネルに変更
+LV <- c()
+for(i in 1:hh){
+  LV <- c(LV, rep(lv[i], pt[i]))
 }
 
-#確率ベクトルの計算
-Pr <- matrix(0, nrow=k, ncol=th)
-for(i in 1:k){
-  Pr[i, ] <- exp(x[i, ]*a.vec[i, ]) / sum(exp(x[i, ]*a.vec[i, ]))
-}
-#発生させた確率を確認
-round(Pr, 3); apply(Pr, 1, summary)
+#スコアの対数
+score.norm <- exp(rnorm(hh*2, 12.5, 0.5))
+index.score <- sample(subset(1:length(score.norm), score.norm > 150000), hh)
+score <- log(score.norm[index.score])
 
-
-##発生させた確率にもとづき頻度データを生成
-#頻度データを発生
-Y <- matrix(0, nrow=N, ncol=th)
-for(i in 1:N){
-  Y[i, ] <- t(rmultinom(1, freq[i], Pr[seg.z[ID[i, 2]], ]))
+#パネルに変更
+SCORE <- c()
+for(i in 1:hh){
+  SCORE <- c(SCORE, rep(score[i], pt[i]))
 }
 
-#出現率を計算
-YP <- matrix(0, nrow=k, ncol=th)  
-for(i in 1:k){
-  index.z <- subset(1:length(seg.z), seg.z==i)
-  YP[i, ] <- colSums(Y[ID[, 2] %in% index.z, ]) / sum(Y[ID[, 2] %in% index.z, ])
-}
-round(YP, 3)
-round(Pr, 3)   #セグメント別の確率
-round(colSums(Y)/sum(Y), 3)   #全体での出現率
+#どのメンバーの勧誘回だったか
+prob <- 1/(choise-1)
+scout <- t(rmultinom(hhpt, 2, rep(prob, member-1)))
 
-data.frame(ID, Y)
-####EMアルゴリズムで混合多項-ディクレリモデルを推定####
-##観測データの対数尤度と潜在変数zを計算するための関数
-LLobz <- function(theta, r, Y, ID, n, k, freq, v){
-  #尤度と対数尤度を計算
-  LLind <- matrix(0, nrow=N, ncol=k)
-  for(i in 1:k){
-    Li <- apply(cbind(Y, freq), 1, function(x) dmultinom(x[1:v], x[v+1], theta[i, ]))
-    LLind[, i] <- Li 
+#メンバーで勧誘が重複しなくなるまで乱数を発生させ続ける
+for(i in 1:10000){
+  if(max(scout)==1) break
+  index.scout <- subset(1:nrow(scout), apply(scout, 1, max) > 1)
+  scout[index.scout, ] <- t(rmultinom(length(index.scout), 2, rep(prob, member-1)))
+  print(i)
+}
+SCOUT <- cbind(scout, 0)
+
+
+##パラメータの設定
+#切片の設定
+beta0 <- matrix(0, nrow=sg, ncol=member-1)
+for(i in 1:sg){
+  beta0[i, ] <- runif(member-1, 0.8, 5.0)
+}
+beta0 <- cbind(beta0, 0)
+
+#衣装の回帰係数の設定
+beta1 <- matrix(0, nrow=sg, ncol=8)
+for(i in 1:sg){
+  beta1[i, ] <- runif(c.num, -2.0, 3.0)
+}
+
+beta2 <- runif(sg, 0.6, 4.0)   #勧誘の回帰係数
+beta3 <- c(runif(member-1, -0.4, 0.4), 0)   #レベルの回帰係数
+beta4 <- c(runif(member-1, -0.2, 0.2), 0)   #スコアの回帰係数
+
+##応答変数の発生
+#ロジットの計算
+U <- list()
+for(s in 1:sg){
+  u <- c()
+  index <- subset(1:nrow(ID), ID$seg==s)
+  for(m in 1:member){
+    betan <- c(beta1[s, ], beta2[s], beta3[m], beta4[m])
+    u <- cbind(u, beta0[s, m] + cbind(CLOTH[[m]][index, ], SCOUT[index, m], LV[index], SCORE[index]) %*% betan)
+  }
+  U[[s]] <- u
+}
+U <- do.call(rbind, U)   #リストから行列に変換
+
+#確率の計算
+Pr <- exp(U)/rowSums(exp(U))
+round(Pr, 3)
+
+#応答変数の発生
+Y <- t(apply(Pr, 1, function(x) rmultinom(1, 1, x)))
+round(cbind(Y, Pr), 3)
+round(colMeans(Y), 3); colSums(Y)
+
+####EMアルゴリズムで有限混合ロジットモデルを推定####
+par.cnt <- (member-1)*sg + c.num*sg + sg + member-1 + member-1
+
+length(b0)+length(beta1)+length(beta2)+length(beta3[-member])+length(beta4[-member])
+
+zpt <- matrix(0, hhpt, sg)
+for(i in 1:hhpt){
+  s <- ID$seg[i]
+  zpt[i, s] <- 1
+}
+x <- c(as.numeric(t(beta0[, -10])), as.numeric(t(beta1)), beta2, beta3[-member], beta4[-member])
+ones <- rep(1, hhpt)   #切片
+
+#パラメータベクトルの長さを設定
+len <- cumsum(c(length(beta0[, -10]), length(beta1), length(beta2), length(beta3[-member]), length(beta4[-member])))
+l <- as.numeric(rbind(c(1, (len[1:4]+1)), len))
+
+##完全データのロジットモデルの尤度
+cll <- function(x, Y, ones, CLOTH, SCOUT, LV, SCORE, zpt, hhpt, sg, member, c.num, l){
+  b0 <- matrix(x[l[1]:l[2]], nrow=member-1, ncol=sg)
+  b1 <- matrix(x[l[3]:l[4]], nrow=c.num, ncol=sg)
+  b2 <- x[l[5]:l[6]]
+  b3 <- x[l[7]:l[8]]
+  b4 <- x[l[9]:l[10]]
+  
+  #完全データでのセグメント別の尤度を計算して和を取る
+  U <- array(0, dim=c(hhpt, sg, member))
+  for(i in 1:(member-1)){
+    U[, , i] <- outer(ones, b0[i, ]) + CLOTH[[i]] %*% b1 + outer(SCOUT[, i], b2) + 
+                                     matrix(LV*b3[i], hhpt, sg) + matrix(SCORE*b4[i], hhpt, sg)
+  }
+  U[, , member] <- CLOTH[[member]] %*% b1 + outer(SCOUT[, member], b2)
+  
+  #対数尤度を計算
+  d <- apply(exp(U[, , ]), 2, rowSums)
+  
+  LLS <- matrix(0, nrow=hhpt, ncol=sg)
+  for(s in 1:sg){
+    LLS[, s] <- rowSums(Y * U[, s, ]) - log(d[, s])
+  }
+  LL <- sum(zpt * LLS)
+  return(LL)
+}
+
+
+##観測データでの尤度と潜在変数zの計算
+ollz <- function(x, Y, r, ones, CLOTH, SCOUT, LV, SCORE, hhpt, hh, sg, member, c.num, l){
+  b0 <- matrix(x[l[1]:l[2]], nrow=member-1, ncol=sg)
+  b1 <- matrix(x[l[3]:l[4]], nrow=c.num, ncol=sg)
+  b2 <- x[l[5]:l[6]]
+  b3 <- x[l[7]:l[8]]
+  b4 <- x[l[9]:l[10]]
+  
+  #効用を計算
+  U <- array(0, dim=c(hhpt, sg, member))
+  for(i in 1:(member-1)){
+    U[, , i] <- outer(ones, b0[i, ]) + CLOTH[[i]] %*% b1 + outer(SCOUT[, i], b2) + 
+      matrix(LV*b3[i], hhpt, sg) + matrix(SCORE*b4[i], hhpt, sg)
+  }
+  U[, , member] <- CLOTH[[member]] %*% b1 + outer(SCOUT[, member], b2)
+  
+  #確率を計算
+  LCo <- matrix(0, nrow=hhpt, ncol=sg)
+  d <- apply(exp(U[, , ]), 2, rowSums)   #多項ロジットモデルの分母
+  
+  for(s in 1:sg){
+    P <- exp(U[, s, ]) / matrix(d[, s], nrow=hhpt, ncol=member)
+    LCo[, s] <- apply(P^Y, 1, prod)
   }
   
-  #観測データの対数尤度と潜在変数zの計算
-  #混合率
-  R <- matrix(r, nrow=n, ncol=k)
-  
-  #個人別の潜在確率の計算
-  LLd <- matrix(0, nrow=n, ncol=k)
-  LLl <- log(LLind)
-  for(i in 1:n){
-    LLd[i, ] <- apply(LLl[ID[, 2]==i, ], 2, sum)
+  #ID別に尤度の積を取る
+  LLho <- matrix(0, nrow=hh, ncol=sg)
+  for(i in 1:hh){
+    if(length(ID$id[ID$id==i])==1){
+      LLho[i, ] <- LCo[ID$id==i, ] 
+    } else {
+      LLho[i, ] <- apply(LCo[ID$id==i, ], 2, prod)
+    }
   }
   
-  #桁落ちを防ぐために対数尤度が-744以下の場合は対数尤度を嵩上げする
-  LL.min <- apply(LLd, 1, min)
-  index.loss <- subset(1:nrow(LLd), (LL.min + 743) < 0)
-  lplus <- -matrix((LL.min[index.loss] + 743), nrow=length(index.loss), ncol=k)
-  LLd[index.loss, ] <- LLd[index.loss, ] + lplus
+  #観測データでの対数尤度
+  LLo <- sum(log(apply(matrix(r, nrow=hh, ncol=sg, byrow=T) * LLho, 1, sum)))
   
-  #潜在確率zの計算
-  LLho <- R * exp(LLd)
-  z <- LLho / matrix(rowSums(LLho), nrow=n, ncol=k)
+  #潜在変数zの計算
+  z0 <- matrix(r, nrow=hh, ncol=sg, byrow=T) * LLho   #潜在変数zの分子
+  z1 <- z0 / matrix(rowSums(z0), nrow=hh, ncol=sg)
   
-  #観測データの対数尤度を計算
-  LLosum <- sum(log(apply(matrix(r, nrow=n, ncol=k, byrow=T) * exp(LLd), 1, sum)))
-  rval <- list(LLobz=LLosum, z=z, LL=LLd)
+  rval <- list(LLo=LLo, z1=z1)
   return(rval)
 }
-
-##EMアルゴリズムの設定
-#更新ステータス
-dl <- 100   #EMステップでの対数尤度の差の初期値
-tol <- 1
-iter <- 0
-
-#初期値の設定
-alpha <- rep(2, th)   #事前分布のパラメータ
-r <- c(0.4, 0.3, 0.2, 0.2)   #混合率の初期値
-
-#パラメータの初期値
-theta.f <- matrix(0, nrow=k, ncol=th)
-for(i in 1:k){
-  minmax <- colSums(Y)
-  pf <- runif(th, min(minmax), max(minmax))
-  theta.f[i, ] <- pf/sum(pf)
-}
-
-#対数尤度の初期化
-L <- LLobz(theta=theta.f, r=r, Y=Y, ID=ID, n=n, k=k, freq=freq, v=th)
-LL1 <- L$LLob
-z <- L$z
-
-##EMアルゴリズム
-while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
-  #Eステップの計算
-  z <- L$z   #潜在変数zの出力
-  zpt <- matrix(0, nrow=N, ncol=k)
-  for(i in 1:n){
-    zpt[ID[, 2]==i, ] <- matrix(z[i, ], nrow=length(ID[ID[, 2]==i, 2]), ncol=k, byrow=T)
-  }
-  
-  #Mステップの計算と最適化
-  #thetaの推定
-  theta <- matrix(0, nrow=k, ncol=th)
-  for(j in 1:k){
-    #完全データの対数尤度からthetaの推定量を計算
-    theta.seg <- (colSums(zpt[, j]*Y) + r[j]*(alpha-1)) / (sum(zpt[, j]*Y) + r[j]*sum(alpha-1))
-    theta[j, ] <- as.matrix(theta.seg)
-  }
-  #混合率を推定
-  r <- apply(z, 2, sum) / n
-  
-  #観測データの対数尤度を計算
-  L <- LLobz(theta=theta, r=r, Y=Y, ID=ID, n=n, k=k, freq=freq, v=th)
-  LL <- L$LLob   #観測データの対数尤度
-  iter <- iter+1   
-  dl <- LL-LL1
-  LL1 <- LL
-  print(LL)
-}
-
-####推定結果と要約
-##推定されたパラメータ
-round(theta, 3)   #推定されたパラメータ
-round(Pr, 3)   #真のパラメータ
-round(r, 3)   #混合率
-round(data.frame(seg=apply(z, 1, which.max), z=z), 3)   #個人別のセグメントへの所属確率と所属セグメント
-
-#推定されたパラメータのグラフ
-max.theta <- max(theta)
-par(mfrow=c(2,2)) 
-barplot(theta[1, ], ylim=c(0, max.theta))
-barplot(theta[2, ], ylim=c(0, max.theta))
-barplot(theta[3, ], ylim=c(0, max.theta))
-barplot(theta[4, ], ylim=c(0, max.theta))
-par(mfrow=c(1, 1))
-
-##適合度
-round(LL, 3)   #最大化された対数尤度
-round(AIC <- -2*LL + 2*(length(th*k)+k), 3)   #AIC
