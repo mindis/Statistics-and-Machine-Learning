@@ -39,8 +39,10 @@ c.num <- 8
 CLOTH <- list()
 for(i in 1:(member-1)){
   CLOTH[[i]] <- t(rmultinom(hhpt, 1, runif(c.num)))
+  CLOTH[[i]] <- CLOTH[[i]][, -c.num]
 }
-CLOTH[[member]] <- matrix(0, nrow=hhpt, ncol=c.num)
+CLOTH[[member]] <- matrix(0, nrow=hhpt, ncol=c.num-1)
+
 
 #レベルの対数
 lv.weib <- round(rweibull(hh*2, 1.8, 280), 0)
@@ -54,29 +56,23 @@ for(i in 1:hh){
 }
 
 #スコアの対数
-score.norm <- exp(rnorm(hh*2, 12.5, 0.5))
-index.score <- sample(subset(1:length(score.norm), score.norm > 150000), hh)
+score.norm <- exp(rnorm(hhpt*2, 12.5, 0.5))
+index.score <- sample(subset(1:length(score.norm), score.norm > 150000), hhpt)
 score <- log(score.norm[index.score])
-
-#パネルに変更
-SCORE <- c()
-for(i in 1:hh){
-  SCORE <- c(SCORE, rep(score[i], pt[i]))
-}
+SCORE <- score
 
 #どのメンバーの勧誘回だったか
 prob <- 1/(choise-1)
-scout <- t(rmultinom(hhpt, 2, rep(prob, member-1)))
+scout <- t(rmultinom(hhpt, 2, rep(prob, member)))
 
 #メンバーで勧誘が重複しなくなるまで乱数を発生させ続ける
 for(i in 1:10000){
   if(max(scout)==1) break
   index.scout <- subset(1:nrow(scout), apply(scout, 1, max) > 1)
-  scout[index.scout, ] <- t(rmultinom(length(index.scout), 2, rep(prob, member-1)))
+  scout[index.scout, ] <- t(rmultinom(length(index.scout), 2, rep(prob, member)))
   print(i)
 }
-SCOUT <- cbind(scout, 0)
-
+SCOUT <- scout
 
 ##パラメータの設定
 #切片の設定
@@ -87,14 +83,14 @@ for(i in 1:sg){
 beta0 <- cbind(beta0, 0)
 
 #衣装の回帰係数の設定
-beta1 <- matrix(0, nrow=sg, ncol=8)
+beta1 <- matrix(0, nrow=sg, ncol=c.num-1)
 for(i in 1:sg){
-  beta1[i, ] <- runif(c.num, -2.0, 3.0)
+  beta1[i, ] <- runif(c.num-1, -2.0, 3.0)
 }
 
 beta2 <- runif(sg, 0.6, 4.0)   #勧誘の回帰係数
-beta3 <- c(runif(member-1, -0.4, 0.4), 0)   #レベルの回帰係数
-beta4 <- c(runif(member-1, -0.2, 0.2), 0)   #スコアの回帰係数
+beta3 <- c(runif(member-1, -0.3, 0.3), 0)   #レベルの回帰係数
+beta4 <- c(runif(member-1, -0.15, 0.15), 0)   #スコアの回帰係数
 
 ##応答変数の発生
 #ロジットの計算
@@ -120,30 +116,14 @@ round(cbind(Y, Pr), 3)
 round(colMeans(Y), 3); colSums(Y)
 
 ####EMアルゴリズムで有限混合ロジットモデルを推定####
-par.cnt <- (member-1)*sg + c.num*sg + sg + member-1 + member-1
-
-length(b0)+length(beta1)+length(beta2)+length(beta3[-member])+length(beta4[-member])
-
-zpt <- matrix(0, hhpt, sg)
-for(i in 1:hhpt){
-  s <- ID$seg[i]
-  zpt[i, s] <- 1
-}
-x <- c(as.numeric(t(beta0[, -10])), as.numeric(t(beta1)), beta2, beta3[-member], beta4[-member])
-ones <- rep(1, hhpt)   #切片
-
-#パラメータベクトルの長さを設定
-len <- cumsum(c(length(beta0[, -10]), length(beta1), length(beta2), length(beta3[-member]), length(beta4[-member])))
-l <- as.numeric(rbind(c(1, (len[1:4]+1)), len))
-
 ##完全データのロジットモデルの尤度
 cll <- function(x, Y, ones, CLOTH, SCOUT, LV, SCORE, zpt, hhpt, sg, member, c.num, l){
   b0 <- matrix(x[l[1]:l[2]], nrow=member-1, ncol=sg)
-  b1 <- matrix(x[l[3]:l[4]], nrow=c.num, ncol=sg)
+  b1 <- matrix(x[l[3]:l[4]], nrow=c.num-1, ncol=sg)
   b2 <- x[l[5]:l[6]]
   b3 <- x[l[7]:l[8]]
   b4 <- x[l[9]:l[10]]
-  
+
   #完全データでのセグメント別の尤度を計算して和を取る
   U <- array(0, dim=c(hhpt, sg, member))
   for(i in 1:(member-1)){
@@ -167,7 +147,7 @@ cll <- function(x, Y, ones, CLOTH, SCOUT, LV, SCORE, zpt, hhpt, sg, member, c.nu
 ##観測データでの尤度と潜在変数zの計算
 ollz <- function(x, Y, r, ones, CLOTH, SCOUT, LV, SCORE, hhpt, hh, sg, member, c.num, l){
   b0 <- matrix(x[l[1]:l[2]], nrow=member-1, ncol=sg)
-  b1 <- matrix(x[l[3]:l[4]], nrow=c.num, ncol=sg)
+  b1 <- matrix(x[l[3]:l[4]], nrow=c.num-1, ncol=sg)
   b2 <- x[l[5]:l[6]]
   b3 <- x[l[7]:l[8]]
   b4 <- x[l[9]:l[10]]
@@ -209,3 +189,70 @@ ollz <- function(x, Y, r, ones, CLOTH, SCOUT, LV, SCORE, hhpt, hh, sg, member, c
   rval <- list(LLo=LLo, z1=z1)
   return(rval)
 }
+
+##EMアルゴリズムの設定
+iter <- 0
+par.cnt <- (member-1)*sg + (c.num-1)*sg + sg + member-1 + member-1   
+cuml <- cumsum(c(length(beta0[, -10]), length(beta1), length(beta2), length(beta3[-member]), length(beta4[-member])))
+p.len <- as.numeric(rbind(c(1, (cuml[1:4]+1)), cuml))   #パラメータベクトルの指示変数
+ones <- rep(1, hhpt)   #切片の設定
+dl <- 100   #EMステップでの対数尤度の差の初期値を設定
+tol <- 1
+
+##EMアルゴリズムの初期値の設定
+#ベストな初期パラメータを選択
+r <- c(0.2, 0.2, 0.3, 0.3)
+zpt <- matrix(0, nrow=hhpt, ncol=sg)
+
+rp <- 100   #繰り返し数
+Z <- list()
+val <- c()
+x <- matrix(0, nrow=rp, ncol=par.cnt)
+
+for(i in 1:rp){
+  #初期パラメータの設定
+  x[i, ] <- c(runif((member-1)*sg, 0.5, 5), runif((c.num-1)*sg, -1, 2), runif(sg, 0.5, 2), 
+              runif(2*(member-1), -0.2, 0.2))   
+  
+  #観測データの対数尤度の計算
+  oll <- ollz(x=x[i, ], Y=Y, r=r, ones=ones, CLOTH=CLOTH, SCOUT=SCOUT, LV=LV, SCORE=SCORE, hhpt=hhpt, hh=hh,
+              sg=sg, member=member, c.num=c.num, l=p.len)
+  
+  #パラメータの出力
+  val <- c(val, oll$LLo)
+  Z[[i]] <- oll$z1
+  print(i)
+}
+
+#ベストな対数尤度でのパラメータ
+opt <- which.max(val)
+z <- Z[[opt]]
+beta <- x[opt, ]
+LL1 <- val[opt]
+
+
+##EMアルゴリズムによる有限混合ロジットモデルの推定
+while(abs(dl) >= tol){   #dlがtol以上なら繰り返す
+  for(i in 1:hh){
+    zpt[ID$id==i, ] <- matrix(z[i, ], nrow=length(ID$id[ID$id==i]), ncol=sg, byrow=T)
+  }
+  #完全データでのロジットモデルの推定(Mステップ)
+  res <- optim(beta, cll, Y=Y, ones=ones, CLOTH=CLOTH, SCOUT=SCOUT, LV=LV, SCORE=SCORE, zpt=zpt, hhpt=hhpt,
+               sg=sg, member=member, c.num=c.num, l=p.len, method="BFGS", hessian=FALSE, 
+               control=list(fnscale=-1, maxit=10))
+  beta <- res$par   #パラメータの更新
+  r <- apply(z, 2, sum)/hh   #混合率の計算
+  
+  #Eステップでの対数尤度の期待値の計算
+  obsllz <- ollz(x=beta, Y=Y, r=r, ones=ones, CLOTH=CLOTH, SCOUT=SCOUT, LV=LV, SCORE=SCORE, hhpt=hhpt, hh=hh,
+                 sg=sg, member=member, c.num=c.num, l=p.len)
+  LL <- obsllz$LLo
+  z <- obsllz$z1
+  
+  #EMアルゴリズムのパラメータの更新
+  iter <- iter+1
+  dl <- LL-LL1
+  LL1 <- LL
+  print(LL)
+}
+
