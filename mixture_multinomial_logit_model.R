@@ -62,7 +62,7 @@ score <- log(score.norm[index.score])
 SCORE <- score
 
 #‚Ç‚Ìƒƒ“ƒo[‚ÌŠ©—U‰ñ‚¾‚Á‚½‚©
-prob <- 1/(choise-1)
+prob <- 1/(member)
 scout <- t(rmultinom(hhpt, 2, rep(prob, member)))
 
 #ƒƒ“ƒo[‚ÅŠ©—U‚ªd•¡‚µ‚È‚­‚È‚é‚Ü‚Å—”‚ğ”­¶‚³‚¹‘±‚¯‚é
@@ -198,13 +198,14 @@ p.len <- as.numeric(rbind(c(1, (cuml[1:4]+1)), cuml))   #ƒpƒ‰ƒ[ƒ^ƒxƒNƒgƒ‹‚Ìw
 ones <- rep(1, hhpt)   #Ø•Ğ‚Ìİ’è
 dl <- 100   #EMƒXƒeƒbƒv‚Å‚Ì‘Î”–Ş“x‚Ì·‚Ì‰Šú’l‚ğİ’è
 tol <- 1
+maxit <- c(10, 20)   #€ƒjƒ…[ƒgƒ“–@‚ÌƒXƒeƒbƒv”
 
 ##EMƒAƒ‹ƒSƒŠƒYƒ€‚Ì‰Šú’l‚Ìİ’è
 #ƒxƒXƒg‚È‰Šúƒpƒ‰ƒ[ƒ^‚ğ‘I‘ğ
 r <- c(0.2, 0.2, 0.3, 0.3)
 zpt <- matrix(0, nrow=hhpt, ncol=sg)
 
-rp <- 100   #ŒJ‚è•Ô‚µ”
+rp <- 200   #ŒJ‚è•Ô‚µ”
 Z <- list()
 val <- c()
 x <- matrix(0, nrow=rp, ncol=par.cnt)
@@ -230,29 +231,65 @@ z <- Z[[opt]]
 beta <- x[opt, ]
 LL1 <- val[opt]
 
-
 ##EMƒAƒ‹ƒSƒŠƒYƒ€‚É‚æ‚é—LŒÀ¬‡ƒƒWƒbƒgƒ‚ƒfƒ‹‚Ì„’è
-while(abs(dl) >= tol){   #dl‚ªtolˆÈã‚È‚çŒJ‚è•Ô‚·
-  for(i in 1:hh){
-    zpt[ID$id==i, ] <- matrix(z[i, ], nrow=length(ID$id[ID$id==i]), ncol=sg, byrow=T)
+for(j in 1:2){
+  dl <- 10
+ 
+  while(abs(dl) >= tol){   #dl‚ªtolˆÈã‚È‚çŒJ‚è•Ô‚·
+    for(i in 1:hh){
+      zpt[ID$id==i, ] <- matrix(z[i, ], nrow=length(ID$id[ID$id==i]), ncol=sg, byrow=T)
+    }
+    #Š®‘Sƒf[ƒ^‚Å‚ÌƒƒWƒbƒgƒ‚ƒfƒ‹‚Ì„’è(MƒXƒeƒbƒv)
+    res <- optim(beta, cll, Y=Y, ones=ones, CLOTH=CLOTH, SCOUT=SCOUT, LV=LV, SCORE=SCORE, zpt=zpt, hhpt=hhpt,
+                 sg=sg, member=member, c.num=c.num, l=p.len, method="BFGS", hessian=FALSE, 
+                 control=list(fnscale=-1, maxit=maxit[j]))
+    beta <- res$par   #ƒpƒ‰ƒ[ƒ^‚ÌXV
+    r <- apply(z, 2, sum)/hh   #¬‡—¦‚ÌŒvZ
+    
+    #EƒXƒeƒbƒv‚Å‚Ì‘Î”–Ş“x‚ÌŠú‘Ò’l‚ÌŒvZ
+    obsllz <- ollz(x=beta, Y=Y, r=r, ones=ones, CLOTH=CLOTH, SCOUT=SCOUT, LV=LV, SCORE=SCORE, hhpt=hhpt, hh=hh,
+                   sg=sg, member=member, c.num=c.num, l=p.len)
+    LL <- obsllz$LLo
+    z <- obsllz$z1
+    
+    #EMƒAƒ‹ƒSƒŠƒYƒ€‚Ìƒpƒ‰ƒ[ƒ^‚ÌXV
+    iter <- iter+1
+    dl <- LL-LL1
+    LL1 <- LL
+    print(LL)
   }
-  #Š®‘Sƒf[ƒ^‚Å‚ÌƒƒWƒbƒgƒ‚ƒfƒ‹‚Ì„’è(MƒXƒeƒbƒv)
-  res <- optim(beta, cll, Y=Y, ones=ones, CLOTH=CLOTH, SCOUT=SCOUT, LV=LV, SCORE=SCORE, zpt=zpt, hhpt=hhpt,
-               sg=sg, member=member, c.num=c.num, l=p.len, method="BFGS", hessian=FALSE, 
-               control=list(fnscale=-1, maxit=10))
-  beta <- res$par   #ƒpƒ‰ƒ[ƒ^‚ÌXV
-  r <- apply(z, 2, sum)/hh   #¬‡—¦‚ÌŒvZ
-  
-  #EƒXƒeƒbƒv‚Å‚Ì‘Î”–Ş“x‚ÌŠú‘Ò’l‚ÌŒvZ
-  obsllz <- ollz(x=beta, Y=Y, r=r, ones=ones, CLOTH=CLOTH, SCOUT=SCOUT, LV=LV, SCORE=SCORE, hhpt=hhpt, hh=hh,
-                 sg=sg, member=member, c.num=c.num, l=p.len)
-  LL <- obsllz$LLo
-  z <- obsllz$z1
-  
-  #EMƒAƒ‹ƒSƒŠƒYƒ€‚Ìƒpƒ‰ƒ[ƒ^‚ÌXV
-  iter <- iter+1
-  dl <- LL-LL1
-  LL1 <- LL
-  print(LL)
 }
 
+####„’èŒ‹‰Ê‚Æ—v–ñ####
+##„’è‚³‚ê‚½ƒpƒ‰ƒ[ƒ^‚Æ^‚Ìƒpƒ‰ƒ[ƒ^‚Ì”äŠr
+#„’è‚³‚ê‚½ƒpƒ‰ƒ[ƒ^
+#Ø•Ğ‚Ì‰ñ‹AŒW”
+round(t(matrix(beta[p.len[1]:p.len[2]], nrow=member-1, ncol=sg)), 3)  
+round((beta0[, -member]), 3)
+
+#ˆß‘•‚Ì‰ñ‹AŒW”
+round(t(matrix(beta[p.len[3]:p.len[4]], nrow=c.num-1, ncol=sg)), 3)  
+round(beta1, 3)
+
+#Š©—U‚Ì‰ñ‹AŒW”
+round((beta[p.len[5]:p.len[6]]), 3)  
+round(beta2, 3)
+
+#LV‚Ì‰ñ‹AŒW”
+round(beta[p.len[7]:p.len[8]], 3)   
+round(beta3, 3)
+
+#ƒXƒRƒA‚Ì‰ñ‹AŒW”
+round(beta[p.len[9]:p.len[10]], 3)   
+round(beta4, 3)
+
+##¬‡—¦‚ÆƒZƒOƒƒ“ƒg‚Ö‚ÌŠ‘®Šm—¦
+round(r, 3)   #¬‡—¦
+round(z, 3)   #öİŠm—¦
+apply(z, 1, which.max)   #ƒZƒOƒƒ“ƒg‚Ö‚ÌŠ‘®
+matplot(z[, ], ylab="ƒZƒOƒƒ“ƒg‚Ö‚ÌŠ‘®Šm—¦", xlab="ƒTƒ“ƒvƒ‹ID", main="ŒÂl‚²‚Æ‚ÌƒZƒOƒƒ“ƒgŠ‘®Šm—¦")
+
+##AIC‚ÆBIC‚ÌŒvZ
+round(LL, 3)   #Å‘å‰»‚³‚ê‚½ŠÏ‘ªƒf[ƒ^‚Ì‘Î”–Ş“x
+round(AIC <- -2*LL + 2*(length(res$par)+sg-1), 3)   #AIC
+round(BIC <- -2*LL + log(hhpt)*length(res$par+sg-1), 3) #BIC
