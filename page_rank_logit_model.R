@@ -1,5 +1,7 @@
 ####ロジスティック回帰モデルによるページランク解析####
 library(MASS)
+library(mlogit)
+library(nnet)
 library(reshape2)
 library(dplyr)
 library(caret)
@@ -132,6 +134,7 @@ for(i in 1:n){
   }
 }
 
+
 #要約統計量
 len   #ランクデータ数
 colSums(Y.rank)   #ランク選択の出現数
@@ -227,4 +230,5 @@ logit.rank <- X.rank * cbind(matrix(beta1, nrow=nrow(X.rank), ncol=h-1, byrow=T)
 U.rank <- exp(logit.rank) + (X.rank-1)　
 round(Pr.rank <- U.rank/rowSums(U.rank), 2)
 (Pr.rank1 <- round(data.frame(w.id, rank, Y=Y.rank %*% 1:h, Pr=Pr.rank), 2))
+
 
