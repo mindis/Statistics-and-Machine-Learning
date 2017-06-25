@@ -6,8 +6,10 @@ library(bayesm)
 library(caret)
 library(reshape2)
 library(dplyr)
+library(foreach)
 library(ggplot2)
 library(lattice)
+
 
 ####データの発生####
 #set.seed(8437)
@@ -183,8 +185,8 @@ LLike <- function(beta, b, X, Z, Y, hh, choise){
   return(LL.val)
 }
 
-
-for(rp in 1:R){
+##マルコフ連鎖モンテカルロ法でパラメータをサンプリング
+foreach(rp = 1:R) %do% {
   ##MHサンプリングで固定効果betaのサンプリング
   oldbeta.rv <- as.numeric(t(oldbeta.r))
   betad.f <- oldbeta.f
@@ -222,17 +224,15 @@ for(rp in 1:R){
   betan.random <- betad.random + rw
   betad.r <- as.numeric(t(betad.random))
   betan.r <- as.numeric(t(betan.random))
+  inv.cov <- solve(cov.random)
   
   #対数尤度と対数事前分布を計算
   lognew.r <- LLike(beta=oldbeta.f, b=betan.r, X=XM, Z=Z, Y=Y, hh=hhpt, choise=choise)$LLl
   logold.r <- LLike(beta=oldbeta.f, b=betad.r, X=XM, Z=Z, Y=Y, hh=hhpt, choise=choise)$LLl
-  logpnew.r <- apply((betan.random - beta.random), 1, function(x) -0.5 * x %*% solve(cov.random) %*% x)
-  logpold.r <- apply((betad.random - beta.random), 1, function(x) -0.5 * x %*% solve(cov.random) %*% x)
+  logpnew.r <- apply((betan.random - beta.random), 1, function(x) -0.5 * x %*% inv.cov %*% x)
+  logpold.r <- apply((betad.random - beta.random), 1, function(x) -0.5 * x %*% inv.cov %*% x)
   
   #ID別に対数尤度の和を取る
-  #lognew.rind <- as.numeric(tapply(lognew.r, ID[, 2], sum))
-  #logold.rind <- as.numeric(tapply(logold.r, ID[, 2], sum))
-  
   lognew.rind <- data.frame(logl=lognew.r, id=ID[, 2]) %>%
                   dplyr::group_by(id) %>%
                   dplyr::summarize(sum=sum(logl))
@@ -274,10 +274,9 @@ for(rp in 1:R){
   }
 }
 
-
+####推定結果と要約####
 burnin <- 2500
 i <- 6
-pt[i]
 
 matplot(BETA[, 1:4], type="l")
 matplot(BETA[, 5:8], type="l")
