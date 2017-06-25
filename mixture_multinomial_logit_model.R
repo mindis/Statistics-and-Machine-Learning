@@ -1,6 +1,7 @@
 #####混合多項ロジットモデル#####
 library(MASS)
 library(mlogit)
+library(nnet)
 library(flexmix)
 library(caret)
 library(reshape2)
