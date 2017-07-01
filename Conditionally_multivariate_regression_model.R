@@ -157,7 +157,7 @@ YX.vec <- cbind(ID.vec, BUY.vec, PRICE.vec, DISC.vec, DISP.vec, CAMP.vec, SCALE.
 X.vec <- cbind(BP.vec, PRICE.vec, DISC.vec, DISP.vec, CAMP.vec, SCALE.vec)
 round(X.vec, 3)
 
-X.vec
+
 ####最小二乗法で条件付き多変量回帰モデルを推定####
 ##最小二乗法でパラメータを推定
 round(beta <- as.numeric(solve(t(X.vec) %*% X.vec) %*% t(X.vec) %*% log(BUY.vec)), 2)
