@@ -139,14 +139,14 @@ idno <- rep(1:hhpt, rep(choise, hhpt))
 ID.vec <- data.frame(no=1:(hhpt*choise), idno=idno, id=id.v, t=t.vec, pd=pd)
 
 ##パラメータの設定
-for(i in 1:1000){
+for(i in 1:10000){
   print(i)
-  beta0 <- c(runif(choise, -0.7, 1.2))
-  beta1 <- c(runif(choise, -1.8, -0.8))
+  beta0 <- c(runif(choise, -0.7, 1.1))
+  beta1 <- c(runif(choise, -1.8, -0.9))
   beta2 <- c(runif(choise, 0.5, 1.6))
   beta3 <- c(runif(choise, 0.5, 1.1))
   beta4 <- c(runif(choise, 0.5, 1.15))
-  beta5 <- c(runif(choise, -0.1, 0.1))
+  beta5 <- c(runif(choise, -0.25, 0.25))
   betat <- c(beta0, beta1, beta2, beta3, beta4, beta5)
   
   
@@ -233,7 +233,7 @@ probit_LL <- function(x, Y, X){
   U <- b0 + as.matrix(X) %*% b1
   
   #対数尤度を計算
-  Pr <- pnorm(U)   #確率
+  Pr <- pnorm(U)   #確率の計算
   LLi <- Y*log(Pr) + (1-Y)*log(1-Pr)
   LL <- sum(LLi)
   return(LL)
@@ -262,7 +262,7 @@ for(b in 1:choise){
   }
 }
 oldbeta <- as.numeric(first_beta)
-
+betaf <- oldbeta
 
 #分散共分散行列の初期値
 corf <- corrM(col=choise, lower=-0.5, upper=0.6)   #相関行列を作成
@@ -274,11 +274,11 @@ old.utilm<- matrix(as.matrix(X.vec) %*% oldbeta, nrow=hhpt, ncol=choise, byrow=T
 Z <- old.utilm + mvrnorm(hhpt, rep(0, choise), oldcov)   #平均構造+誤差
 
 #切断正規分布の切断領域を定義
-a <- ifelse(Y==0, -100, 0)
-b <- ifelse(Y==1, 100, 0)
+a <- ifelse(Y==0, -200, 0)
+b <- ifelse(Y==1, 200, 0)
 
 
-####データ拡大法+ギブスサンプリングで多変量プロビットモデルを推定####
+####データ拡大法 + ギブスサンプリングで多変量プロビットモデルを推定####
 for(rp in 1:mcmc){
 
   ##選択結果と整合的な潜在効用を発生させる
@@ -291,7 +291,7 @@ for(rp in 1:mcmc){
     MVR <- cdMVN(old.utilm, oldcov, j, Z)
     MVR.U[, j] <- MVR$CDmu
     MVR.S <- c(MVR.S, MVR$CDvar)
-    Z[, j] <- rtnorm(MVR.U[, j], MVR.S[j], a[, j], b[, j])
+    Z[, j] <- rtnorm(MVR.U[, j], sqrt(MVR.S[j]), a[, j], b[, j])
   }
   Z[is.infinite(Z)] <- 0
   Zold <- Z
@@ -343,7 +343,7 @@ for(rp in 1:mcmc){
     BETA[mkeep, ] <- oldbeta
     SIGMA[mkeep, ] <- as.numeric(oldcov)
     print(rp)
-    print(round(rbind(oldbeta, betat), 2))
+    print(round(rbind(oldbeta, betaf, betat), 2))
     print(round(rbind(as.numeric(oldcov), as.numeric(Cov)), 2))
   }
 }
@@ -386,4 +386,3 @@ round(apply(SIGMA[burnin:nrow(SIGMA), ], 2, sd), 2)   #事後標準偏差
 ##推定値の分布
 hist(BETA[burnin:nrow(BETA), 1], col="grey", xlab="推定値", main="ブランド1の切片の推定値の分布")
 hist(BETA[burnin:nrow(BETA), 2], col="grey", xlab="推定値", main="ブランド2の切片の推定値の分布")
-
