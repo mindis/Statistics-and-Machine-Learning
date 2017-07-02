@@ -80,7 +80,7 @@ LLobz <- function(theta, r, Y, ID, n, k, freq, v){
   
   #観測データの対数尤度と潜在変数zの計算
   #混合率
-  R <- matrix(r, nrow=n, ncol=k)
+  R <- matrix(r, nrow=n, ncol=k, byrow=T)
   
   #個人別の潜在確率の計算
   LLd <- matrix(0, nrow=n, ncol=k)
