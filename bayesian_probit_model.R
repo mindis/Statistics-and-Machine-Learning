@@ -83,6 +83,7 @@ b <- ifelse(Y==1, 100, 0)
 for(rp in 1:R){
   ##潜在効用zの発生
   mu <- Xi %*% betaold 
+  cbind(mu, a, b)
   z <- rtnorm(mu, sigma, a, b)   #潜在変数の発生
   
   ##betaのサンプリング
@@ -100,7 +101,7 @@ for(rp in 1:R){
   if(rp%%keep==0){
     BETA[mkeep, ] <- betan
     Util[mkeep, ] <- as.numeric(z)
-    #print(round(THETA[mkeep, 1:20], 2))
+    #print(round(BETA[mkeep, ], 2))
   }
 }
 
