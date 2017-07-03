@@ -160,7 +160,8 @@ while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
 }
 
 ##所属セグメントを決定
-Z1 <- as.numeric(t(apply(z, 1, function(x) rmultinom(1, 1, x))) %*% 1:sg_n)
+z1 <- t(apply(z, 1, function(x) rmultinom(1, 1, x)))
+Z1 <- as.numeric(z1 %*% 1:sg_n)
 
 
 ####EMアルゴリズムでアイテムの潜在変数の初期値を決定する####
@@ -232,24 +233,76 @@ for(rp in 1:1000){
 }
 
 ##所属セグメントを決定
-Z2 <- as.numeric(t(apply(z, 1, function(x) rmultinom(1, 1, x))) %*% 1:sg_k)
+z2 <- t(apply(z, 1, function(x) rmultinom(1, 1, x)))
+Z2 <- as.numeric(z2 %*% 1:sg_k)
 
 ##統計量の初期値を計算
-#ユーザーセグメントの統計量
-M1k <- as.numeric(table(Z1))
+M1k <- as.numeric(table(Z1))   #ユーザーセグメントの統計量   
+M1l <- as.numeric(table(Z2))   #アイテムセグメントの統計量
 
-Mkl <- matrix(0, nrow=sg_n, sg_k)
+Nkl <- matrix(0, nrow=sg_n, ncol=sg_k)
+Mkl <- matrix(0, nrow=sg_n, ncol=sg_k)
 Xkl <- array(0, dim=c(N, K, sg_n*sg_k))
+Wkl <- array(0, dim=c(N, K, sg_n*sg_k))
 Zkl <- array(0, dim=c(N, K, sg_n*sg_k))
+
 for(i in 1:sg_n){
   for(j in 1:sg_k){
     r <- (i-1) + j
     Zkl[, , r] <- as.matrix(ifelse(Z1==i, 1, 0), nrow=N, ncol=1) %*% ifelse(Z2==j, 1, 0)
     Xkl[, , r] <- X * Zkl[, , r]
+    Wkl[, , r] <- (1-X) * Zkl[, , r]
     Mkl[i, j] <- sum(Xkl[, , r])
+    Nkl[i, j] <- sum(Wkl[, , r])
   }
 }
 
+#ユーザーごとにMkl、Nklを格納
+Mkl_u <- array(Mkl, dim=c(sg_n, sg_k, N))
+Nkl_u <- array(Nkl, dim=c(sg_n, sg_k, N))
+
+
 ####周辺化ギブスサンプリングで潜在変数zをサンプリング####
 ##ユーザーの潜在変数をサンプリング
+M1k_hat <- matrix(M1k, nrow=N, ncol=length(M1k), byrow=T) - z1
+
+ID2 <- rep(1:N, rep(K, N))
+ID1 <- rep(1:N, cnt_ind)
+Mkl_v <- as.numeric(t(Mkl_ind))
+
+
+system.time(as.matrix(data.frame(ID1, cnt=Mkl_v[Mkl_v > 0]) %>%
+        dplyr::group_by(ID1) %>%
+        dplyr::count(cnt)))
+
+as.matrix(data.frame(ID1, cnt=Mkl_v[Mkl_v > 0]) %>%
+            dplyr::group_by(ID1) %>%
+            dplyr::count(cnt))
+
+
+Mkl_zero <- Mkl_v[Mkl_v > 0]
+Mkl_cnt <- t(table(Mkl_zero, ID1))
+
+
+
+Mkl_u[, , 1]
+
+?table
+
+cnt_ind <- apply(X, 1, sum)
+
+system.time(t(table(Mkl_v[Mkl_v > 0], ID1)))
+
+T1 <- t(table(Mkl_v[Mkl_v > 0], ID1))
+T2 <-  t(table(Mkl_v, ID2))
+cbind(T1, T2)
+T2
+table(Mkl_v[1:150])
+
+table(Mkl_v[ID2==1], ID2[ID2==1])
+table(Mkl_v[ID2==1])
+Mkl_v[1:150]
+
+
+table(Mkl_ind[1, ])
 
