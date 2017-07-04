@@ -42,7 +42,7 @@ X <- matrix(0, nrow=N, ncol=K)
 for(i in 1:N){
   print(i)
   for(j in 1:K){
-  X[i, j] <- rbinom(1, 1, theta.m[zno1[i], zno2[j]])
+    X[i, j] <- rbinom(1, 1, theta.m[zno1[i], zno2[j]])
   }
 }
 
@@ -83,11 +83,11 @@ LLobz <- function(theta, r, Y, ID, n, k, freq, v){
   for(i in 1:n){
     if(NROW(ID[ID[, 2]==i, ]==1)) { 
       LLd[i, ] <- LLl[i, ]  
-      } else {
+    } else {
       LLd[i, ] <- apply(LLl[ID[, 2]==i, ], 2, sum)
     }
   }
-
+  
   #桁落ちを防ぐために対数尤度が-744以下の場合は対数尤度を嵩上げする
   LL.min <- apply(LLd, 1, min)
   index.loss <- subset(1:nrow(LLd), (LL.min + 743) < 0)
@@ -97,7 +97,7 @@ LLobz <- function(theta, r, Y, ID, n, k, freq, v){
   #潜在確率zの計算
   LLho <- R * exp(LLd)
   z <- LLho / matrix(rowSums(LLho), nrow=n, ncol=k)
-
+  
   #観測データの対数尤度を計算
   LLosum <- sum(log(apply(matrix(r, nrow=n, ncol=k, byrow=T) * exp(LLd), 1, sum)))
   rval <- list(LLobz=LLosum, z=z, LL=LLd)
@@ -114,7 +114,8 @@ iter <- 0
 ID <- cbind(1:N, 1:N)
 
 ##初期値の設定
-alpha <- rep(5, K)   #事前分布のパラメータ
+beta <- 1
+alpha <- 1   #事前分布のパラメータ
 r <- c(0.25, 0.25, 0.25, 0.25)   #混合率の初期値
 
 #パラメータの初期値
@@ -257,52 +258,166 @@ for(i in 1:sg_n){
   }
 }
 
-#ユーザーごとにMkl、Nklを格納
-Mkl_u <- array(Mkl, dim=c(sg_n, sg_k, N))
-Nkl_u <- array(Nkl, dim=c(sg_n, sg_k, N))
+
+##十分統計量を更新するためのIDとデータフォーマットを準備
+#ユーザーごとに観測データを集計する
+X.cnt_ind <- apply(X, 1, sum)
+V.cnt_ind <- apply(1-X, 1, sum)
+
+#IDの設定
+ID_X1 <- rep(1:N, X.cnt_ind)
+ID_V1 <- rep(1:N, V.cnt_ind)
+ID2 <- rep(1:N, rep(K, N))
+
+#観測データをベクトル化
+X.vec <- as.numeric(t(X))
+V.vec <- as.numeric(t(1-X))
 
 
 ####周辺化ギブスサンプリングで潜在変数zをサンプリング####
-##ユーザーの潜在変数をサンプリング
+##ユーザーセグメントをサンプリング
+##ユーザーの行に対するセグメントの割当を解除
 M1k_hat <- matrix(M1k, nrow=N, ncol=length(M1k), byrow=T) - z1
 
-ID2 <- rep(1:N, rep(K, N))
-ID1 <- rep(1:N, cnt_ind)
-Mkl_v <- as.numeric(t(Mkl_ind))
+
+##ユーザーの行と列に対するセグメント割当を解除
+#ユーザーごとにMkl、Nklの全体の合計値をそれぞれ配列に格納しておく
+Mkl_u <- array(Mkl, dim=c(sg_n, sg_k, N))
+Nkl_u <- array(Nkl, dim=c(sg_n, sg_k, N))
+
+#列のセグメントを行列形式に変更
+Zkl_ind <- matrix(Z2, nrow=N, ncol=K, byrow=T)
+Zkl_v <- as.numeric(t(Zkl_ind))
+
+#観測データにセグメント行列を割り当てる
+Mkl_v <- Zkl_v * X.vec
+Nkl_v <- Zkl_v * V.vec
 
 
-system.time(as.matrix(data.frame(ID1, cnt=Mkl_v[Mkl_v > 0]) %>%
-        dplyr::group_by(ID1) %>%
-        dplyr::count(cnt)))
-
-as.matrix(data.frame(ID1, cnt=Mkl_v[Mkl_v > 0]) %>%
-            dplyr::group_by(ID1) %>%
-            dplyr::count(cnt))
-
-
+#観測データが観測されたベクトルのみ取得
 Mkl_zero <- Mkl_v[Mkl_v > 0]
-Mkl_cnt <- t(table(Mkl_zero, ID1))
+Nkl_zero <- Nkl_v[Nkl_v > 0]
+
+#ユーザーごとにセグメント割当を集計
+Mkl_cnt <- as.matrix(t(table(Mkl_zero, ID_X1)))
+Nkl_cnt <- as.matrix(t(table(Nkl_zero, ID_V1)))
+
+#ユーザーごとにセグメント割当を解除したMkl、Nklを格納するための配列
+Mkl_hat <- array(Mkl, dim=c(sg_n, sg_k, N))
+Nkl_hat <- array(Nkl, dim=c(sg_n, sg_k, N))
+
+#ユーザーごとにMkl、Nklのセグメント割当を解除
+for(i in 1:N){
+  Mkl_hat[Z1[i], , i] <- Mkl_u[Z1[i], , i] - Mkl_cnt[i, ]
+  Nkl_hat[Z1[i], , i] <- Nkl_u[Z1[i], , i] - Nkl_cnt[i, ]
+}
 
 
+##ユーザーごとにセグメント割当確率を計算
+#ベータ分布のパラメータ
+alpha_hat <- alpha + Mkl_hat
+beta_hat <- beta + Nkl_hat
 
-Mkl_u[, , 1]
+XV <- c()
+for(sg in 1:sg_k){
+  XV <- cbind(XV, X)
+}
+XV_M <- matrix(as.numeric(t(XV)), nrow=N*sg_k, ncol=ncol(X), byrow=T)
+XV_M * matrix(rep(Z2, sg_k), nrow=sg_k*N, ncol=ncol(X), byrow=T)
 
-?table
+XV <- array(0, dim=c(sg_k, ncol(X), N))
+XZ_M <- array(0, dim=c(sg_n, sg_k, N))
+WV <- array(0, dim=c(sg_k, ncol(X), N))
+WZ_M <- array(0, dim=c(sg_n, sg_k, N))
 
-cnt_ind <- apply(X, 1, sum)
+for(i in 1:N){
+  XV[, , i] <- matrix(X[i, ], nrow=sg_k, ncol=ncol(X), byrow=T)
+  WV[, , i] <- matrix((1-X[i, ]), nrow=sg_k, ncol=ncol(X), byrow=T)
+  
+  XZ <- XV[, , i] * matrix(rep(Z2, sg_k), nrow=sg_k, ncol=ncol(X), byrow=T)
+  XZ_sum <- rowSums(t(apply(cbind(XZ, 1:sg_k), 1, function(x) ifelse(x[-length(x)]==x[length(x)], 1, 0))))
+  XZ_M[, , i] <- matrix(XZ_sum, nrow=sg_n, ncol=sg_k, byrow=T)
+  
+  WZ <- WV[, , i] * matrix(rep(Z2, sg_k), nrow=sg_k, ncol=ncol(X), byrow=T)
+  WZ_sum <- rowSums(t(apply(cbind(WZ, 1:sg_k), 1, function(x) ifelse(x[-length(x)]==x[length(x)], 1, 0))))
+  WZ_M[, , i] <- matrix(WZ_sum, nrow=sg_n, ncol=sg_k, byrow=T)
+}
 
-system.time(t(table(Mkl_v[Mkl_v > 0], ID1)))
+sg_M <- array(matrix(as.numeric(table(Z2)), nrow=sg_n, ncol=sg_k, byrow=T), dim=c(sg_n, sg_k, N))
 
-T1 <- t(table(Mkl_v[Mkl_v > 0], ID1))
-T2 <-  t(table(Mkl_v, ID2))
-cbind(T1, T2)
-T2
-table(Mkl_v[1:150])
+Z1_gamma1 <- lgamma(alpha_hat[, , ] + beta_hat[, , ]) - lgamma(alpha_hat[, , ]) - lgamma(beta_hat[, , ])
+Z1_gamma2 <- lgamma(alpha_hat[, , ] + XZ_M) + lgamma(beta_hat[, , ] + WZ_M)
+Z1_gamma3 <- lgamma(alpha_hat[, , ] + beta_hat[, , ] + sg_M)
 
-table(Mkl_v[ID2==1], ID2[ID2==1])
-table(Mkl_v[ID2==1])
-Mkl_v[1:150]
+Z1_gamma <- alpha_hat[, , ] * exp(Z1_gamma1 + Z1_gamma2 - Z1_gamma3)
 
 
-table(Mkl_ind[1, ])
+#セグメント割当確率を計算して潜在変数を発生
+#ユーザーごとに割当確率を計算
+Pr_z1 <- matrix(0, nrow=N, ncol=sg_n)
+for(i in 1:N){
+  Pr_z1[i, ] <- apply(Z1_gamma[, , i], 1, prod)
+}
+Pr1 <- Pr_z1 / rowSums(Pr_z1)
 
+#カテゴリカル分布から潜在変数を発生
+z1 <- t(apply(Pr1, 1, function(x) rmultinom(1, 1, x)))
+Z1 <- z1_new %*% 1:sg_n
+
+
+##十分統計量を更新
+M1k <- as.numeric(table(Z1_new))
+
+Nkl <- matrix(0, nrow=sg_n, ncol=sg_k)
+Mkl <- matrix(0, nrow=sg_n, ncol=sg_k)
+Xkl <- array(0, dim=c(N, K, sg_n*sg_k))
+Wkl <- array(0, dim=c(N, K, sg_n*sg_k))
+Zkl <- array(0, dim=c(N, K, sg_n*sg_k))
+
+for(i in 1:sg_n){
+  for(j in 1:sg_k){
+    r <- (i-1) + j
+    Zkl[, , r] <- as.matrix(ifelse(Z1_new==i, 1, 0), nrow=N, ncol=1) %*% ifelse(Z2==j, 1, 0)
+    Xkl[, , r] <- X * Zkl[, , r]
+    Wkl[, , r] <- (1-X) * Zkl[, , r]
+    Mkl[i, j] <- sum(Xkl[, , r])
+    Nkl[i, j] <- sum(Wkl[, , r])
+  }
+}
+
+##アイテムセグメントをサンプリング
+##ユーザーの行に対するセグメントの割当を解除
+M1l_hat <- matrix(M1l, nrow=K, ncol=length(M1l), byrow=T) - z2
+Mkl_u
+
+##ユーザーの行と列に対するセグメント割当を解除
+#ユーザーごとにMkl、Nklの全体の合計値をそれぞれ配列に格納しておく
+Mkl_u <- array(Mkl, dim=c(sg_n, sg_k, N))
+Nkl_u <- array(Nkl, dim=c(sg_n, sg_k, N))
+
+#列のセグメントを行列形式に変更
+Zkl_ind <- matrix(Z2, nrow=N, ncol=K, byrow=T)
+Zkl_v <- as.numeric(t(Zkl_ind))
+
+#観測データにセグメント行列を割り当てる
+Mkl_v <- Zkl_v * X.vec
+Nkl_v <- Zkl_v * V.vec
+
+
+#観測データが観測されたベクトルのみ取得
+Mkl_zero <- Mkl_v[Mkl_v > 0]
+Nkl_zero <- Nkl_v[Nkl_v > 0]
+
+#ユーザーごとにセグメント割当を集計
+Mkl_cnt <- as.matrix(t(table(Mkl_zero, ID_X1)))
+Nkl_cnt <- as.matrix(t(table(Nkl_zero, ID_V1)))
+
+#ユーザーごとにセグメント割当を解除したMkl、Nklを格納するための配列
+Mkl_hat <- array(Mkl, dim=c(sg_n, sg_k, N))
+Nkl_hat <- array(Nkl, dim=c(sg_n, sg_k, N))
+
+#ユーザーごとにMkl、Nklのセグメント割当を解除
+for(i in 1:N){
+  Mkl_hat[Z1[i], , i] <- Mkl_u[Z1[i], , i] - Mkl_cnt[i, ]
+  N
+}
