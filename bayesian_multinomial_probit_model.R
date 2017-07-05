@@ -90,7 +90,7 @@ covmatrix <- function(col, corM, lower, upper){
 ####データの発生####
 #set.seed(8437)
 ##データの設定
-hh <- 500   #プレイヤー数
+hh <- 1000   #プレイヤー数
 choise <- 5   #選択可能数
 st <- 5   #基準ブランド
 k <- 5   #回帰係数の数
@@ -118,7 +118,7 @@ for(i in 1:choise){
 
 ##分散共分散行列の設定
 corM <- corrM(col=choise-1, lower=-0.55, upper=0.60)   #相関行列を作成
-Sigma <- covmatrix(col=choise-1, corM=corM, lower=2, upper=4)   #分散共分散行列
+Sigma <- covmatrix(col=choise-1, corM=corM, lower=1, upper=1)   #分散共分散行列
 Cov <- Sigma$covariance
 
 ##パラメータの設定
@@ -186,7 +186,7 @@ MVR.E <- function(Cov, U.mean, U, choise){
     #条件付き期待値を計算
     CovE <- Cov12 %*% solve(Cov22)
     UE.b <- U.mean[, b] - t(CovE %*% t((U[, -b] - U.mean[, -b])))
-
+    
     UE[, b] <- UE.b
   }
   val <- list(UE=UE, Sig.E=Sig.E)
@@ -216,9 +216,20 @@ CAMP.v <- as.numeric(t(CAMP.r))
 X <- data.frame(BP=BP, PRICE.v, DISC.v, DISP.v, CAMP.v)   #データの結合
 XM <- as.matrix(X)
 
+##説明変数を多次元配列化
+X.array <- array(0, dim=c(choise-1, ncol(X), hh))
+for(i in 1:hh){
+  X.array[, , i] <- XM[ID[, 2]==i, ]
+}
+YX.array <- array(0, dim=c(choise-1, ncol(X)+1, hh))
+
+#IDの設定
+id_r <- matrix(1:(hh*(choise-1)), nrow=hh, ncol=choise-1, byrow=T)
+
+
 ##事前分布の設定
 nu <- 5   #逆ウィシャート分布の自由度
-V <- df*diag(choise-1) + 10   #逆ウィシャート分布のパラメータ
+V <- nu*diag(choise-1) + 10   #逆ウィシャート分布のパラメータ
 Deltabar <- rep(0, ncol(X))  #回帰係数の平均の事前分布
 Adelta <- 100 * diag(rep(1, ncol(X)))   #回帰係数の事前分布の分散
 
@@ -233,7 +244,7 @@ oldbeta <- c(runif(choise-1, 0, 3), -3.0, 3.0, runif(2, 0, 2))
 
 #分散共分散行列の初期値
 corM.f <- corrM(col=choise-1, lower=-0.6, upper=0.6)   #相関行列を作成
-Sigma.f <- covmatrix(col=choise-1, corM=corM.f, lower=4, upper=9)   #分散共分散行列
+Sigma.f <- covmatrix(col=choise-1, corM=corM.f, lower=1, upper=1)   #分散共分散行列
 oldcov <- Sigma.f$covariance
 
 #効用の平均構造の初期値
@@ -245,8 +256,6 @@ old.utilm <- brand_power + PRICE.r*b[1] + DISC.r*b[2] + DISP.r*b[3]  + CAMP.r*b[
 old.util <- old.utilm + mvrnorm(nrow(old.utilm), rep(0, 4), oldcov)
 old.util <- t(apply(old.utilm, 1, function(x) mvrnorm(1, x, oldcov)))
 
-cov2cor(oldcov)
-cov2cor(var(old.util - old.utilm))
 
 ####マルコフ連鎖モンテカルロ法で多項プロビットモデルを推定####
 for(rp in 1:R){
@@ -256,10 +265,10 @@ for(rp in 1:R){
   MVR <- MVR.E(Cov=oldcov, U.mean=old.utilm, U=old.util, choise=choise)   #条件付き分布を計算
   UM <- MVR$UE   #条件付き期待値を取り出す
   S <- MVR$Sig.E   #条件付き分散を取り出す
-  SD <- sqrt(S)
   
   #切断正規分布より潜在効用の発生
   util.M <- matrix(0, nrow=hh, ncol=choise-1)   #潜在効用の格納用行列
+  util.v <- c()
   
   #サンプル数分潜在変数を発生させる
   for(i in 1:hh){
@@ -271,85 +280,78 @@ for(rp in 1:R){
         #選択ブランドが5以外の場合の潜在効用の発生
         if(Y[i]!=b){
           u[b] <- rtrun(UM[i, b], SD[b], -100, max(c(u[-b], 0)))
-          } else {
+        } else {
           u[b] <- rtrun(UM[i, b], SD[b], max(c(u[-b], 0)), 100)
-          }
-      
+        }
+        
         #選択ブランドが5の場合の潜在効用の発生
       } else {
         c <- rtrun(UM[i, b], SD[b], -100, 0)
         u[b] <- c
       }
     }
+    util.v <- c(util.v, u)
     util.M[i, ] <- u
   }
   
+  ##betaの分布のパラメータの計算とmcmcサンプリング
+  #z.vecとX.vecを結合して多次元配列に変更
+  YX.bind <- as.matrix(cbind(util.v, X))
+  for(i in 1:hh){
+    YX.array[, , i] <- YX.bind[id_r[i, ], ]
+  }
+  
   ##回帰モデルのギブスサンプリングでbetaとsigmaを推定
-  u.vec <- as.numeric(t(util.M))   #潜在効用をベクトルに変更
-  ##betaのギブスサンプリング
-  oldcovi <- solve(oldcov)
-  I <- diag(hh)
-  SIGMA.B <- kronecker(I, oldcovi)
+  #betaのギブスサンプリング
+  invcov <- solve(oldcov)
+  xvx.vec <- rowSums(apply(X.array, 3, function(x) t(x) %*% invcov %*% x))
+  XVX <- matrix(xvx.vec, nrow=ncol(X), ncol=ncol(X), byrow=T)
+  XVY <- rowSums(apply(YX.array, 3, function(x) t(x[, -1]) %*% invcov %*% x[, 1]))
   
+  #betaの分布の分散共分散行列のパラメータ
+  inv_XVX <- solve(XVX + Adelta)
   
-  #回帰係数の平均構造
-  B <- solve(t(XM) %*% SIGMA.B %*% XM) %*% t(XM) %*% SIGMA.B %*% u.vec   #回帰係数の最小二乗推定量
-  XVX <- t(XM) %*% SIGMA.B %*% XM
-  BETA.M <- solve(XVX + solve(Adelta)) %*% (XVX %*% B + solve(Adelta) %*% Deltabar)
-  
-  #回帰係数の分散共分散行列
-  BETA.SIG <- solve(XVX + solve(Adelta))
+  #betaの分布の平均パラメータ
+  B <- as.numeric(inv_XVX %*% (XVY + Adelta %*% Deltabar))   #betaの平均
   
   #多変量正規分布から回帰係数をサンプリング
-  oldbeta <- mvrnorm(1, as.numeric(BETA.M), BETA.SIG)
+  oldbeta <- mvrnorm(1, B, inv_XVX)
   
-  ##sigmaのギブスサンプリング
+  
+  ##Covの分布のパラメータの計算とmcmcサンプリング
+  #逆ウィシャート分布のパラメータを計算
+  R.error <- matrix(util.v - XM %*% oldbeta, nrow=hh, ncol=choise-1, byrow=T)
+  R <- solve(V) + matrix(rowSums(apply(R.error, 1, function(x) x %*% t(x))), nrow=choise-1, ncol=choise-1, byrow=T)
+  
   #逆ウィシャート分布の自由度を計算
   Sn <- nu + hh
   
-  #逆ウィシャート分布のパラメータを計算
-  #二乗誤差を計算して和を取る
-  Vi <- solve(V) 
-  EE <- matrix(0, nrow=choise-1, ncol=choise-1)
-
-  for(i in 1:hh){
-    r <- (i-1)*(choise-1)
-    u.vech <- u.vec[(r+1):(r+4)]
-    XMh <- XM[(r+1):(r+4), ]
-    ee <- (u.vech - XMh %*% oldbeta) %*% t(u.vech - XMh %*% oldbeta)
-    EE <- EE + ee
-  }
-  R <- solve(EE + Vi)
+  #逆ウィシャート分布からCovをサンプリング
+  Cov_hat <- rwishart(Sn, solve(R))$IW
   
-  #逆ウィシャート乱数を発生
-  oldcov <- rwishart(Sn, R)$IW
-  
-  sigma11 <- oldcov[1, 1]
+  #分散共分散行列の(1, 1)成分を1に固定し、回帰係数も(1, 1)成分で除する
+  sigma11 <- Cov_hat[1, 1]
+  oldcov <- Cov_hat/sigma11
+  oldbeta <- oldbeta/sigma11
   
   ##潜在効用とパラメータを更新
-  #潜在効用を更新
+  #潜在効用と潜在効用の平均を更新
   old.util <- util.M
+  old.utilm <- matrix(XM %*% oldbeta, nrow=hh, ncol=choise-1, byrow=T)
   
-  #潜在効用の平均構造を更新
-  b <- oldbeta[choise:length(oldbeta)]
-  brand_power <- matrix(oldbeta[1:(choise-1)], hh, choise-1, byrow=T)
-  old.utilm <- brand_power + PRICE.r*b[1] + DISC.r*b[2] + DISP.r*b[3]  + CAMP.r*b[4]
-  
-  print(round(c(rp, B), 2))
   
   ##サンプリング結果を保存
-  mkeep <- rp/keep
   if(rp%%keep==0){
+    print(rp)
+    mkeep <- rp/keep
     Util[, , mkeep] <- util.M
     BETA[mkeep, ] <- oldbeta
     SIGMA[, , mkeep] <- oldcov
-    #print(round(THETA[mkeep, 1:20], 2))
+    print(cov2cor(oldcov))
+    print(Cov)
+    print(oldbeta)
+    print(betat)
   }
 }
 round(cbind(Y, old.utilm, old.util, U), 2)
 
-cov2cor(Cov)
-cov2cor(oldcov)
-
-library(MNP)
-mnp
