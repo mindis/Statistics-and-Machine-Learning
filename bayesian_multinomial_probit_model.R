@@ -95,6 +95,13 @@ choise <- 5   #選択可能数
 st <- 5   #基準ブランド
 k <- 5   #回帰係数の数
 
+##IDの設定
+id <- rep(1:hh, rep(choise-1, hh))
+c <- rep(1:(choise-1), hh)
+ID <- data.frame(no=1:(hh*(choise-1)), id=id, c=c)
+id_r <- matrix(1:(hh*(choise-1)), nrow=hh, ncol=choise-1, byrow=T)
+
+
 ##説明変数の発生
 #通常価格の発生
 PRICE <- matrix(runif(hh*choise, 0.7, 1), nrow=hh, ncol=choise)   
@@ -117,7 +124,7 @@ for(i in 1:choise){
 }
 
 ##分散共分散行列の設定
-corM <- corrM(col=choise-1, lower=-0.55, upper=0.60)   #相関行列を作成
+corM <- corrM(col=choise-1, lower=0, upper=0.70)   #相関行列を作成
 Sigma <- covmatrix(col=choise-1, corM=corM, lower=1, upper=1)   #分散共分散行列
 Cov <- Sigma$covariance
 
@@ -129,24 +136,37 @@ beta4 <- 1.8   #キャンペーンのパラメータ
 beta0 <- c(0.5, 1.1, 1.4, 2.2)   #ブランド1～4の相対ベース販売力
 betat <- c(beta0, beta1, beta2, beta3, beta4)
 
-##相対効用を発生し、選択されたブランドを決定
 #基準ブランドとの相対説明変数
 PRICE.r <- PRICE[, -5] - PRICE[, 5]
 DISC.r <- DISC[, -5] - DISC[, 5]
 DISP.r <- DISP[, -5] - DISP[, 5]
 CAMP.r <- CAMP[, -5] - CAMP[, 5]
 
-#相対効用の発生
-U.mean <- matrix(0, nrow=hh, ncol=choise-1)
-for(b in 1:length(beta0)){
-  U.mean[, b] <- beta0[b] + PRICE.r[, b]*beta1 + DISC.r[, b]*beta2 + DISP.r[, b]*beta3 + CAMP.r[, b]*beta4
-}
-U <- U.mean + mvrnorm(n=hh, rep(0, 4), Cov)   #誤差構造を加えた効用
-round(cbind(U.mean, U), 2)
-U <- t(apply(U.mean, 1, function(x) mvrnorm(1, x, Cov)))
+##回帰モデルを推定するために説明変数をベクトル形式に変更設定
+#切片の設定
+p <- c(1, rep(0, choise-1))
+bp <- matrix(p, nrow=hh*choise, ncol=choise-1, byrow=T)
+BP <- subset(bp, rowSums(bp) > 0)
+
+PRICE[1:10, ]
+PRICE.v
+
+#説明変数の設定
+PRICE.v <- as.numeric(t(PRICE.r))
+DISC.v <- as.numeric(t(DISC.r))
+DISP.v <- as.numeric(t(DISP.r))
+CAMP.v <- as.numeric(t(CAMP.r))
+
+X <- data.frame(BP=BP, PRICE.v, DISC.v, DISP.v, CAMP.v)   #データの結合
+XM <- as.matrix(X)
+
+##相対効用を発生させ、選択されたブランドを決定
+U.mean <- matrix(XM %*% betat, nrow=hh, ncol=choise-1, byrow=T)   #相対効用の平均構造
+U <- U.mean + mvrnorm(hh, rep(0, 4), Cov)   #誤差構造を加えた効用
 
 #効用最大化原理に基づき選択ブランドを決定
 Y <- apply(U, 1, function(x) ifelse(max(x) < 0, 5, which.max(x)))
+
 
 #購買を0、1行列に変更
 BUY <- matrix(0, hh, choise)
@@ -155,7 +175,7 @@ for(i in 1:hh){
 }
 
 table(Y)   #選択ブランドの集計
-round(data.frame(Y, U=U), 1)   #効用と選択ブランドを比較
+round(cbind(Y, U, U.mean), 2)   #効用と選択ブランドを比較
 
 
 ####マルコフ連鎖モンテカルロ法で多項プロビットモデルを推定####
@@ -169,52 +189,29 @@ rtnorm <- function(mu, sigma, a, b){
 }
 
 ##多変量正規分布の条件付き期待値と分散を計算する関数
-MVR.E <- function(Cov, U.mean, U, choise){
-  UE <- matrix(0, hh, choise-1)
-  Sig.E <- c()
+cdMVN <- function(mean, Cov, dependent, U){
   
-  for(b in 1:(choise-1)){
-    #分散共分散行列のブロック行列を定義
-    Cov11 <- Cov[b, b]
-    Cov22 <- Cov[-b, -b]
-    Cov12 <- Cov[b, -b]
-    Cov21 <- Cov[-b, b]
-    
-    #条件付き分散を計算
-    Sig.E <- c(Sig.E, Cov11 - Cov12 %*% solve(Cov22) %*% Cov21)
-    
-    #条件付き期待値を計算
-    CovE <- Cov12 %*% solve(Cov22)
-    UE.b <- U.mean[, b] - t(CovE %*% t((U[, -b] - U.mean[, -b])))
-    
-    UE[, b] <- UE.b
-  }
-  val <- list(UE=UE, Sig.E=Sig.E)
+  #分散共分散行列のブロック行列を定義
+  Cov11 <- Cov[dependent, dependent]
+  Cov12 <- Cov[dependent, -dependent, drop=FALSE]
+  Cov21 <- Cov[-dependent, dependent, drop=FALSE]
+  Cov22 <- Cov[-dependent, -dependent]
+  
+  #条件付き分散と条件付き平均を計算
+  CDinv <- Cov12 %*% solve(Cov22)
+  CDmu <- mean[, dependent] + t(CDinv %*% t(U[, -dependent] - mean[, -dependent]))   #条件付き平均を計算
+  CDvar <- Cov11 - Cov12 %*% solve(Cov22) %*% Cov21   #条件付き分散を計算
+  val <- list(CDmu=CDmu, CDvar=CDvar)
   return(val)
 }
-UE <- MVR.E(Cov=Cov, U.mean=U.mean, U=U, choise=choise)$UE
-round(data.frame(E=UE, M=U.mean, U=U), 1)   #条件付き期待値、効用の平均構造、効用を比較
+
 
 ##アルゴリズムの設定
 R <- 20000
 sbeta <- 1.5
-keep <- 2
+keep <- 4
 llike <- array(0, dim=c(R/keep))   #対数尤度の保存用
 
-##回帰モデルを推定するために説明変数をベクトル形式に変更設定
-#切片の設定
-p <- c(1, rep(0, choise-1))
-bp <- matrix(p, nrow=hh*choise, ncol=choise-1, byrow=T)
-BP <- subset(bp, rowSums(bp) > 0)
-
-#説明変数の設定
-PRICE.v <- as.numeric(t(PRICE.r))
-DISC.v <- as.numeric(t(DISC.r))
-DISP.v <- as.numeric(t(DISP.r))
-CAMP.v <- as.numeric(t(CAMP.r))
-
-X <- data.frame(BP=BP, PRICE.v, DISC.v, DISP.v, CAMP.v)   #データの結合
-XM <- as.matrix(X)
 
 ##説明変数を多次元配列化
 X.array <- array(0, dim=c(choise-1, ncol(X), hh))
@@ -223,9 +220,10 @@ for(i in 1:hh){
 }
 YX.array <- array(0, dim=c(choise-1, ncol(X)+1, hh))
 
-#IDの設定
-id_r <- matrix(1:(hh*(choise-1)), nrow=hh, ncol=choise-1, byrow=T)
 
+#推定プロセスの格納配列
+UM <- matrix(0, nrow=hh, ncol=choise-1)
+util.M <- matrix(0, nrow=hh, ncol=choise-1)   
 
 ##事前分布の設定
 nu <- 5   #逆ウィシャート分布の自由度
@@ -243,33 +241,28 @@ SIGMA <- array(0, dim=c(choise-1, choise-1, R/keep))
 oldbeta <- c(runif(choise-1, 0, 3), -3.0, 3.0, runif(2, 0, 2))   
 
 #分散共分散行列の初期値
-corM.f <- corrM(col=choise-1, lower=-0.6, upper=0.6)   #相関行列を作成
+corM.f <- corrM(col=choise-1, lower=0, upper=0.6)   #相関行列を作成
 Sigma.f <- covmatrix(col=choise-1, corM=corM.f, lower=1, upper=1)   #分散共分散行列
 oldcov <- Sigma.f$covariance
 
 #効用の平均構造の初期値
-b <- oldbeta[choise:length(oldbeta)]
-brand_power <- matrix(oldbeta[1:(choise-1)], hh, choise-1, byrow=T)
-old.utilm <- brand_power + PRICE.r*b[1] + DISC.r*b[2] + DISP.r*b[3]  + CAMP.r*b[4]
+old.utilm <- matrix(XM %*% oldbeta, nrow=hh, ncol=choise-1, byrow=T)
 
 #効用の初期値
 old.util <- old.utilm + mvrnorm(nrow(old.utilm), rep(0, 4), oldcov)
-old.util <- t(apply(old.utilm, 1, function(x) mvrnorm(1, x, oldcov)))
-
 
 ####マルコフ連鎖モンテカルロ法で多項プロビットモデルを推定####
 for(rp in 1:R){
   
   ##選択結果と整合的な潜在効用を発生させる
   #条件付き期待値と条件付き分散を計算
-  MVR <- MVR.E(Cov=oldcov, U.mean=old.utilm, U=old.util, choise=choise)   #条件付き分布を計算
-  UM <- MVR$UE   #条件付き期待値を取り出す
-  S <- MVR$Sig.E   #条件付き分散を取り出す
-  
-  #切断正規分布より潜在効用の発生
-  util.M <- matrix(0, nrow=hh, ncol=choise-1)   #潜在効用の格納用行列
-  util.v <- c()
-  
+  S <- c()
+  for(j in 1:(choise-1)){
+    MVR <- cdMVN(mean=old.utilm, Cov=oldcov, dependent=j, U=old.util)   #条件付き分布を計算
+    UM[, j] <- MVR$CDmu   #条件付き期待値を取り出す
+    S <- c(S, sqrt(MVR$CDvar))   #条件付き分散を取り出す
+  }
+  Cov_hat
   #サンプル数分潜在変数を発生させる
   for(i in 1:hh){
     u <- old.util[i, ]
@@ -278,25 +271,28 @@ for(rp in 1:R){
       if(Y[i]!=choise){
         
         #選択ブランドが5以外の場合の潜在効用の発生
-        if(Y[i]!=b){
-          u[b] <- rtrun(UM[i, b], SD[b], -100, max(c(u[-b], 0)))
+        if(Y[i]==b){
+          u[b] <- rtnorm(UM[i, b], S[b], max(c(u[-b], 0)), 100)
+          if(is.infinite(w[b])==TRUE) {u[b] <- max(c(u[-b], 0)) + 0.1}
         } else {
-          u[b] <- rtrun(UM[i, b], SD[b], max(c(u[-b], 0)), 100)
+          u[b] <- rtnorm(UM[i, b], S[b], -100, max(u[-b]))
         }
         
         #選択ブランドが5の場合の潜在効用の発生
       } else {
-        c <- rtrun(UM[i, b], SD[b], -100, 0)
+        c <- rtnorm(UM[i, b], S[b], -100, 0)
         u[b] <- c
       }
     }
-    util.v <- c(util.v, u)
-    util.M[i, ] <- u
+    old.util[i, ] <- u
   }
+  round(cbind(old.util, Y), 3)
+  util.v <- as.numeric(t(old.util))
+  
   
   ##betaの分布のパラメータの計算とmcmcサンプリング
   #z.vecとX.vecを結合して多次元配列に変更
-  YX.bind <- as.matrix(cbind(util.v, X))
+  YX.bind <- cbind(util.v, XM)
   for(i in 1:hh){
     YX.array[, , i] <- YX.bind[id_r[i, ], ]
   }
@@ -307,16 +303,16 @@ for(rp in 1:R){
   xvx.vec <- rowSums(apply(X.array, 3, function(x) t(x) %*% invcov %*% x))
   XVX <- matrix(xvx.vec, nrow=ncol(X), ncol=ncol(X), byrow=T)
   XVY <- rowSums(apply(YX.array, 3, function(x) t(x[, -1]) %*% invcov %*% x[, 1]))
-  
+
   #betaの分布の分散共分散行列のパラメータ
   inv_XVX <- solve(XVX + Adelta)
   
   #betaの分布の平均パラメータ
-  B <- as.numeric(inv_XVX %*% (XVY + Adelta %*% Deltabar))   #betaの平均
+  B <- inv_XVX %*% (XVY + Adelta %*% Deltabar)   #betaの平均
+  b1 <- as.numeric(B)
   
   #多変量正規分布から回帰係数をサンプリング
-  oldbeta <- mvrnorm(1, B, inv_XVX)
-  
+  oldbeta <- mvrnorm(1, b1, inv_XVX)
   
   ##Covの分布のパラメータの計算とmcmcサンプリング
   #逆ウィシャート分布のパラメータを計算
@@ -325,7 +321,7 @@ for(rp in 1:R){
   
   #逆ウィシャート分布の自由度を計算
   Sn <- nu + hh
-  
+ 
   #逆ウィシャート分布からCovをサンプリング
   Cov_hat <- rwishart(Sn, solve(R))$IW
   
@@ -336,9 +332,7 @@ for(rp in 1:R){
   
   ##潜在効用とパラメータを更新
   #潜在効用と潜在効用の平均を更新
-  old.util <- util.M
   old.utilm <- matrix(XM %*% oldbeta, nrow=hh, ncol=choise-1, byrow=T)
-  
   
   ##サンプリング結果を保存
   if(rp%%keep==0){
@@ -347,11 +341,15 @@ for(rp in 1:R){
     Util[, , mkeep] <- util.M
     BETA[mkeep, ] <- oldbeta
     SIGMA[, , mkeep] <- oldcov
-    print(cov2cor(oldcov))
-    print(Cov)
-    print(oldbeta)
+    print(round(cov2cor(oldcov), 2))
+    print(round(Cov, 2))
+    print(round(oldcov, 2))
+    print(round(oldbeta, 2))
     print(betat)
   }
 }
+
+round(cbind(Y, matrix(XM %*% oldbeta, hh, choise-1, byrow=T), old.util), 3)
 round(cbind(Y, old.utilm, old.util, U), 2)
+
 
