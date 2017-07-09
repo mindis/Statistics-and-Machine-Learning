@@ -49,70 +49,71 @@ beta <- 5
 beta.array <- array(beta, dim=c(k, w, n))
 
 
-#ユーザーごとのセグメント割当を行列形式に変更
-zu <- matrix(0, nrow=n, ncol=k)
-za <- matrix(0, nrow=n, ncol=k)
-zw <- array(0, dim=c(k, w, n))
-
-for(i in 1:n){
-  zu[i, z[i]] <- 1 
-  za[i, z[i]] <- freq[i]
-  zw[z[i], , i] <- Y[i, ]
-}
-
-##データとアルゴリズム仮定の格納用パラメータを設定
-Nd <- matrix(freq, nrow=n, ncol=k)   #ユーザーごとの頻度
-
-#ユーザーおよびアイテムごとの頻度
-Ndv <- array(0, dim=c(k, w, n))   
-for(i in 1:n){
-  Ndv[, , i] <- matrix(Y[i, ], nrow=k, ncol=w, byrow=T)
-}
-Fdv <- ifelse(Ndv > 0, 1, 0)
-
-#ユーザーごとにアイテムの出現がある列を取得
-index.n <- list()
-for(i in 1:n){
-  index.n[[i]] <- subset(1:length(Y[i, ]), Y[i, ] > 0)
-}
-
-#ユーザーごとの頻度行列
-freqM <- matrix(freq, nrow=n, ncol=k)
-
-#頻度の多次元配列
-Y_array <- array(0, dim=c(k, w, n))
-for(i in 1:n){
-  Y_array[, , i] <- matrix(Y[i, ], nrow=k, ncol=w, byrow=T)
-}
-
-#ポリア分布のパラメメータ用
-lgamma3 <- matrix(0, nrow=n, ncol=k)
-lgamma4 <- matrix(0, nrow=n, ncol=k)
-
-##サンプリング結果の格納用
-Seg_Z <- matrix(0, nrow=R/keep, ncol=n)
-Prob <- array(0, dim=c(n, k, R/keep))
-
-##統計量の初期値を計算
-#ユーザーのセグメント割当を解除
-Zu <- matrix(as.numeric(table(z)), nrow=n, ncol=k, byrow=T)
-Zul <- Zu - zu
-
-#総頻度のセグメント割当を解除
-Za <- matrix(as.numeric(by(Y, z, sum)), nrow=n, ncol=k, byrow=T)
-Zal <- Za - za
-
-#wのセグメント割当を解除
-Zw <- array(matrix(unlist(by(Y, z, colSums)), nrow=k, ncol=w, byrow=T), dim=c(k, w, n))
-Zwl <- Zw - zw
-
 ####周辺化ギブスサンプリングでセグメントを生成####
 ##zの初期値を設定
 #初期値依存するので、良い初期値が得られるまで反復させる
 for(t in 1:1000){
   print(t)
+  #ユーザーごとのセグメント割当を行列形式に変更
   Z <- t(rmultinom(n, 1, rep(1/k, k)))
   z <- Z %*% 1:k
+  
+  zu <- matrix(0, nrow=n, ncol=k)
+  za <- matrix(0, nrow=n, ncol=k)
+  zw <- array(0, dim=c(k, w, n))
+  
+  for(i in 1:n){
+    zu[i, z[i]] <- 1 
+    za[i, z[i]] <- freq[i]
+    zw[z[i], , i] <- Y[i, ]
+  }
+  
+  ##データとアルゴリズム仮定の格納用パラメータを設定
+  Nd <- matrix(freq, nrow=n, ncol=k)   #ユーザーごとの頻度
+  
+  #ユーザーおよびアイテムごとの頻度
+  Ndv <- array(0, dim=c(k, w, n))   
+  for(i in 1:n){
+    Ndv[, , i] <- matrix(Y[i, ], nrow=k, ncol=w, byrow=T)
+  }
+  Fdv <- ifelse(Ndv > 0, 1, 0)
+  
+  #ユーザーごとにアイテムの出現がある列を取得
+  index.n <- list()
+  for(i in 1:n){
+    index.n[[i]] <- subset(1:length(Y[i, ]), Y[i, ] > 0)
+  }
+  
+  #ユーザーごとの頻度行列
+  freqM <- matrix(freq, nrow=n, ncol=k)
+  
+  #頻度の多次元配列
+  Y_array <- array(0, dim=c(k, w, n))
+  for(i in 1:n){
+    Y_array[, , i] <- matrix(Y[i, ], nrow=k, ncol=w, byrow=T)
+  }
+  
+  #ポリア分布のパラメメータ用
+  lgamma3 <- matrix(0, nrow=n, ncol=k)
+  lgamma4 <- matrix(0, nrow=n, ncol=k)
+  
+  ##サンプリング結果の格納用
+  Seg_Z <- matrix(0, nrow=R/keep, ncol=n)
+  Prob <- array(0, dim=c(n, k, R/keep))
+  
+  ##統計量の初期値を計算
+  #ユーザーのセグメント割当を解除
+  Zu <- matrix(as.numeric(table(z)), nrow=n, ncol=k, byrow=T)
+  Zul <- Zu - zu
+  
+  #総頻度のセグメント割当を解除
+  Za <- matrix(as.numeric(by(Y, z, sum)), nrow=n, ncol=k, byrow=T)
+  Zal <- Za - za
+  
+  #wのセグメント割当を解除
+  Zw <- array(matrix(unlist(by(Y, z, colSums)), nrow=k, ncol=w, byrow=T), dim=c(k, w, n))
+  Zwl <- Zw - zw
+  
   
   ##ここからmcmcサンプリングを実行
   for(rp in 1:R){
