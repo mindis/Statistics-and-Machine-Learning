@@ -124,13 +124,13 @@ for(i in 1:choise){
 }
 
 ##分散共分散行列の設定
-corM <- corrM(col=choise-1, lower=0, upper=0.70)   #相関行列を作成
+corM <- corrM(col=choise-1, lower=-0.6, upper=0.70)   #相関行列を作成
 Sigma <- covmatrix(col=choise-1, corM=corM, lower=1, upper=1)   #分散共分散行列
 Cov <- Sigma$covariance
 
 ##パラメータの設定
-beta1 <- -7.0   #価格のパラメータ
-beta2 <- 8.2   #割引率のパラメータ
+beta1 <- -6.3   #価格のパラメータ
+beta2 <- 7.2   #割引率のパラメータ
 beta3 <- 2.0   #特別陳列のパラメータ
 beta4 <- 1.8   #キャンペーンのパラメータ
 beta0 <- c(0.5, 1.1, 1.4, 2.2)   #ブランド1～4の相対ベース販売力
@@ -148,8 +148,6 @@ p <- c(1, rep(0, choise-1))
 bp <- matrix(p, nrow=hh*choise, ncol=choise-1, byrow=T)
 BP <- subset(bp, rowSums(bp) > 0)
 
-PRICE[1:10, ]
-PRICE.v
 
 #説明変数の設定
 PRICE.v <- as.numeric(t(PRICE.r))
@@ -189,22 +187,21 @@ rtnorm <- function(mu, sigma, a, b){
 }
 
 ##多変量正規分布の条件付き期待値と分散を計算する関数
-cdMVN <- function(mean, Cov, dependent, U){
+cdMVN <- function(mu, Cov, dependent, U){
   
   #分散共分散行列のブロック行列を定義
   Cov11 <- Cov[dependent, dependent]
-  Cov12 <- Cov[dependent, -dependent, drop=FALSE]
-  Cov21 <- Cov[-dependent, dependent, drop=FALSE]
+  Cov12 <- Cov[dependent, -dependent]
+  Cov21 <- Cov[-dependent, dependent]
   Cov22 <- Cov[-dependent, -dependent]
   
   #条件付き分散と条件付き平均を計算
   CDinv <- Cov12 %*% solve(Cov22)
-  CDmu <- mean[, dependent] + t(CDinv %*% t(U[, -dependent] - mean[, -dependent]))   #条件付き平均を計算
+  CDmu <- mu[, dependent] + t(CDinv %*% t(U[, -dependent] - mu[, -dependent]))   #条件付き平均を計算
   CDvar <- Cov11 - Cov12 %*% solve(Cov22) %*% Cov21   #条件付き分散を計算
   val <- list(CDmu=CDmu, CDvar=CDvar)
   return(val)
 }
-
 
 ##アルゴリズムの設定
 R <- 20000
@@ -226,15 +223,15 @@ UM <- matrix(0, nrow=hh, ncol=choise-1)
 util.M <- matrix(0, nrow=hh, ncol=choise-1)   
 
 ##事前分布の設定
-nu <- 5   #逆ウィシャート分布の自由度
-V <- nu*diag(choise-1) + 10   #逆ウィシャート分布のパラメータ
+nu <- choise   #逆ウィシャート分布の自由度
+V <- solve((1/10)*diag(choise-1))    #逆ウィシャート分布のパラメータ
 Deltabar <- rep(0, ncol(X))  #回帰係数の平均の事前分布
-Adelta <- 100 * diag(rep(1, ncol(X)))   #回帰係数の事前分布の分散
+Adelta <- solve(100 * diag(rep(1, ncol(X))))   #回帰係数の事前分布の分散
 
 ##サンプリング結果の保存用配列
-Util <- array(0, dim=c(hh, choise-1, R/keep))
+Util <- array(0, dim=c(hh, choise-1, RP/keep))
 BETA <- matrix(0, nrow=R/keep, length(beta0)+k-1)
-SIGMA <- array(0, dim=c(choise-1, choise-1, R/keep))
+SIGMA <- matrix(0, nrow=R/keep, ncol=(choise-1)^2)
 
 ##初期値の設定
 #回帰係数の初期値
@@ -256,39 +253,24 @@ for(rp in 1:R){
   
   ##選択結果と整合的な潜在効用を発生させる
   #条件付き期待値と条件付き分散を計算
-  S <- c()
-  for(j in 1:(choise-1)){
-    MVR <- cdMVN(mean=old.utilm, Cov=oldcov, dependent=j, U=old.util)   #条件付き分布を計算
-    UM[, j] <- MVR$CDmu   #条件付き期待値を取り出す
-    S <- c(S, sqrt(MVR$CDvar))   #条件付き分散を取り出す
-  }
-  Cov_hat
-  #サンプル数分潜在変数を発生させる
-  for(i in 1:hh){
-    u <- old.util[i, ]
-    
-    for(b in 1:(choise-1)){
-      if(Y[i]!=choise){
-        
-        #選択ブランドが5以外の場合の潜在効用の発生
-        if(Y[i]==b){
-          u[b] <- rtnorm(UM[i, b], S[b], max(c(u[-b], 0)), 100)
-          if(is.infinite(w[b])==TRUE) {u[b] <- max(c(u[-b], 0)) + 0.1}
-        } else {
-          u[b] <- rtnorm(UM[i, b], S[b], -100, max(u[-b]))
-        }
-        
-        #選択ブランドが5の場合の潜在効用の発生
-      } else {
-        c <- rtnorm(UM[i, b], S[b], -100, 0)
-        u[b] <- c
-      }
-    }
-    old.util[i, ] <- u
-  }
-  round(cbind(old.util, Y), 3)
-  util.v <- as.numeric(t(old.util))
+  S <- rep(0, choise-1)
   
+  for(j in 1:(choise-1)){
+    MVR <- cdMVN(mu=old.utilm, Cov=oldcov, dependent=j, U=old.util)   #条件付き分布を計算
+    UM[, j] <- MVR$CDmu   #条件付き期待値を取り出す
+    S[j] <- sqrt(MVR$CDvar)    #条件付き分散を取り出す
+  
+    #潜在変数を発生させる
+    #切断領域の設定
+    max.u <- apply(cbind(old.util[, -j], 0), 1, max)
+    max.u <- ifelse(Y==choise, 0, max.u)
+   
+    #切断正規分布より潜在変数を発生
+    old.util[, j] <- ifelse(Y==j, rtnorm(mu=UM[, j], sigma=S[j], a=max.u, b=100), 
+                                rtnorm(mu=UM[, j], sigma=S[j], a=-100, b=max.u))
+    old.util[, j] <- ifelse(is.infinite(old.util[, j]), ifelse(Y==j, max.u + runif(1), max.u - runif(1)), old.util[, j])
+  }
+  util.v <- as.numeric(t(old.util))
   
   ##betaの分布のパラメータの計算とmcmcサンプリング
   #z.vecとX.vecを結合して多次元配列に変更
@@ -303,7 +285,7 @@ for(rp in 1:R){
   xvx.vec <- rowSums(apply(X.array, 3, function(x) t(x) %*% invcov %*% x))
   XVX <- matrix(xvx.vec, nrow=ncol(X), ncol=ncol(X), byrow=T)
   XVY <- rowSums(apply(YX.array, 3, function(x) t(x[, -1]) %*% invcov %*% x[, 1]))
-
+  
   #betaの分布の分散共分散行列のパラメータ
   inv_XVX <- solve(XVX + Adelta)
   
@@ -317,18 +299,14 @@ for(rp in 1:R){
   ##Covの分布のパラメータの計算とmcmcサンプリング
   #逆ウィシャート分布のパラメータを計算
   R.error <- matrix(util.v - XM %*% oldbeta, nrow=hh, ncol=choise-1, byrow=T)
-  R <- solve(V) + matrix(rowSums(apply(R.error, 1, function(x) x %*% t(x))), nrow=choise-1, ncol=choise-1, byrow=T)
+  IW.R <- V + matrix(rowSums(apply(R.error, 1, function(x) x %*% t(x))), nrow=choise-1, ncol=choise-1, byrow=T)
   
   #逆ウィシャート分布の自由度を計算
   Sn <- nu + hh
- 
-  #逆ウィシャート分布からCovをサンプリング
-  Cov_hat <- rwishart(Sn, solve(R))$IW
   
-  #分散共分散行列の(1, 1)成分を1に固定し、回帰係数も(1, 1)成分で除する
-  sigma11 <- Cov_hat[1, 1]
-  oldcov <- Cov_hat/sigma11
-  oldbeta <- oldbeta/sigma11
+  #逆ウィシャート分布からCovをサンプリング
+  Cov_hat <- rwishart(Sn, solve(IW.R))$IW
+  oldcov <- cov2cor(Cov_hat)
   
   ##潜在効用とパラメータを更新
   #潜在効用と潜在効用の平均を更新
@@ -338,10 +316,9 @@ for(rp in 1:R){
   if(rp%%keep==0){
     print(rp)
     mkeep <- rp/keep
-    Util[, , mkeep] <- util.M
+    Util[, , mkeep] <- old.util
     BETA[mkeep, ] <- oldbeta
-    SIGMA[, , mkeep] <- oldcov
-    print(round(cov2cor(oldcov), 2))
+    SIGMA[mkeep, ] <- as.numeric(oldcov)
     print(round(Cov, 2))
     print(round(oldcov, 2))
     print(round(oldbeta, 2))
@@ -349,7 +326,51 @@ for(rp in 1:R){
   }
 }
 
-round(cbind(Y, matrix(XM %*% oldbeta, hh, choise-1, byrow=T), old.util), 3)
-round(cbind(Y, old.utilm, old.util, U), 2)
+####関数で推定####
+Data1 <- list(p=choise, y=Y, X=XM)
+Mcmc1 <- list(R=10000, keep=2)
+
+#多項プロビットモデルを推定
+out <- rmnpGibbs(Data=Data1,Mcmc=Mcmc1)
+BETA.out <- out$betadraw
+SIGMA.out <- out$sigmadraw
+
+####推定結果の要約と適合度の確認####
+burnin <- 5000/keep   #バーンイン期間
+
+##サンプリング結果を可視化
+#回帰係数のプロット
+matplot(BETA[, 1:4], type="l", main="回帰係数のサンプリング結果", ylab="パラメータ推定値")
+matplot(BETA[, 5:8], type="l", main="回帰係数のサンプリング結果", ylab="パラメータ推定値")
+
+#分散供分散行列の可視化
+matplot(SIGMA[, 1:4], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 5:8], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 9:12], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 13:16], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+
+
+##推定値の事後平均の比較
+#betaの要約統計量
+round(colMeans(BETA.out[burnin:nrow(BETA.out), ] / SIGMA.out[burnin:nrow(SIGMA.out), 1]), 3)   #beta(関数推定)の事後平均
+round(colMeans(BETA[burnin:nrow(BETA), ]), 3)   #betaの事後平均
+round(betat, 3)   #真の値
+round(apply(BETA[burnin:nrow(BETA), ], 2, function(x) quantile(x, 0.05)), 2)   #5％分位点
+round(apply(BETA[burnin:nrow(BETA), ], 2, function(x) quantile(x, 0.95)), 2)   #95％分位点
+round(apply(BETA[burnin:nrow(BETA), ], 2, sd), 2)   #事後標準偏差
+
+#sigmaの要約統計量
+round(colMeans(SIGMA.out[burnin:nrow(SIGMA.out), ]  / SIGMA.out[burnin:nrow(SIGMA.out), 1]), 3)   #beta(関数推定)の事後平均
+round(colMeans(SIGMA[burnin:nrow(SIGMA), ]), 3)   #betaの事後平均
+round(as.numeric(Cov), 3)   #真の値
+round(apply(SIGMA[burnin:nrow(SIGMA), ], 2, function(x) quantile(x, 0.05)), 2)   #5％分位点
+round(apply(SIGMA[burnin:nrow(SIGMA), ], 2, function(x) quantile(x, 0.95)), 2)   #95％分位点
+round(apply(SIGMA[burnin:nrow(SIGMA), ], 2, sd), 2)   #事後標準偏差
+
+
+
+
+
+
 
 
