@@ -285,8 +285,8 @@ for(rp in 1:mcmc){
   #潜在効用を計算
   old.utilm<- matrix(X.vec %*% oldbeta, nrow=hhpt, ncol=choise, byrow=T)   #潜在効用の平均構造
    
-  MVR.S <- c()
   #切断正規分布より潜在効用を発生
+  MVR.S <- c()
   for(j in 1:choise){
     MVR <- cdMVN(old.utilm, oldcov, j, Z)
     MVR.U[, j] <- MVR$CDmu
