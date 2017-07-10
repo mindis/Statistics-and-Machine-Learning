@@ -139,9 +139,10 @@ for(t in 1:1000){
     #セグメント割当確率を計算
     #尤度が桁落ちしないように定数を加える
     lgamma_c <- D_alpha + lgamma1 - lgamma2 + lgamma3 - lgamma4
-    lgamma_min <- matrix(apply(lgamma_c, 1, min), nrow=n, ncol=k)
-    lgamma <- exp(ifelse(lgamma_min < -700, lgamma_c - lgamma_min + 1, lgamma_c))
-    lgamma[is.infinite(lgamma)] <- 10^300
+    lgamma_mean <- matrix(apply(lgamma_c, 1, mean), nrow=n, ncol=k)
+    lgamma <- exp(lgamma_c - lgamma_mean)
+    lgamma[is.infinite(lgamma) & lgamma > 0] <- 10^300
+    lgamma[is.infinite(lgamma) & lgamma < 0] <- -10^300
     
     #確率の計算
     Pr <- lgamma / rowSums(lgamma)
