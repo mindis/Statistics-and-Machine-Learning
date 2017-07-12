@@ -14,7 +14,7 @@ library(lattice)
 #set.seed(8437)
 ##データの設定
 hh <- 500   #サンプル数
-pt <- rpois(hh, 15); pt <- ifelse(pt==0, 1, pt)   #購買機会(購買機会数が0なら1に置き換え)
+pt <- rpois(hh, 20); pt <- ifelse(pt==0, 1, pt)   #購買機会(購買機会数が0なら1に置き換え)
 hhpt <- sum(pt)
 choise <- 5   #選択可能数
 st <- 5   #基準ブランド
@@ -32,30 +32,32 @@ for(i in 1:hh){
 ID <- data.frame(no=1:hhpt, id, t)
 
 #通常価格の発生
-PRICE <- matrix(runif(hhpt*choise, 0.6, 1), nrow=hhpt, ncol=choise, byrow=T)   
+PRICE <- matrix(runif(hhpt*choise, 0.5, 1), nrow=hhpt, ncol=choise, byrow=T)   
 
 #ディスカウント率の発生
-DISC <- matrix(runif(hhpt*choise, 0, 0.5), nrow=hhpt, ncol=choise, byrow=T)
+DISC <- matrix(runif(hhpt*choise, 0.6, 1), nrow=hhpt, ncol=choise, byrow=T)
 
 #特別陳列の発生
 DISP <- matrix(0, nrow=hhpt, ncol=choise)
 for(i in 1:choise){
-  r <- runif(1, 0.1, 0.35)
+  r <- runif(1, 0.2, 0.45)
   DISP[, i] <- rbinom(hhpt, 1, r)
 }
 
 #特別キャンペーンの発生
 CAMP <- matrix(0, nrow=hhpt, ncol=choise)
 for(i in 1:choise){
-  r <- runif(1, 0.15, 0.3)
+  r <- runif(1, 0.25, 0.4)
   CAMP[, i] <- rbinom(hhpt, 1, r)
 }
 
 #カテゴリーロイヤルティ
-ROYL <- matrix(0, nrow=hhpt, ncol=1)
+ROY <- matrix(0, nrow=hhpt, ncol=1)
 for(i in 1:hh){
-  ROYL[ID[, 2]==i] <- runif(1, 0, 1)
+  ROY[ID[, 2]==i] <- runif(1, -1, 1)
 }
+ROYL <- ROY + rnorm(nrow(ROY), 0, 0.5^2)
+
 
 ##個体内説明変数をベクトル形式に変換
 #IDの設定
@@ -121,10 +123,14 @@ XHi <- as.matrix(data.frame(i=1, XH))
 for(t in 1:1000){
   print(t)
   len <- c + m*(choise-1)
-  theta0 <- matrix(runif(len, -0.5, 2.0), nrow=1, ncol=len)   
+  theta0 <- matrix(runif(len, -0.6, 2.2), nrow=1, ncol=len)   
   thetac <- matrix(runif(len*cont, -1.5, 1.5), nrow=cont, ncol=len)   
   thetab <- matrix(runif(len*bin, -1.3, 1.3), nrow=bin, ncol=len)   
   thetam <- matrix(runif(len*(multi-1), -1.4, 1.4), nrow=multi-1, ncol=len)   
+  
+  #マーケティング上係数の符号が決まるパラメータの回帰係数を変更する
+  theta0[, 5:6] <- runif(2, -2.0, -1.4)   #価格関連の説明変数は負の回帰係数にしておく
+  theta0[, 7:8] <- runif(2, 1.2, 2.0)   #特別陳列、キャンペーンは正
   
   #回帰係数行列を作成
   THETAT <- rbind(theta0, thetac, thetab, thetam)   
@@ -137,6 +143,7 @@ for(t in 1:1000){
   #個体間回帰係数を線形結合で決定する
   BETAM <- as.matrix(XHi) %*% THETAT 
   BETA <- BETAM + er
+  
   
   #個体内モデルの効用関数を計算
   U <- matrix(0, nrow=hhpt, ncol=choise)
@@ -220,13 +227,14 @@ logpold <- matrix(0, nrow=hh, ncol=1)
 Deltabar <- matrix(rep(0, ncol(XHi)*ncol(X)), nrow=ncol(XHi), ncol(X))   #階層モデルの回帰係数の平均の事前分布
 Adelta <- 0.01 * diag(rep(1, ncol(XHi)))   #階層モデルの回帰係数の分散の事前分布
 nu <- (ncol(X))+choise   #逆ウィシャート分布の自由度
-V <- choise * diag(ncol(X))
+V <- nu * diag(ncol(X))
 
 ##サンプリング結果の保存用配列
 #パラメータの保存用配列
 BETA <- array(0, dim=c(hh, ncol(X), R/keep))
 THETA <- matrix(0, nrow=R/keep, ncol=ncol(X)*ncol(XHi))
 SIGMA <- matrix(0, nrow=R/keep, ncol=ncol(X)*ncol(X))
+DELTA <- matrix(0, nrow=R/keep, ncol=ncol(X))
 
 #棄却率と対数尤度の保存用配列
 reject <- array(0, dim=c(R/keep))
@@ -236,21 +244,21 @@ llike <- array(0, dim=c(R/keep))
 tau <- mvrnorm(hh, rep(0, ncol(X)), diag(0.3, ncol(X)))
 oldbetas <- matrix(beta_first, nrow=hh, ncol=ncol(X), byrow=T) + tau
 oldDelta <- solve(t(XHi) %*% XHi) %*% t(XHi) %*% oldbetas
-oldVbetai <- solve(1/hh * (t(oldbetas - XHi %*% oldDelta) %*% (oldbetas - XHi %*% oldDelta)))
+oldVbeta <- 1/hh * (t(oldbetas - XHi %*% oldDelta) %*% (oldbetas - XHi %*% oldDelta))
+oldVbetai <- solve(oldVbeta)
 
 
 ####MCMCで階層ベイズ多項混合ロジットモデルのパラメータをサンプリング####
 for(rp in 1:R){
   
   ##MH法で個人別にbetaをサンプリング
-  rw <- matrix(rnorm(length(oldbetas), 0, 0.15), nrow=nrow(oldbetas), ncol=ncol(oldbetas))
+  rw <- mvrnorm(hh, rep(0, ncol(XM)), 0.15 * diag(diag(oldVbeta)))
   betad <- oldbetas
   betan <- oldbetas + rw
   
   #パラメータの事前分布との誤差を計算
   er_new <- betan - XHi %*% oldDelta
   er_old <- betad - XHi %*% oldDelta
-  
   
   #ID別に対数尤度と対数事前分布を計算
   for(i in 1:hh){
@@ -262,15 +270,15 @@ for(rp in 1:R){
   
   ##MHサンプリング
   #サンプリングを採択するかどうかを決定
-  rand <- matrix(runif(hh*ncol(oldbetas)), nrow=hh, ncol=ncol(oldbetas))   #一様乱数から乱数を発生
+  rand <- matrix(runif(hh), nrow=hh, ncol=ncol(oldbetas))   #一様乱数から乱数を発生
   LLind.diff <- exp(lognew + logpnew - logold - logpold)   #採択率を計算
   alpha <- matrix(ifelse(LLind.diff > 1, 1, LLind.diff), nrow=hh, ncol=ncol(oldbetas))   
   
   #alphaに基づきbetaを採択
-  oldbetas.r <- ifelse(alpha > rand, oldbetas.r <- betan, oldbetas.r <- betad)   #alphaがrandを上回っていたら採択
+  oldbetas.r <- ifelse(alpha > rand, betan, betad)   #alphaがrandを上回っていたら採択
   logl <- ifelse(alpha[, 1] > rand[, 1], lognew, logold)
   
-  adopt <- sum(oldbetas[, 1]==oldbetas.r[, 1])/hh   #採択率
+  adopt <- sum(oldbetas[, 1]!=oldbetas.r[, 1])/hh   #採択率
   LLho <- sum(logl)   #対数尤度の総和
   oldbetas <- oldbetas.r   #パラメータを更新
   
@@ -278,28 +286,71 @@ for(rp in 1:R){
   ##多変量回帰モデルによる階層モデルのサンプリング
   out <- rmultireg(Y=oldbetas, X=XHi, Bbar=Deltabar, A=Adelta, nu=nu, V=V)
   oldDelta <- out$B
-  sig <- out$Sigma
-  oldVbetai <- solve(sig)
+  oldVbeta <- out$Sigma
+  oldVbetai <- solve(oldVbeta)
   
   
   ##サンプリング結果を保存
   if(rp%%keep==0){
-    print(rp)
+    cat("ζ*'ヮ')ζ <うっうー ちょっとまってね", paste(rp/R*100, "％"), fill=TRUE)
     mkeep <- rp/keep
     BETA[, , mkeep] <- oldbetas
     THETA[mkeep, ] <- as.numeric(oldDelta)
-    SIGMA[mkeep, ] <- as.numeric(sig)
+    SIGMA[mkeep, ] <- as.numeric(oldVbeta)
+    DELTA[mkeep, ] <- XHi[1, ]%*% oldDelta
     llike[mkeep] <- LLho
     print(adopt)
     print(LLho)
-    print(round(cbind(oldDelta, THETAT), 1))
+    print(round(DELTA[mkeep, ], 2))
+    print(round(BETAM[1, ], 2))
+    print(round(oldbetas[1, ], 2))
+    print(round(BETAT[1, ], 2))
+    print(round(cbind(oldDelta, THETAT)[, c(1, 13, 2, 14, 3, 15, 4, 16, 5, 17, 6, 18, 7, 19, 8, 20,
+                                            9, 21, 10, 22, 11, 23, 12, 24)], 1))
   }
 }
 
+####サンプリング結果の要約と可視化####
+##サンプリング結果のプロット
+#階層モデルの回帰係数のサンプリング結果のプロット
+matplot(THETA[, 1:11], type="l", ylab="value")
+matplot(THETA[, 12:22], type="l", ylab="value")
+matplot(THETA[, 23:33], type="l", ylab="value")
+matplot(THETA[, 34:44], type="l", ylab="value")
+matplot(THETA[, 45:55], type="l", ylab="value")
+matplot(THETA[, 56:66], type="l", ylab="value")
+matplot(THETA[, 67:77], type="l", ylab="value")
+matplot(THETA[, 78:88], type="l", ylab="value")
+matplot(THETA[, 89:99], type="l", ylab="value")
+matplot(THETA[, 100:110], type="l", ylab="value")
+matplot(THETA[, 111:121], type="l", ylab="value")
+matplot(THETA[, 122:132], type="l", ylab="value")
 
-round(oldDelta - THETAT, 2)
-round(oldDelta, 3)
-round(THETAT, 3)
+#階層モデルの平均構造のサンプリング結果のプロット
+matplot(DELTA[, 1:6], type="l", ylab="value")
+matplot(DELTA[, 7:ncol(X)], type="l", ylab="value")
+
+#個体内モデルの回帰係数のサンプリング結果のプロット
+i <- 5
+matplot(t(BETA[i, 1:4, ]), type="l", ylab="value")
+matplot(t(BETA[i, 5:8, ]), type="l", ylab="value")
+matplot(t(BETA[i, 9:ncol(X), ]), type="l", ylab="value")
 
 
+##サンプリング結果の要約統計量
+burnin <- 8000/keep   #バーンイン期間
+RS <- R/keep
 
+#階層モデルの回帰係数の要約
+#事後平均の比較
+round(THETA_mean <- matrix(colMeans(THETA[burnin:RS, ]), nrow=ncol(XHi), ncol=ncol(XM)), 2)
+round(THETAT, 2)
+
+#事後分位点と標準偏差
+round(apply(THETA[burnin:RS, ], 2, quantile, c(0.01, 0.05, 0.5, 0.95, 0.99)), 2)   #分位点
+summary(THETA[burnin:RS, ])   #要約統計量
+round(apply(THETA[burnin:RS, ], 2, sd), 2)   #事後標準偏差
+
+#事後分布をプロット
+c <- 1
+hist(THETA[burnin:RS, c], col="grey", main="階層モデルの事後分布", xlab="value")
