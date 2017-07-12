@@ -186,13 +186,13 @@ LLike <- function(beta, b, X, Z, Y, hh, choise){
 }
 
 ##マルコフ連鎖モンテカルロ法でパラメータをサンプリング
-foreach(rp = 1:R) %do% {
+for(rp in 1:R) {
   ##MHサンプリングで固定効果betaのサンプリング
   oldbeta.rv <- as.numeric(t(oldbeta.r))
   betad.f <- oldbeta.f
   betan.f <- betad.f + rnorm(length(betad.f), 0, 0.025)
-  #ランダムウォークサンプリング
   
+  #ランダムウォークサンプリング
   #対数尤度と対数事前分布を計算
   lognew.f <- LLike(beta=betan.f, b=oldbeta.rv, X=XM, Z=Z, Y=Y, hh=hhpt, choise=choise)$LL
   logold.f <- LLike(beta=betad.f, b=oldbeta.rv, X=XM, Z=Z, Y=Y, hh=hhpt, choise=choise)$LL
@@ -226,20 +226,24 @@ foreach(rp = 1:R) %do% {
   betan.r <- as.numeric(t(betan.random))
   inv.cov <- solve(cov.random)
   
+  #事前分布の誤差を計算
+  er.new <- betan.random - beta.random
+  er.old <- betad.random - beta.random
+  
   #対数尤度と対数事前分布を計算
   lognew.r <- LLike(beta=oldbeta.f, b=betan.r, X=XM, Z=Z, Y=Y, hh=hhpt, choise=choise)$LLl
   logold.r <- LLike(beta=oldbeta.f, b=betad.r, X=XM, Z=Z, Y=Y, hh=hhpt, choise=choise)$LLl
-  logpnew.r <- apply((betan.random - beta.random), 1, function(x) -0.5 * x %*% inv.cov %*% x)
-  logpold.r <- apply((betad.random - beta.random), 1, function(x) -0.5 * x %*% inv.cov %*% x)
+  logpnew.r <- apply(er.new, 1, function(x) -0.5 * x %*% inv.cov %*% x)
+  logpold.r <- apply(er.old, 1, function(x) -0.5 * x %*% inv.cov %*% x)
   
   #ID別に対数尤度の和を取る
   lognew.rind <- data.frame(logl=lognew.r, id=ID[, 2]) %>%
-                  dplyr::group_by(id) %>%
-                  dplyr::summarize(sum=sum(logl))
+    dplyr::group_by(id) %>%
+    dplyr::summarize(sum=sum(logl))
   
   logold.rind <- data.frame(logl=logold.r, id=ID[, 2]) %>%
-                  dplyr::group_by(id) %>%
-                  dplyr::summarize(sum=sum(logl))
+    dplyr::group_by(id) %>%
+    dplyr::summarize(sum=sum(logl))
   
   #MHサンプリング
   rand <- matrix(runif(hh), nrow=hh, ncol=k.random)
@@ -259,7 +263,7 @@ foreach(rp = 1:R) %do% {
   #逆ウィシャート分布から分散共分散行列を発生
   cov.random <- rwishart(nu1, solve(VK))$IW   
   
-
+  
   if(rp%%keep==0){
     mkeep <- rp/keep
     BETA[mkeep, ] <- oldbeta.f
