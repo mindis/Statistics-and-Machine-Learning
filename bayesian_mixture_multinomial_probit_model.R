@@ -37,33 +37,6 @@ corrM <- function(col, lower, upper){
   return(Sigma)
 }
 
-#多変量回帰モデルの相関行列を作成
-##多変量正規分布からの乱数を発生させる
-#任意の相関行列を作る関数を定義
-corrM <- function(col, lower, upper){
-  diag(1, col, col)
-  
-  rho <- matrix(runif(col^2, lower, upper), col, col)
-  rho[upper.tri(rho)] <- 0
-  Sigma <- rho + t(rho)
-  diag(Sigma) <- 1
-  Sigma
-  (X.Sigma <- eigen(Sigma))
-  (Lambda <- diag(X.Sigma$values))
-  P <- X.Sigma$vector
-  P %*% Lambda %*% t(P)
-  
-  #新しい相関行列の定義と対角成分を1にする
-  (Lambda.modified <- ifelse(Lambda < 0, 10e-6, Lambda))
-  x.modified <- P %*% Lambda.modified %*% t(P)
-  normalization.factor <- matrix(diag(x.modified),nrow = nrow(x.modified),ncol=1)^0.5
-  Sigma <- x.modified <- x.modified / (normalization.factor %*% t(normalization.factor))
-  eigen(x.modified)
-  diag(Sigma) <- 1
-  round(Sigma, digits=3)
-  return(Sigma)
-}
-
 ##相関行列から分散共分散行列を作成する関数を定義
 covmatrix <- function(col, corM, lower, upper){
   m <- abs(runif(col, lower, upper))
