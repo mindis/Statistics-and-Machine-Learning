@@ -332,6 +332,7 @@ GNL.LL <- function(b, Y, X, nest, hhpt, g.par, g, member, l){
 ##Nested logitモデルでパラメータの初期値を決定
 NL.res <- list()
 nest.list <- list(nest1=nest[1:3, ], nest2=nest[4:6, ], nest3=nest[7:9, ])
+nest.list
 
 for(i in 1:g){
   
