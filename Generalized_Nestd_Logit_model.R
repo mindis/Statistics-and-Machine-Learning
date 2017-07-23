@@ -25,7 +25,7 @@ k <- 5   #説明変数の数
 id <- rep(1:hh, pt)
 t <- c()
 for(i in 1:hh){
-t <- c(t, 1:pt[i])
+  t <- c(t, 1:pt[i])
 }
 
 #IDとセグメントを結合
@@ -37,25 +37,25 @@ ID <- data.frame(no=1:hhpt, id=id, t=t)   #データの結合
 c.num <- member
 CLOTH <- list()
 for(i in 1:member){
-CLOTH[[i]] <- t(rmultinom(hhpt, 1, runif(c.num)))
-CLOTH[[i]] <- CLOTH[[i]][, -c.num]
+  CLOTH[[i]] <- t(rmultinom(hhpt, 1, runif(c.num)))
+  CLOTH[[i]] <- CLOTH[[i]][, -c.num]
 }
 
 #レベルの対数
 lv.weib <- round(rweibull(hh*2, 1.8, 280), 0)
 index.lv <- sample(subset(1:length(lv.weib), lv.weib > 80), hh)
-lv <- log(lv.weib[index.lv])
+lv <- scale(lv.weib[index.lv])
 
 #パネルに変更
 LV <- c()
 for(i in 1:hh){
-LV <- c(LV, rep(lv[i], pt[i]))
+  LV <- c(LV, rep(lv[i], pt[i]))
 }
 
 #スコアの対数
 score.norm <- exp(rnorm(hhpt*2, 12.5, 0.5))
 index.score <- sample(subset(1:length(score.norm), score.norm > 150000), hhpt)
-score <- log(score.norm[index.score])
+score <- scale(score.norm[index.score])
 SCORE <- score
 
 #どのメンバーの勧誘回だったか
@@ -64,10 +64,10 @@ scout <- t(rmultinom(hhpt, 2, rep(prob, member)))
 
 #メンバーで勧誘が重複しなくなるまで乱数を発生させ続ける
 for(i in 1:10000){
-if(max(scout)==1) break
-index.scout <- subset(1:nrow(scout), apply(scout, 1, max) > 1)
-scout[index.scout, ] <- t(rmultinom(length(index.scout), 2, rep(prob, member)))
-print(i)
+  if(max(scout)==1) break
+  index.scout <- subset(1:nrow(scout), apply(scout, 1, max) > 1)
+  scout[index.scout, ] <- t(rmultinom(length(index.scout), 2, rep(prob, member)))
+  print(i)
 }
 SCOUT <- scout
 
@@ -83,19 +83,19 @@ LV.v <- matrix(0, nrow=hhpt*member, ncol=member-1)
 SCORE.v <- matrix(0, nrow=hhpt*member, ncol=member-1)
 
 for(i in 1:hhpt){
-index.v <- ((i-1)*member+1):((i-1)*member+member)
-LV.v[index.v, ] <- diag(LV[i], member)[, -member]
-SCORE.v[index.v, ] <- diag(SCORE[i], member)[, -member]
+  index.v <- ((i-1)*member+1):((i-1)*member+member)
+  LV.v[index.v, ] <- diag(LV[i], member)[, -member]
+  SCORE.v[index.v, ] <- diag(SCORE[i], member)[, -member]
 }
 
 #条件付き説明変数をベクトル形式に変更
 CLOTH.v <- matrix(0, nrow=hhpt*member, ncol=c.num-1)
 for(i in 1:hhpt){
-print(i)
-for(j in 1:member){
-  index.v <- (i-1)*member+j
-  CLOTH.v[index.v, ] <- CLOTH[[j]][i, ]
-}
+  print(i)
+  for(j in 1:member){
+    index.v <- (i-1)*member+j
+    CLOTH.v[index.v, ] <- CLOTH[[j]][i, ]
+  }
 }
 
 SCOUT.v <- as.numeric(t(SCOUT))
@@ -130,30 +130,30 @@ nest <- rbind(first, second, third, Prim, BiBi, LW, smile, pure, cool)
 
 ##パラメータを設定
 #回帰パラメータの設定
-b0 <- c(1.6, -0.4, -0.6, 0.6, -0.8, 1.0, 1.2, 0.4)
-b1 <- runif((member-1)*2, -0.1, 0.1)
-b2 <- runif(NCOL(CLOTH.v)+NCOL(SCOUT.v), -1.0, 1.6)
-b <- c(b0, b1, b2)
+b0 <- c(1.3, -0.2, -0.5, 0.4, -0.8, 0.8, 1.1, 0.1)
+b1 <- runif((member-1)*2, 0, 0.2)
+b2 <- runif(NCOL(CLOTH.v), -1.0, 1.4)
+b3 <- runif(NCOL(SCOUT.v), 0.7, 1.0)
+b <- c(b0, b1, b2, b3)
 beta.t <- b
 
 
 #ログサム変数のパラメータ
-grade <- runif(g, 0.2, 0.7)
-unit <- runif(g, 0.6, 0.85)
-type <- runif(g, 0.2, 0.5)
+grade <- runif(g, 0.1, 0.9)
+unit <- runif(g, 0.7, 1.0)
+type <- runif(g, 0.1, 0.9)
 logsum.par <- c(grade, unit, type)
 
 #アロケーションパラメータの設定
-gamma.k1 <- runif(member, 1.0, 6.0)
-gamma.k2 <- runif(member, 0.5, 4.5)
-gamma.k3 <- runif(member, 1.5, 4.5)
+gamma.k1 <- rep(1.5, member)
+gamma.k2 <- rep(0.5, member)
+gamma.k3 <- rep(1, member)
+gamma.vec <- rbind(gamma.k1, gamma.k2, gamma.k3)
 
 #アロケーションパラメータを正規化
-gamma.grade <- gamma.k1/sum(gamma.k1)
-gamma.unit <- gamma.k2/sum(gamma.k2)
-gamma.type <- gamma.k3/sum(gamma.k3) 
-gamma.par <- rbind(gamma.grade, gamma.unit, gamma.type)
+gamma.par <- gamma.vec / matrix(colSums(gamma.vec), nrow=g, ncol=member, byrow=T)
 gamma <- matrix(0, nrow=nrow(nest), ncol=3)
+
 
 for(i in 1:g){
   for(j in 1:3){
@@ -161,9 +161,6 @@ for(i in 1:g){
     gamma[r, ] <- (gamma.par[i, ]*nest[r, ])[nest[r, ]==1]
   }
 }
-gamma.par
-gamma
-nest
 
 ##GNLモデルに基づき確率を計算
 #ロジットを計算
@@ -177,14 +174,14 @@ d2_2 <- matrix(0, nrow=hhpt, ncol=nrow(nest))
 d2_1 <- array(0, dim=c(hhpt, member, nrow(nest)))
 
 for(i in 1:nrow(nest)){
-#ネスト、ログサム、アロケーションパラメータをメンバーで行列に変更
-nest.k <- matrix(nest[i, ], nrow=hhpt, ncol=member, byrow=T)
-gamma.k <- matrix(gamma[i, ], nrow=hhpt, ncol=g, byrow=T)
+  #ネスト、ログサム、アロケーションパラメータをメンバーで行列に変更
+  nest.k <- matrix(nest[i, ], nrow=hhpt, ncol=member, byrow=T)
+  gamma.k <- matrix(gamma[i, ], nrow=hhpt, ncol=g, byrow=T)
 
-#ログサム変数を計算
-logsum[, i] <- logsum.par[i] * log(rowSums((gamma.k * exp((logit*nest.k)[, nest[i, ]==1]))^(1/logsum.par[i])))
-d2_2[, i] <- rowSums((gamma.k * exp((logit*nest.k)[, nest[i, ]==1]))^(1/logsum.par[i]))
-d2_1[, nest[i, ]==1, i] <- (gamma.k * exp((logit*nest.k)[, nest[i, ]==1]))^(1/logsum.par[i])
+  #ログサム変数を計算
+  logsum[, i] <- logsum.par[i] * log(rowSums((gamma.k * exp((logit*nest.k)[, nest[i, ]==1]))^(1/logsum.par[i])))
+  d2_2[, i] <- rowSums((gamma.k * exp((logit*nest.k)[, nest[i, ]==1]))^(1/logsum.par[i]))
+  d2_1[, nest[i, ]==1, i] <- (gamma.k * exp((logit*nest.k)[, nest[i, ]==1]))^(1/logsum.par[i])
 }
 
 #ネストjの選択確率のパラメータを計算
@@ -196,20 +193,20 @@ Pr1 <- U1_1 / U1_2
 Pr2.array <- array(0, dim=c(hhpt, member, nrow(nest)))
 
 for(i in 1:nrow(nest)){
-Pr2.array[, nest[i, ]==1, i] <- d2_1[, nest[i, ]==1, i] / matrix(d2_2[, i], nrow=hhpt, ncol=sum(nest[i, ]))
+  Pr2.array[, nest[i, ]==1, i] <- d2_1[, nest[i, ]==1, i] / matrix(d2_2[, i], nrow=hhpt, ncol=sum(nest[i, ]))
 }
 
 #最終的なメンバーの選択確率
 Pr <- matrix(0, nrow=hhpt, ncol=member)
 for(i in 1:member){
-Pr[, i] <- rowSums(Pr2.array[, i, nest[, i]==1] * Pr1[, nest[, i]==1])
+  Pr[, i] <- rowSums(Pr2.array[, i, nest[, i]==1] * Pr1[, nest[, i]==1])
 }
 
 #データの確認
 round(data.frame(GNL=Pr, MNL=Pr.mnl), 2)
 summary(Pr)
 summary(Pr.mnl)
-
+Pr.GNL <- Pr
 
 ##発生させた確率から応答変数を発生
 Y <- t(apply(Pr, 1, function(x) rmultinom(1, 1, x)))
@@ -229,15 +226,20 @@ NL.LL <- function(x, Y, X, nest, hhpt, member){
   logit <- matrix(X %*% beta, nrow=hhpt, ncol=member, byrow=T)
   
   #ログサム変数の定義
-  U1 <- apply(cbind(nest, rho), 1, function(x) exp(logit[, x[1:member]==1] / x[member+1]))
-  logsum <- matrix(log(rowSums(U1)), nrow=hhpt, ncol=nrow(nest))
+  U1 <- matrix(0, nrow=hhpt, ncol=member)
+  logsum <- matrix(0, nrow=hhpt, ncol=nrow(nest))
+  
+  for(i in 1:nrow(nest)){
+    U1[, nest[i, ]==1] <- exp(logit[, nest[i, ]==1] / rho[i])
+    logsum[, i] <- log(rowSums(U1[, nest[i, ]==1]))
+  }
   
   #クラスターの選択確率
   d1 <- logsum * matrix(rho, nrow=hhpt, ncol=nrow(nest), byrow=T)
   CL <- exp(d1) / matrix(rowSums(exp(d1)), nrow=hhpt, ncol=nrow(nest))
   
   #選択確率の計算
-  rv <- rho * nest1
+  rv <- rho * nest
   rho.v <- rv[rv > 0]
   Pr1 <- matrix(0, nrow=hhpt, ncol=member)
   Pr2 <- matrix(0, nrow=hhpt, ncol=member)
@@ -258,7 +260,21 @@ NL.LL <- function(x, Y, X, nest, hhpt, member){
   Pr <- Pr1 * Pr2   #同時確率
   LLi <- rowSums(Y * log(Pr))   #対数尤度
   LL <- sum(LLi)
+  return(LL)
+}
+
+##多項ロジットモデルの対数尤度関数
+LL_logit <- function(x, X, Y, hh, k){
+  #パラメータの設定
+  theta <- x
   
+  #効用関数の設定
+  U <- matrix(X %*% theta, nrow=hh, ncol=k, byrow=T)
+  
+  #対数尤度の計算
+  d <- rowSums(exp(U))
+  LLl <- rowSums(Y * U) - log(d)
+  LL <- sum(LLl)
   return(LL)
 }
 
@@ -268,24 +284,24 @@ GNL.LL <- function(b, Y, X, nest, hhpt, g.par, g, member, l){
   
   #パラメータの設定
   beta <- b[l[1]:l[2]]
-  rho <- c[l[2]:l[4]]
-  gamma.v <- c[l[5]:l[6]]
-  
+  rho <- abs(b[l[3]:l[4]])
+  gamma.v <- b[l[5]:l[6]]
+
   #アロケーションパラメータを正規化
-  gamma.obs <- matrix(gamma.v, nrow=g, ncol=member, byrow=T)
-  gamma.par <- gamma.obs / matrix(rowSums(gamma.obs), nrow=g, ncol=member)
+  gamma.obs <- c(gamma.v, 1) / sum(c(gamma.v, 1))
+  gamma.par <- matrix(gamma.obs, nrow=g, ncol=member)
   gamma <- matrix(0, nrow=g.par, ncol=3)
   
   for(i in 1:g){
     for(j in 1:3){
       r <- (i-1)*3+j
-      gamma[r, ] <- (gamma.par1[i, ]*nest[r, ])[nest[r, ]==1]
+      gamma[r, ] <- (gamma.par[i, ]*nest[r, ])[nest[r, ]==1]
     }
   }
   
   ##GNLモデルに基づき確率を計算
   #ロジットを計算
-  logit <- matrix(X %*% b, nrow=hhpt, ncol=member, byrow=T)
+  logit <- matrix(X %*% beta, nrow=hhpt, ncol=member, byrow=T)
   
   ##ネストの所属確率を計算
   #ネストごとにログサム変数を計算
@@ -328,15 +344,60 @@ GNL.LL <- function(b, Y, X, nest, hhpt, g.par, g, member, l){
   return(LL)
 }
 
-####GNL推定のためのデータの設定と初期値の設定####
-##Nested logitモデルでパラメータの初期値を決定
+
+####GMLモデルを最尤推定####
+##GNL推定のためのデータの設定と初期値の設定
+#Nested logitモデルで推定
 NL.res <- list()
 nest.list <- list(nest1=nest[1:3, ], nest2=nest[4:6, ], nest3=nest[7:9, ])
-nest.list
 
-for(i in 1:g){
-  
+#準ニュートン法でパラメータを推定
+for(n in 1:g){
+  for(i in 1:1000){
+    print(i)
+    x <- c(runif(ncol(XM), -0.5, 1.5), runif(nrow(nest.list[[n]]), 0.4, 0.7))
+    NL.res[[n]] <- try(optim(x, NL.LL, gr=NULL, Y=Y, X=XM, nest=nest.list[[n]], hhpt=hhpt, member=member,
+                             method="BFGS", hessian=FALSE, control=list(fnscale=-1)), silent=TRUE)
+    if(class(res) == "try-error") {next} else {break} #エラー処理
+  }
 }
 
-#パラメータのインデックス
-l <- c(1, ncol(X), ncol(X)+1, ncol(X)+length(logsum.par), ncol(X)+length(logsum.par)+1, ncol(X)+length(logsum.par)+length(gamma))
+
+##GMLモデルの初期値を決定
+##多項ロジットモデルでパラメータの初期値を決定
+x <- runif(ncol(XM), -0.5, 1)
+ML.res <- optim(x, LL_logit, gr=NULL, Y=Y, X=XM, hh=hhpt, k=member,
+                method="BFGS", hessian=FALSE, control=list(fnscale=-1))
+ML.res
+
+
+##GMLモデルを準ニュートン法で最尤推定
+#パラメータのインデックスを作成
+l <- c(1, ncol(X), ncol(X)+1, ncol(X)+length(logsum.par), ncol(X)+length(logsum.par)+1, ncol(X)+length(logsum.par)+2)
+
+#準ニュートン法でパラメータを推定
+res <- list()
+for(n in 1:10){
+  print(n)
+  for(i in 1:1000){
+    b <- c(ML.res$par, runif(g.par, 0.4, 0.7), 1.2, 0.7)
+    b <- c(ML.res$par, runif(g.par, 0.4, 0.7))
+    res <- try(optim(b, GNL.LL, gr=NULL, Y=Y, X=XM, nest=nest, hhpt=hhpt, g.par=g.par, g=g, member=member, l=l,
+                     method="BFGS", hessian=FALSE, control=list(fnscale=-1, maxit=3000)), silent=FALSE)
+    if(class(res) == "try-error") {next} else {break}   #エラー処理
+  }
+}  
+res
+
+b <- res$par
+opt <- which.max(unlist(lapply(res, function(x) x$value)))
+b <- res[[opt]]$par
+
+ML.res
+
+####推定されたパラメータの確認と適合度####
+##真のパラメータと推定されたパラメータの比較
+round(rbind(res$par, c(beta.t, logsum.par)), 3)
+
+
+
