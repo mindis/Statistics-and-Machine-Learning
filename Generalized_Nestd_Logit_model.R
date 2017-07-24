@@ -346,58 +346,48 @@ GNL.LL <- function(b, Y, X, nest, hhpt, g.par, g, member, l){
 
 
 ####GMLモデルを最尤推定####
-##GNL推定のためのデータの設定と初期値の設定
-#Nested logitモデルで推定
-NL.res <- list()
-nest.list <- list(nest1=nest[1:3, ], nest2=nest[4:6, ], nest3=nest[7:9, ])
-
-#準ニュートン法でパラメータを推定
-for(n in 1:g){
-  for(i in 1:1000){
-    print(i)
-    x <- c(runif(ncol(XM), -0.5, 1.5), runif(nrow(nest.list[[n]]), 0.4, 0.7))
-    NL.res[[n]] <- try(optim(x, NL.LL, gr=NULL, Y=Y, X=XM, nest=nest.list[[n]], hhpt=hhpt, member=member,
-                             method="BFGS", hessian=FALSE, control=list(fnscale=-1)), silent=TRUE)
-    if(class(res) == "try-error") {next} else {break} #エラー処理
-  }
-}
-
-
 ##GMLモデルの初期値を決定
-##多項ロジットモデルでパラメータの初期値を決定
+#多項ロジットモデルでパラメータの初期値を決定
 x <- runif(ncol(XM), -0.5, 1)
 ML.res <- optim(x, LL_logit, gr=NULL, Y=Y, X=XM, hh=hhpt, k=member,
                 method="BFGS", hessian=FALSE, control=list(fnscale=-1))
-ML.res
 
 
 ##GMLモデルを準ニュートン法で最尤推定
 #パラメータのインデックスを作成
 l <- c(1, ncol(X), ncol(X)+1, ncol(X)+length(logsum.par), ncol(X)+length(logsum.par)+1, ncol(X)+length(logsum.par)+2)
 
-#準ニュートン法でパラメータを推定
+#パラメータの制約条件
+upper <- c(rep(Inf, ncol(XM)), rep(1, length(logsum.par)), Inf, Inf)   #上限
+lower <- c(rep(-Inf, ncol(XM)), rep(0, length(logsum.par)), -Inf, -Inf)   #下限
+
+#制約付きの準ニュートン法でパラメータを推定
 res <- list()
-for(n in 1:10){
-  print(n)
-  for(i in 1:1000){
-    b <- c(ML.res$par, runif(g.par, 0.4, 0.7), 1.2, 0.7)
-    b <- c(ML.res$par, runif(g.par, 0.4, 0.7))
-    res <- try(optim(b, GNL.LL, gr=NULL, Y=Y, X=XM, nest=nest, hhpt=hhpt, g.par=g.par, g=g, member=member, l=l,
-                     method="BFGS", hessian=FALSE, control=list(fnscale=-1, maxit=3000)), silent=FALSE)
-    if(class(res) == "try-error") {next} else {break}   #エラー処理
-  }
-}  
-res
 
-b <- res$par
-opt <- which.max(unlist(lapply(res, function(x) x$value)))
-b <- res[[opt]]$par
+for(i in 1:1000){
+  b <- c(ML.res$par, runif(g.par, 0.4, 0.7), 1.2, 0.7)
+  res <- try(optim(b, GNL.LL, gr=NULL, Y=Y, X=XM, nest=nest, hhpt=hhpt, g.par=g.par, g=g, member=member, l=l,
+                   method="L-BFGS-B", hessian=TRUE, lower=lower, upper=upper, 
+                   control=list(fnscale=-1, maxit=200, trace=TRUE)), silent=FALSE)
+  if(class(res) == "try-error") {next} else {break}   #エラー処理
+}
 
-ML.res
 
 ####推定されたパラメータの確認と適合度####
 ##真のパラメータと推定されたパラメータの比較
-round(rbind(res$par, c(beta.t, logsum.par)), 3)
+b <- res$par
+round(rbind(beta=res$par, beta.t=c(beta.t, logsum.par, gamma.k1[1], gamma.k2[2])), 2)
+
+##相関係数の計算
+
+
+##適合度の比較
+c(res$value, ML.res$value)   #対数尤度
+round(tval <- res$par/sqrt(-diag(solve(res$hessian))), 3)   #t値
+round(AIC <- -2*res$value + 2*length(res$par), 3)   #GNLモデルのAIC
+round(-2*ML.res$value + 2*length(ML.res$par), 3)   #MNLモデルのAIC
+round(AIC <- -2*res$value + log(hhpt)*length(res$par), 3)   #GNLモデルのBIC
+round(-2*ML.res$value + log(hhpt)*length(ML.res$par), 3)   #MNLモデルのBIC
 
 
 
