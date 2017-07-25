@@ -80,7 +80,7 @@ for(i in 1:10000){
   
   #適当な平均構造が発生したらbreak
   print(c(max(Y), quantile(Y, 0.2)))
-  if(max(Y) < 350 & quantile(Y, 0.2) > 1) {break}
+  if(max(Y) < 700 & quantile(Y, 0.2) > 2) {break}
 }
 
 
@@ -114,6 +114,12 @@ cov.random <- diag(runif(1, 0.2, 1), k)   #変量効果の分散の初期値
 oldbeta.r <- mvrnorm(hh, rep(0, k), cov.random)   #変量効果の初期値
 beta.random <- matrix(0, nrow=hh, ncol=k)   #階層モデルの初期値
 
+##ランダムウォークの分散を決定
+res.pois <- glm(Y ~ -1 + X, family="poisson")   #GLMポアソン回帰
+summary(res.pois)
+rw.cov <- coef(summary(res.pois))[, 2]   #標準誤差の取り出し
+w <- length(rw.cov)
+
 
 ####マルコフ連鎖モンテカルロ法で変量効果ポアソンモデルを推定####
 ##ポアソン回帰モデルでランダムウォークの分散を決定
@@ -134,10 +140,11 @@ loglike <- function(beta, theta, y, X, Z){
 ##マルコフ連鎖モンテカルロ法でパラメータをサンプリング
 ##MHサンプリングで固定効果をサンプリング
 for(rp in 1:R){
-  
+ 
   oldbeta.rv <- as.numeric(t(oldbeta.r))
   betad.f <- oldbeta.f
-  betan.f <- betad.f + rnorm(length(betad.f), 0, 0.005)
+  betan.f <- betad.f + rnorm(w, 0, 0.5) * rw.cov
+  
   
   #ランダムウォークサンプリング
   #対数尤度と対数事前分布を計算
@@ -186,20 +193,14 @@ for(rp in 1:R){
   logpnew.r <- apply(er.new, 1, function(x) -0.5 * x %*% inv.cov %*% x)
   logpold.r <- apply(er.old, 1, function(x) -0.5 * x %*% inv.cov %*% x)
   
-  
   #ID別に対数尤度の和を取る
-  lognew.rind <- data.frame(logl=lognew.r, id=ID[, 2]) %>%
+  log.rind <- data.frame(lognew=lognew.r, logold=logold.r, id=ID[, 2]) %>%
     dplyr::group_by(id) %>%
-    dplyr::summarize(sum=sum(logl))
-  
-  logold.rind <- data.frame(logl=logold.r, id=ID[, 2]) %>%
-    dplyr::group_by(id) %>%
-    dplyr::summarize(sum=sum(logl))
-  
+    dplyr::summarize(new=sum(lognew), old=sum(logold))
   
   #MHサンプリング
   rand <- matrix(runif(hh), nrow=hh, ncol=k)
-  LLind.diff <- exp(lognew.rind$sum + logpnew.r - logold.rind$sum - logpold.r)   #棄却率を計算
+  LLind.diff <- exp(log.rind$new + logpnew.r - log.rind$old - logpold.r)   #棄却率を計算
   alpha <- matrix(ifelse(LLind.diff > 1, 1, LLind.diff), nrow=hh, ncol=k)      
   
   oldbeta.r <- ifelse(alpha > rand, betan.random, betad.random)   #alphaがrandを上回っていたら採択
@@ -230,6 +231,18 @@ for(rp in 1:R){
   }
 }
 
-BETA <- matrix(0, nrow=R/keep, ncol=ncol(X))
-THETA <- array(0, dim=c(hh, k, R/keep))
-SIGMA <- matrix(0, nrow=R/keep, ncol=k^2)
+####推定結果と要約####
+burnin <- 2500
+i <- 6
+
+matplot(BETA[, 1:5], type="l")
+matplot(BETA[, 5:ncol(BETA)], type="l")
+matplot(SIGMA[, c(1, 5, 9)], type="l")
+matplot(t(THETA[i, , ]), type="l")
+matplot(t(THETA[i+100, , ]), type="l")
+
+#変量効果の分散の事後平均
+round(colMeans(BETA[burnin:R/keep, ]), 3) 
+round(colMeans(SIGMA[burnin:R/keep, c(1, 5, 9)]), 3)
+round(colMeans(t(THETA[i, , burnin:nrow(SIGMA)])), 3)
+
