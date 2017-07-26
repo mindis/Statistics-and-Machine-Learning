@@ -80,6 +80,7 @@ for(i in 1:hh){
 }
 
 ID <- data.frame(no=1:hhpt, id=id, t=t)   #IDデータの結合
+id_r <- matrix(1:(hhpt*(member-1)), nrow=hhpt, ncol=member-1, byrow=T)
 
 
 ####説明変数の発生####
@@ -245,5 +246,200 @@ Cov <- corrM(member-1, -0.6, 0.75)   #分散共分散パラメータはセグメントで共通
 
 
 #効用関数の設定
-XM %*% beta.z 
+U.mean <- matrix(rowSums(XM %*% beta.z * z.vec), nrow=hhpt, ncol=member-1, byrow=T)   #効用関数の平均構造
+U <- U.mean + mvrnorm(hhpt, rep(0, member-1), Cov)
+
+#効用最大化原理に基づき選択メンバー決定
+y <- apply(U, 1, function(x) ifelse(max(x) < 0, member, which.max(x)))
+
+#選択メンバーを0、1行列に変更
+Y <- matrix(0, nrow=hhpt, ncol=member)
+for(i in 1:hhpt){
+  Y[i, y[i]] <- 1
+}
+
+table(Y)   #選択メンバーの集計
+round(cbind(ID, y, U, U.mean), 2)   #選択メンバーと効用を比較
+
+
+####マルコフ連鎖モンテカルロ法による階層混合多項プロビットモデルの推定####
+####MCMC推定のための推定準備####
+##切断正規分布の乱数を発生させる関数
+rtnorm <- function(mu, sigma, a, b){
+  FA <- pnorm(a, mu, sigma)
+  FB <- pnorm(b, mu, sigma)
+  return(qnorm(runif(length(mu))*(FB-FA)+FA, mu, sigma))
+}
+
+##多変量正規分布の尤度関数
+dmv <- function(x, mean.vec, inv.cov, det.cov){
+  LLo <- 1 / (sqrt((2 * pi)^nrow(inv.cov) * det.cov)) *
+         exp(-(x - mean.vec) %*% inv.cov %*% (x - mean.vec) / 2)
+  return(LLo)
+}
+
+##多項ロジットモデルの尤度関数
+LL_logit <- function(theta, Z, Zx, hh, g){
+  #ロジットの計算
+  logit <- matrix(Zx %*% theta, nrow=hh, ncol=g, byrow=T)
+  
+  #確率と対数尤度の和を計算
+  P <- exp(logit)/matrix(rowSums(exp(logit)), nrow=hh, ncol=g)
+  LLi <- rowSums(Z * log(P))
+  LL <- sum(LLi)
+  val <- list(LL=LL, P=P)
+  return(val)
+}
+
+##多変量正規分布の条件付き期待値と分散を計算する関数
+cdMVN <- function(mu, Cov, dependent, U){
+  
+  #分散共分散行列のブロック行列を定義
+  Cov11 <- Cov[dependent, dependent]
+  Cov12 <- Cov[dependent, -dependent]
+  Cov21 <- Cov[-dependent, dependent]
+  Cov22 <- Cov[-dependent, -dependent]
+  
+  #条件付き分散と条件付き平均を計算
+  CDinv <- Cov12 %*% solve(Cov22)
+  CDmu <- mu[, dependent] + t(CDinv %*% t(U[, -dependent] - mu[, -dependent]))   #条件付き平均を計算
+  CDvar <- Cov11 - Cov12 %*% solve(Cov22) %*% Cov21   #条件付き分散を計算
+  val <- list(CDmu=CDmu, CDvar=CDvar)
+  return(val)
+}
+
+##MCMCアルゴリズムの設定
+R <- 20000
+sbeta <- 1.5
+keep <- 4
+llike <- array(0, dim=c(R/keep))   #対数尤度の保存用
+
+
+##説明変数を多次元配列化
+X.array <- array(0, dim=c(member-1, ncol(X), hhpt))
+selop <- matrix(1:nrow(XM), nrow=hhpt, ncol=member-1, byrow=T)
+
+for(i in 1:hhpt){
+  X.array[, , i] <- XM[selop[i, ], ]
+}
+
+YX.array <- array(0, dim=c(member-1, ncol(X)+1, hhpt))
+
+#推定プロセスの格納配列
+UM <- matrix(0, nrow=hhpt, ncol=member-1)
+util.M <- matrix(0, nrow=hhpt, ncol=member-1) 
+
+
+##事前分布の設定
+nu <- member   #逆ウィシャート分布の自由度
+V <- solve((1/10)*diag(member-1))    #逆ウィシャート分布のパラメータ
+Deltabar <- rep(0, ncol(X))  #回帰係数の平均の事前分布
+Adelta <- solve(100 * diag(rep(1, ncol(X)))) #回帰係数の事前分布の分散
+zeta <- rep(0, ncol(Zx.v))   #階層モデルの回帰係数の平均の事前分布
+Azeta <- solve(100 * diag(rep(1, ncol(Zx.v))))    #階層モデルの回帰係数の事前分布の分散
+
+##サンプリング結果の保存用配列
+Util <- array(0, dim=c(hhpt, member-1, R/keep))
+BETA <- matrix(0, nrow=R/keep, ncol=ncol(X))
+SIGMA <- matrix(0, nrow=R/keep, ncol=nrow(Cov)^2)
+THETA <- matrix(0, nrow=R/keep, ncol=ncol(Zx.v))
+Z.vec <- matrix(0, nrow=R/keep, ncol=hh)
+Prob <- matrix(0, nrow=R/keep, ncol=hh)
+
+
+##初期値の設定
+##選択モデルの初期値の設定
+#選択モデルの回帰係数の初期値
+beta00.z <- matrix(colSums(Y[, -member])/(hhpt/10), nrow=g, ncol=member-1, byrow=T) +
+                                        matrix(runif((member-1)*g, -1, 1), nrow=g, ncol=member-1)
+beta01.z <- matrix(runif(g*2, 0, 1.4), nrow=g, ncol=2, byrow=T)
+beta02.z <- matrix(runif(g*2, -1.2, 1.3), nrow=g, ncol=2, byrow=T)
+beta03.z <- matrix(runif(g*(member-1), 0, 1.2), nrow=g, ncol=member-1, byrow=T)
+beta04.z <- matrix(runif(g*(member-1), -1.2, 1.2), nrow=g, ncol=member-1, byrow=T)
+oldbeta <- t(cbind(beta00.z, beta01.z, beta02.z, beta03.z, beta04.z))   #データを結合
+
+#分散共分散行列の初期値
+oldCov <- corrM(member-1, 0, 0)
+
+##潜在変数モデルの初期値の設定
+#thetaの初期値
+oldtheta <- c(runif(g-1, -1, 1), runif(cont*(g-1), 0, 1.2), runif(bin*(g-1), -1.2, 1.2), runif((multi-1)*(g-1), -1.3, 1.3))
+
+#潜在変数モデルの事前確率の計算
+logit <- matrix(Zx.v %*% oldtheta, nrow=hh, ncol=g, byrow=T)
+Pr <- exp(logit)/matrix(rowSums(exp(logit)), nrow=hh, ncol=g)
+
+#セグメントを生成
+Z1 <- t(apply(Pr, 1, function(x) rmultinom(1, 1, x)))
+z1 <- Z1 %*% 1:g
+
+
+##効用の初期値
+#zをベクトル形式に変更
+Zi1 <- matrix(0, nrow=nrow(Y), ncol=g)
+Z.vec <- matrix(0, nrow=nrow(XM), ncol=g)
+pt.zeros <- c(0, pt)
+
+for(i in 1:hh){
+  r1 <- (sum(pt.zeros[1:i])*(member-1)+1):(sum(pt.zeros[1:i])*(member-1)+pt[i]*(member-1))
+  r2 <- (sum(pt.zeros[1:i])+1):(sum(pt.zeros[1:i])+pt[i])
+  
+  Z.vec[r1, ] <- matrix(Z1[i, ], nrow=pt[i]*(member-1), ncol=g, byrow=T)
+  Zi1[r2, ] <- matrix(Z1[i, ], nrow=pt[i], ncol=g, byrow=T)
+}
+
+#効用を計算
+old.utilm <- matrix(rowSums(XM %*% oldbeta * Z.vec), nrow=hhpt, ncol=member-1, byrow=T)   #効用の平均構造
+old.util <- old.utilm + mvrnorm(hhpt, rep(0, member-1), oldCov)   #誤差を加える
+
+
+####マルコフ連鎖モンテカルロ法で階層有限混合多項プロビットモデルを推定####
+##選択結果と整合的な潜在効用を発生させる
+#条件付き期待値と条件付き分散を計算
+S <- rep(0, member-1)
+
+for(j in 1:(member-1)){
+  MVR <- cdMVN(mu=old.utilm, Cov=oldCov, dependent=j, U=old.util)   #条件付き分布を計算
+  UM[, j] <- MVR$CDmu   #条件付き期待値を取り出す
+  S[j] <- sqrt(MVR$CDvar) #条件付き分散を取り出す
+  
+  #潜在効用を発生させる
+  #切断領域を定義
+  max.u <- apply(cbind(old.util[, -j], 0), 1, max)
+  max.u <- ifelse(y==member, 0, max.u)
+  
+  #切断正規分布より潜在変数を発生
+  old.util[, j] <- ifelse(y==j, rtnorm(mu=UM[, j], sigma=S[j], a=max.u, b=100), 
+                              rtnorm(mu=UM[, j], sigma=S[j], a=-100, b=max.u))
+  old.util[, j] <- ifelse(is.infinite(old.util[, j]), ifelse(y==j, max.u + runif(1), max.u - runif(1)), old.util[, j])
+}
+util.v <- as.numeric(t(old.util))
+
+##betaの分布とパラメータの計算
+#z.vecとX.vec
+YX.bind <- cbind(util.v, XM)
+for(i in 1:hhpt){
+  YX.array[, , i] <- YX.bind[id_r[i, ], ]
+}
+
+##回帰モデルの回帰パラメータをセグメント別にギブスサンプリング
+invcov <- solve(oldCov)
+Util.z <- matrix(util.v, nrow=length(util.v), ncol=g) * Z.vec
+
+#セグメントのインデックスを作成
+zi1 <- Zi1 %*% 1:g
+index.zi1 <- list()
+
+for(i in 1:g){
+  index.zi1[[i]] <- subset(1:length(zi1), zi1==i)
+}
+
+xvx.vec <- rowSums(apply(X.array[, , index.zi1[[1]]], 3, function(x) t(x) %*% invcov %*% x))
+XVX <- matrix(xvx.vec, nrow=ncol(XM), ncol=ncol(XM), byrow=T)
+XVY <- rowSums(apply(YX.array[, , index.zi1[[1]]], 3, function(x) t(x[, -1] %*% invcov %*% x[, 1])))
+
+YX.array[, , 1]
+X.array[, , 1]
+
+t(X.array[, , 1]) %*% invcov %*% X.array[, , 1]
 
