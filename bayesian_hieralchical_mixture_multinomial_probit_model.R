@@ -197,7 +197,9 @@ for(i in 1:1000){
   if(min(colMeans(Z)) > 0.25) {break}
 }
 Zi <- Z %*% 1:g
+r_rate <- colSums(Z)/sum(Z)   #混合率
 colSums(Z); colMeans(Z)
+
 
 ##IDごとにセグメントを割当
 zi <- c()
@@ -248,6 +250,13 @@ Cov <- corrM(member-1, -0.6, 0.75)   #分散共分散パラメータはセグメントで共通
 #効用関数の設定
 U.mean <- matrix(rowSums(XM %*% beta.z * z.vec), nrow=hhpt, ncol=member-1, byrow=T)   #効用関数の平均構造
 U <- U.mean + mvrnorm(hhpt, rep(0, member-1), Cov)
+
+#対数尤度の真の値
+inverse.Cov <- solve(Cov)
+det.Cov <- det(Cov)
+LLt <- apply(cbind(U, U.mean), 1, function(x) dmv(x[1:(member-1)], x[member:(2*(member-1))], inverse.Cov, det.Cov))
+LL_true <- sum(log(LLt))
+
 
 #効用最大化原理に基づき選択メンバー決定
 y <- apply(U, 1, function(x) ifelse(max(x) < 0, member, which.max(x)))
@@ -359,7 +368,8 @@ beta04.z <- matrix(runif(g*(member-1), -1.2, 1.2), nrow=g, ncol=member-1, byrow=
 oldbeta <- t(cbind(beta00.z, beta01.z, beta02.z, beta03.z, beta04.z))   #データを結合
 
 #分散共分散行列の初期値
-oldCov <- corrM(member-1, 0, 0)
+oldcov <- corrM(member-1, 0, 0)
+invcov <- solve(oldCov)
 
 ##潜在変数モデルの初期値の設定
 #thetaの初期値
@@ -370,9 +380,11 @@ logit <- matrix(Zx.v %*% oldtheta, nrow=hh, ncol=g, byrow=T)
 Pr <- exp(logit)/matrix(rowSums(exp(logit)), nrow=hh, ncol=g)
 
 #セグメントを生成
-Z1 <- t(apply(Pr, 1, function(x) rmultinom(1, 1, x)))
-z1 <- Z1 %*% 1:g
+#Z1 <- t(apply(Pr, 1, function(x) rmultinom(1, 1, x)))
+#z1 <- Z1 %*% 1:g
 
+Z1 <- Z
+z1 <- Z1 %*% 1:g
 
 ##効用の初期値
 #zをベクトル形式に変更
@@ -394,52 +406,166 @@ old.util <- old.utilm + mvrnorm(hhpt, rep(0, member-1), oldCov)   #誤差を加える
 
 
 ####マルコフ連鎖モンテカルロ法で階層有限混合多項プロビットモデルを推定####
+for(rp in 1:R){
+
 ##選択結果と整合的な潜在効用を発生させる
 #条件付き期待値と条件付き分散を計算
-S <- rep(0, member-1)
-
-for(j in 1:(member-1)){
-  MVR <- cdMVN(mu=old.utilm, Cov=oldCov, dependent=j, U=old.util)   #条件付き分布を計算
-  UM[, j] <- MVR$CDmu   #条件付き期待値を取り出す
-  S[j] <- sqrt(MVR$CDvar) #条件付き分散を取り出す
+  S <- rep(0, member-1)
   
-  #潜在効用を発生させる
-  #切断領域を定義
-  max.u <- apply(cbind(old.util[, -j], 0), 1, max)
-  max.u <- ifelse(y==member, 0, max.u)
+  for(j in 1:(member-1)){
+    MVR <- cdMVN(mu=old.utilm, Cov=oldcov, dependent=j, U=old.util)   #条件付き分布を計算
+    UM[, j] <- MVR$CDmu   #条件付き期待値を取り出す
+    S[j] <- sqrt(MVR$CDvar) #条件付き分散を取り出す
+    
+    #潜在効用を発生させる
+    #切断領域を定義
+    max.u <- apply(cbind(old.util[, -j], 0), 1, max)
+    max.u <- ifelse(y==member, 0, max.u)
+    
+    #切断正規分布より潜在変数を発生
+    old.util[, j] <- ifelse(y==j, rtnorm(mu=UM[, j], sigma=S[j], a=max.u, b=100), 
+                                rtnorm(mu=UM[, j], sigma=S[j], a=-100, b=max.u))
+    old.util[, j] <- ifelse(is.infinite(old.util[, j]), ifelse(y==j, max.u + runif(1), max.u - runif(1)), old.util[, j])
+  }
+  util.v <- as.numeric(t(old.util))
   
-  #切断正規分布より潜在変数を発生
-  old.util[, j] <- ifelse(y==j, rtnorm(mu=UM[, j], sigma=S[j], a=max.u, b=100), 
-                              rtnorm(mu=UM[, j], sigma=S[j], a=-100, b=max.u))
-  old.util[, j] <- ifelse(is.infinite(old.util[, j]), ifelse(y==j, max.u + runif(1), max.u - runif(1)), old.util[, j])
+  ##betaの分布とパラメータの計算
+  #z.vecとX.vec
+  YX.bind <- cbind(util.v, XM)
+  for(i in 1:hhpt){
+    YX.array[, , i] <- YX.bind[id_r[i, ], ]
+  }
+  
+  ##回帰モデルの回帰パラメータをセグメント別にギブスサンプリング
+  
+  #セグメントのインデックスを作成
+  zi1 <- Zi1 %*% 1:g
+  index.zi1 <- list()
+  
+  for(i in 1:g){
+    index.zi1[[i]] <- subset(1:length(zi1), zi1==i)
+  }
+
+  #セグメントごとに　betaの平均と分散を計算
+  invcov <- solve(oldcov)
+  B <- matrix(0, nrow=ncol(XM), ncol=g)
+  er <- matrix(0, nrow=nrow(XM), ncol=g)
+  util.all <- matrix(0, nrow=nrow(XM), ncol=g)
+  inv_XVX <- list()
+  
+  for(i in 1:g){
+    xvx.vec <- rowSums(apply(X.array[, , index.zi1[[i]]], 3, function(x) t(x) %*% invcov %*% x))
+    XVX <- matrix(xvx.vec, nrow=ncol(XM), ncol=ncol(XM), byrow=T)
+    XVY <- rowSums(apply(YX.array[, , index.zi1[[i]]], 3, function(x) t(x[, -1]) %*% invcov %*% x[, 1]))
+    
+    #betaの分布の分散共分散行列のパラメータ
+    inv_XVX[[i]] <- solve(XVX + Adelta)
+    
+    #betaの分布の平均パラメータ
+    B[, i] <- inv_XVX[[i]] %*% (XVY + Adelta %*% Deltabar)   #betaの平均
+    
+    #多変量正規分布から回帰係数をサンプリング
+    oldbeta[, i] <- mvrnorm(1, B[, i], inv_XVX[[i]])
+    
+    #誤差を計算
+    util.all[, i] <- XM %*% oldbeta[, i]
+    er[, i] <- util.v - util.all[, i]
+  }
+  
+  ##Covの分布のパラメータの計算とmcmcサンプリング(全体で共通)
+  #逆ウィシャート分布のパラメータを計算
+  R.error <- matrix(rowSums(er * Z.vec), nrow=hhpt, ncol=member-1, byrow=T)
+  IW.R <- V + matrix(rowSums(apply(R.error, 1, function(x) x %*% t(x))), nrow=member-1, ncol=member-1, byrow=T)
+  
+  #逆ウィシャート分布の自由度を計算
+  Sn <- nu + hhpt
+  
+  #逆ウィシャート分布からCovをサンプリング
+  Cov_hat <- rwishart(Sn, solve(IW.R))$IW
+  oldcov <- cov2cor(Cov_hat)
+    
+  
+  ##多変量正規分布の尤度関数をセグメント別に計算
+  detcov <- det(oldcov)
+  LLi <- matrix(0, nrow=hhpt, ncol=g)
+  
+  for(i in 1:g){
+    util.seg <- matrix(util.all[, i], nrow=hhpt, ncol=member-1, byrow=T)
+    util.bind <- cbind(old.util, util.seg)
+    
+    #多変量正規分布の尤度を計算
+    LLi[, i] <- apply(util.bind, 1, function(x) dmv(x[1:(member-1)], x[member:(2*(member-1))], invcov, detcov))
+  }
+
+  #ID別に尤度の積を計算
+  LLind <- as.matrix(data.frame(id=ID$id, L=LLi) %>%
+                       dplyr::group_by(id) %>%
+                       dplyr::summarise_each(funs(prod), L.1, L.2, L.3))
+  
+  logl <- sum(log(rowSums(LLind[, -1] * Z1)))   #対数尤度の和
+
+  
+  ##潜在セグメントを生成
+  #潜在変数zの割当確率
+  Z_logit <- exp(logit) * LLind[, -1]
+  Pr_Z <- Z_logit / matrix(rowSums(Z_logit), nrow=hh, ncol=g)
+
+  #セグメントを多項分布より発生
+  Z1 <- t(apply(Pr_Z, 1, function(x) rmultinom(1, 1, x)))
+  z1 <- Z1 %*% 1:g
+  
+  #zをベクトル形式に変更
+  Zi1 <- matrix(0, nrow=nrow(Y), ncol=g)
+  Z.vec <- matrix(0, nrow=nrow(XM), ncol=g)
+  pt.zeros <- c(0, pt)
+  
+  for(i in 1:hh){
+    r1 <- (sum(pt.zeros[1:i])*(member-1)+1):(sum(pt.zeros[1:i])*(member-1)+pt[i]*(member-1))
+    r2 <- (sum(pt.zeros[1:i])+1):(sum(pt.zeros[1:i])+pt[i])
+    
+    Z.vec[r1, ] <- matrix(Z1[i, ], nrow=pt[i]*(member-1), ncol=g, byrow=T)
+    Zi1[r2, ] <- matrix(Z1[i, ], nrow=pt[i], ncol=g, byrow=T)
+  }
+  
+  ##z1のセグメント割当から多項ロジットモデルのthetaをサンプリング
+  #MHサンプリングで固定効果betaのサンプリング
+  newtheta <- oldtheta + rnorm(length(oldtheta), 0, 0.05)   #ランダムウォーク
+  
+  #ランダムウォークサンプリング
+  #対数尤度と対数事前分布を計算
+  lognew <- LL_logit(theta=newtheta, Z=Z1, Zx=Zx.v, hh, g)$LL
+  logold <- LL_logit(theta=oldtheta, Z=Z1, Zx=Zx.v, hh, g)$LL
+  logpnew <- lndMvn(newtheta, zeta, Azeta)
+  logpold <- lndMvn(oldtheta, zeta, Azeta)
+  
+  #MHサンプリング
+  alpha <- min(1, exp(lognew + logpnew - logold - logpold))
+  if(alpha == "NAN") alpha <- -1
+  
+  #一様乱数を発生
+  u <- runif(1)
+  
+  #u < alphaなら新しい固定効果betaを採択
+  if(u < alpha){
+    oldtheta <- newtheta
+    
+    #そうでないなら固定効果betaを更新しない
+  } else {
+    oldtheta <- oldtheta
+  }
+  
+  ##効用関数をとロジットの更新
+  old.utilm <- matrix(rowSums(util.all * Z.vec), nrow=hhpt, ncol=member-1, byrow=T)
+  logit <- matrix(Zx.v %*% oldtheta, nrow=hh, ncol=g, byrow=T)
+  
+  ##サンプリング結果を保存
+  if(rp%%keep==0){
+    print(rp)
+    mkeep <- rp/keep
+    print(round(rbind(t(oldbeta), t(beta.z)), 2))
+    print(round(cbind(oldcov, Cov), 2))
+    print(c(colSums(Z1)/sum(Z1), r_rate))
+    print(c(logl, LL_true))
+  }
 }
-util.v <- as.numeric(t(old.util))
-
-##betaの分布とパラメータの計算
-#z.vecとX.vec
-YX.bind <- cbind(util.v, XM)
-for(i in 1:hhpt){
-  YX.array[, , i] <- YX.bind[id_r[i, ], ]
-}
-
-##回帰モデルの回帰パラメータをセグメント別にギブスサンプリング
-invcov <- solve(oldCov)
-Util.z <- matrix(util.v, nrow=length(util.v), ncol=g) * Z.vec
-
-#セグメントのインデックスを作成
-zi1 <- Zi1 %*% 1:g
-index.zi1 <- list()
-
-for(i in 1:g){
-  index.zi1[[i]] <- subset(1:length(zi1), zi1==i)
-}
-
-xvx.vec <- rowSums(apply(X.array[, , index.zi1[[1]]], 3, function(x) t(x) %*% invcov %*% x))
-XVX <- matrix(xvx.vec, nrow=ncol(XM), ncol=ncol(XM), byrow=T)
-XVY <- rowSums(apply(YX.array[, , index.zi1[[1]]], 3, function(x) t(x[, -1] %*% invcov %*% x[, 1])))
-
-YX.array[, , 1]
-X.array[, , 1]
-
-t(X.array[, , 1]) %*% invcov %*% X.array[, , 1]
 
