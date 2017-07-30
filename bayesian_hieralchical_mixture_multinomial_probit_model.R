@@ -21,7 +21,7 @@ corrM <- function(col, lower, upper){
   rho[upper.tri(rho)] <- 0
   Sigma <- rho + t(rho)
   diag(Sigma) <- 1
-
+  
   (X.Sigma <- eigen(Sigma))
   (Lambda <- diag(X.Sigma$values))
   P <- X.Sigma$vector
@@ -64,8 +64,8 @@ covmatrix <- function(col, corM, lower, upper){
 ####ƒf[ƒ^‚Ì”­¶####
 #set.seed(8437)
 ##ƒf[ƒ^‚Ìİ’è
-hh <- 1000   #ƒvƒŒƒCƒ„[”
-pt <- rpois(hh, 3)   #‘I‘ğ‹@‰ï”
+hh <- 500   #ƒvƒŒƒCƒ„[”
+pt <- rpois(hh, 5)   #‘I‘ğ‹@‰ï”
 pt <- ifelse(pt==0, 1, pt)   #‘I‘ğ‹@‰ï”‚ª0‚È‚ç1‚É’u‚«Š·‚¦
 hhpt <- sum(pt)   #‘ƒTƒ“ƒvƒ‹”
 member <- 10   #‘I‘ğ‰Â”\ƒƒ“ƒo[”
@@ -125,7 +125,7 @@ for(i in 1:hhpt){
 }
 
 #ƒf[ƒ^‚ÌŒ‹‡
-X <- data.frame(mu=POP, c=X1.cont_v, b=X1.bin_v, m=X2.v)
+X <- data.frame(mu=POP, c=X1.cont_v, b=X1.bin_v, m=X2.v[, 1:(member-1)])
 XM <- as.matrix(X)
 round(XM, 2)
 
@@ -136,7 +136,7 @@ cont <- 3
 Z.cont <- matrix(rnorm(hh*cont, 0, 1), nrow=hh, ncol=cont)
 
 #“ñ’l•Ï”‚Ì”­¶
-bin <- 2
+bin <- 3
 Z.bin <- matrix(0, nrow=hh, ncol=bin)
 for(i in 1:bin){
   Z.bin[, i] <- rbinom(hh, 1, runif(1, 0.4, 0.6))
@@ -149,7 +149,7 @@ Z.multi <- t(rmultinom(hh, 1, p))
 Z.multi <- Z.multi[, -which.min(colSums(Z.multi))]
 
 #ƒf[ƒ^‚ÌŒ‹‡
-Zx <- data.frame(c=Z.cont, b=Z.bin, m=Z.multi)
+Zx <- data.frame(c=Z.cont, b=Z.bin)
 
 
 ##ƒxƒNƒgƒ‹Œ^à–¾•Ï”‚Éƒf[ƒ^ƒtƒH[ƒ}ƒbƒg‚ğ•ÏX
@@ -159,7 +159,7 @@ int <- matrix(p, nrow=hh*(g+1), ncol=g, byrow=T)
 INT <- int[rowSums(int) > 0, -g]
 
 #à–¾•Ï”‚ğƒxƒNƒgƒ‹Œ^‚É•ÏX
-Zi.v <- matrix(0, nrow=nrow(Zx)*g, ncol=(cont+bin+multi-1)*2)
+Zi.v <- matrix(0, nrow=nrow(Zx)*g, ncol=(cont+bin)*2)
 
 for(i in 1:hh){
   index <- ((i-1)*g+1):((i-1)*g+g)
@@ -169,12 +169,12 @@ for(i in 1:hh){
     diag.x <- cbind(diag.x, diag(Zx[i, j], g)[, -g])
   }
   
-  diag.m <- matrix(0, nrow=g, ncol=(multi-1)*2)
-  for(j in 1:(g-1)){
-    r <- ((j-1)*g+1):((j-1)*g+g)
-    diag.m[j, r] <- as.numeric(Zx[i, (cont+bin+1):ncol(Zx)])
-  }
- Zi.v[index, ] <- cbind(diag.x, diag.m)
+  #  diag.m <- matrix(0, nrow=g, ncol=(multi-1)*2)
+  #  for(j in 1:(g-1)){
+  #    r <- ((j-1)*g+1):((j-1)*g+g)
+  #    diag.m[j, r] <- as.numeric(Zx[i, (cont+bin+1):ncol(Zx)])
+  # }
+  Zi.v[index, ] <- cbind(diag.x)
 }
 
 #ƒf[ƒ^‚ÌŒ‹‡
@@ -186,8 +186,8 @@ round(Zx.v, 3)   #ƒf[ƒ^‚ÌŠm”F
 ##‘½€ƒƒWƒbƒgƒ‚ƒfƒ‹‚æ‚èƒZƒOƒƒ“ƒgŠ„“–‚ğ”­¶
 #ƒpƒ‰ƒ[ƒ^‚Ìİ’è
 for(i in 1:1000){
-  theta.z <- c(runif(g-1, -0.75, 0.75), runif(cont*(g-1), 0, 1), runif(bin*(g-1), -1.2, 1.2), runif((multi-1)*(g-1), -1.3, 1.3))
-  
+  theta.z <- c(runif(g-1, -0.75, 0.75), runif(cont*(g-1), 0, 1), runif(bin*(g-1), -1.2, 1.2))
+
   #ƒƒWƒbƒg‚ÆŠm—¦‚ÌŒvZ
   logit <- matrix(Zx.v %*% theta.z, nrow=hh, ncol=g, byrow=T)   #ƒƒWƒbƒg‚Ìİ’è
   Pr.z <- exp(logit) / matrix(rowSums(exp(logit)), nrow=hh, ncol=g)   #Šm—¦‚ÌŒvZ
@@ -235,16 +235,18 @@ cbind(ID.v, z.vec)   #ƒf[ƒ^‚ğŠm”F
 
 ##‘½€ƒvƒƒrƒbƒgƒ‚ƒfƒ‹‚æ‚èD‚«‚Èƒƒ“ƒo[‚ğ”­¶
 #‰ñ‹Aƒpƒ‰ƒ[ƒ^‚Ìİ’è
-beta0.z <- matrix(runif((member-1)*g, 0.2, 2.0), nrow=g, ncol=member-1, byrow=T)
-beta1.z <- matrix(runif(g*2, 0, 0.9), nrow=g, ncol=2, byrow=T)
-beta2.z <- matrix(runif(g*2, -0.9, 1.1), nrow=g, ncol=2, byrow=T)
-beta3.z <- matrix(runif(g*(member-1), 0, 0.8), nrow=g, ncol=member-1, byrow=T)
-beta4.z <- matrix(runif(g*(member-1), -0.9, 1.0), nrow=g, ncol=member-1, byrow=T)
-beta.z <- t(cbind(beta0.z, beta1.z, beta2.z, beta3.z, beta4.z))   #ƒf[ƒ^‚ğŒ‹‡
+beta0.z <- rbind(c(3.5, 2.4, 2.7, 0.7, 1.0, 0.8, -0.5, -0.2, 1.4),
+                 c(1.6, 1.0, 0.8, 2.8, 4.0, 2.8, 1.2, -0.7, 0.6),
+                 c(0.7, -0.3, -0.4, 1.2, 1.5,0.6, 2.6, 3.0, 3.3))
+beta1.z <- matrix(runif(g*2, 0, 1.2), nrow=g, ncol=2, byrow=T)
+beta2.z <- matrix(runif(g*2, -1.2, 1.2), nrow=g, ncol=2, byrow=T)
+beta3.z <- matrix(runif(g*(member-1), 0, 1.2), nrow=g, ncol=member-1, byrow=T)
+beta4.z <- matrix(runif(g*(member-1), -1.2, 1.3), nrow=g, ncol=member-1, byrow=T)
+beta.z <- t(cbind(beta0.z, beta1.z, beta2.z, beta3.z))   #ƒf[ƒ^‚ğŒ‹‡
 rownames(beta.z) <- 1:nrow(beta.z)
 
 #•ªU‹Ÿ•ªUs—ñ‚ğİ’è
-Cov <- corrM(member-1, -0.6, 0.75)   #•ªU‹¤•ªUƒpƒ‰ƒ[ƒ^‚ÍƒZƒOƒƒ“ƒg‚Å‹¤’Ê
+Cov <- corrM(member-1, -0.55, 0.95)   #•ªU‹¤•ªUƒpƒ‰ƒ[ƒ^‚ÍƒZƒOƒƒ“ƒg‚Å‹¤’Ê
 
 
 #Œø—pŠÖ”‚Ìİ’è
@@ -267,9 +269,9 @@ for(i in 1:hhpt){
   Y[i, y[i]] <- 1
 }
 
-table(Y)   #‘I‘ğƒƒ“ƒo[‚ÌWŒv
-round(cbind(ID, y, U, U.mean), 2)   #‘I‘ğƒƒ“ƒo[‚ÆŒø—p‚ğ”äŠr
 
+table(y)   #‘I‘ğƒƒ“ƒo[‚ÌWŒv
+round(cbind(ID, y, U, U.mean), 2)   #‘I‘ğƒƒ“ƒo[‚ÆŒø—p‚ğ”äŠr
 
 ####ƒ}ƒ‹ƒRƒt˜A½ƒ‚ƒ“ƒeƒJƒ‹ƒ–@‚É‚æ‚éŠK‘w¬‡‘½€ƒvƒƒrƒbƒgƒ‚ƒfƒ‹‚Ì„’è####
 ####MCMC„’è‚Ì‚½‚ß‚Ì„’è€”õ####
@@ -282,8 +284,7 @@ rtnorm <- function(mu, sigma, a, b){
 
 ##‘½•Ï—Ê³‹K•ª•z‚Ì–Ş“xŠÖ”
 dmv <- function(x, mean.vec, inv.cov, det.cov){
-  LLo <- 1 / (sqrt((2 * pi)^nrow(inv.cov) * det.cov)) *
-         exp(-(x - mean.vec) %*% inv.cov %*% (x - mean.vec) / 2)
+  LLo <- det.cov^(-1/2) * exp(-1/2*(x - mean.vec) %*% inv.cov %*% (x - mean.vec))
   return(LLo)
 }
 
@@ -298,6 +299,17 @@ LL_logit <- function(theta, Z, Zx, hh, g){
   LL <- sum(LLi)
   val <- list(LL=LL, P=P)
   return(val)
+}
+
+LL_opt <- function(theta, Z, Zx, hh, g){
+  #ƒƒWƒbƒg‚ÌŒvZ
+  logit <- matrix(Zx %*% theta, nrow=hh, ncol=g, byrow=T)
+  
+  #Šm—¦‚Æ‘Î”–Ş“x‚Ì˜a‚ğŒvZ
+  P <- exp(logit)/matrix(rowSums(exp(logit)), nrow=hh, ncol=g)
+  LLi <- rowSums(Z * log(P))
+  LL <- sum(LLi)
+  return(LL)
 }
 
 ##‘½•Ï—Ê³‹K•ª•z‚ÌğŒ•t‚«Šú‘Ò’l‚Æ•ªU‚ğŒvZ‚·‚éŠÖ”
@@ -349,10 +361,12 @@ Azeta <- solve(100 * diag(rep(1, ncol(Zx.v))))    #ŠK‘wƒ‚ƒfƒ‹‚Ì‰ñ‹AŒW”‚Ì–‘O•ª•
 
 ##ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚Ì•Û‘¶—p”z—ñ
 Util <- array(0, dim=c(hhpt, member-1, R/keep))
-BETA <- matrix(0, nrow=R/keep, ncol=ncol(X))
+BETA1 <- matrix(0, nrow=R/keep, ncol=ncol(XM))
+BETA2 <- matrix(0, nrow=R/keep, ncol=ncol(XM))
+BETA3 <- matrix(0, nrow=R/keep, ncol=ncol(XM))
 SIGMA <- matrix(0, nrow=R/keep, ncol=nrow(Cov)^2)
 THETA <- matrix(0, nrow=R/keep, ncol=ncol(Zx.v))
-Z.vec <- matrix(0, nrow=R/keep, ncol=hh)
+Z.VEC <- matrix(0, nrow=R/keep, ncol=hh)
 Prob <- matrix(0, nrow=R/keep, ncol=hh)
 
 
@@ -360,31 +374,28 @@ Prob <- matrix(0, nrow=R/keep, ncol=hh)
 ##‘I‘ğƒ‚ƒfƒ‹‚Ì‰Šú’l‚Ìİ’è
 #‘I‘ğƒ‚ƒfƒ‹‚Ì‰ñ‹AŒW”‚Ì‰Šú’l
 beta00.z <- matrix(colSums(Y[, -member])/(hhpt/10), nrow=g, ncol=member-1, byrow=T) +
-                                        matrix(runif((member-1)*g, -1, 1), nrow=g, ncol=member-1)
+  matrix(runif((member-1)*g, -1, 1), nrow=g, ncol=member-1)
 beta01.z <- matrix(runif(g*2, 0, 1.4), nrow=g, ncol=2, byrow=T)
 beta02.z <- matrix(runif(g*2, -1.2, 1.3), nrow=g, ncol=2, byrow=T)
 beta03.z <- matrix(runif(g*(member-1), 0, 1.2), nrow=g, ncol=member-1, byrow=T)
 beta04.z <- matrix(runif(g*(member-1), -1.2, 1.2), nrow=g, ncol=member-1, byrow=T)
-oldbeta <- t(cbind(beta00.z, beta01.z, beta02.z, beta03.z, beta04.z))   #ƒf[ƒ^‚ğŒ‹‡
+oldbeta <- t(cbind(beta00.z, beta01.z, beta02.z, beta03.z))   #ƒf[ƒ^‚ğŒ‹‡
 
 #•ªU‹¤•ªUs—ñ‚Ì‰Šú’l
 oldcov <- corrM(member-1, 0, 0)
-invcov <- solve(oldCov)
+invcov <- solve(oldcov)
 
 ##öİ•Ï”ƒ‚ƒfƒ‹‚Ì‰Šú’l‚Ìİ’è
 #theta‚Ì‰Šú’l
-oldtheta <- c(runif(g-1, -1, 1), runif(cont*(g-1), 0, 1.2), runif(bin*(g-1), -1.2, 1.2), runif((multi-1)*(g-1), -1.3, 1.3))
+oldtheta <- rep(0, ncol(Zx.v))
 
 #öİ•Ï”ƒ‚ƒfƒ‹‚Ì–‘OŠm—¦‚ÌŒvZ
-logit <- matrix(Zx.v %*% oldtheta, nrow=hh, ncol=g, byrow=T)
-Pr <- exp(logit)/matrix(rowSums(exp(logit)), nrow=hh, ncol=g)
+Pr <- rep(1/g, g)
 
 #ƒZƒOƒƒ“ƒg‚ğ¶¬
-#Z1 <- t(apply(Pr, 1, function(x) rmultinom(1, 1, x)))
-#z1 <- Z1 %*% 1:g
-
-Z1 <- Z
+Z1 <- t(rmultinom(hh, 1, Pr))
 z1 <- Z1 %*% 1:g
+ZZ1 <- Z1
 
 ##Œø—p‚Ì‰Šú’l
 #z‚ğƒxƒNƒgƒ‹Œ`®‚É•ÏX
@@ -402,14 +413,14 @@ for(i in 1:hh){
 
 #Œø—p‚ğŒvZ
 old.utilm <- matrix(rowSums(XM %*% oldbeta * Z.vec), nrow=hhpt, ncol=member-1, byrow=T)   #Œø—p‚Ì•½‹Ï\‘¢
-old.util <- old.utilm + mvrnorm(hhpt, rep(0, member-1), oldCov)   #Œë·‚ğ‰Á‚¦‚é
+old.util <- old.utilm + mvrnorm(hhpt, rep(0, member-1), oldcov)   #Œë·‚ğ‰Á‚¦‚é
 
 
 ####ƒ}ƒ‹ƒRƒt˜A½ƒ‚ƒ“ƒeƒJƒ‹ƒ–@‚ÅŠK‘w—LŒÀ¬‡‘½€ƒvƒƒrƒbƒgƒ‚ƒfƒ‹‚ğ„’è####
 for(rp in 1:R){
-
-##‘I‘ğŒ‹‰Ê‚Æ®‡“I‚ÈöİŒø—p‚ğ”­¶‚³‚¹‚é
-#ğŒ•t‚«Šú‘Ò’l‚ÆğŒ•t‚«•ªU‚ğŒvZ
+  
+  ##‘I‘ğŒ‹‰Ê‚Æ®‡“I‚ÈöİŒø—p‚ğ”­¶‚³‚¹‚é
+  #ğŒ•t‚«Šú‘Ò’l‚ÆğŒ•t‚«•ªU‚ğŒvZ
   S <- rep(0, member-1)
   
   for(j in 1:(member-1)){
@@ -424,7 +435,7 @@ for(rp in 1:R){
     
     #Ø’f³‹K•ª•z‚æ‚èöİ•Ï”‚ğ”­¶
     old.util[, j] <- ifelse(y==j, rtnorm(mu=UM[, j], sigma=S[j], a=max.u, b=100), 
-                                rtnorm(mu=UM[, j], sigma=S[j], a=-100, b=max.u))
+                            rtnorm(mu=UM[, j], sigma=S[j], a=-100, b=max.u))
     old.util[, j] <- ifelse(is.infinite(old.util[, j]), ifelse(y==j, max.u + runif(1), max.u - runif(1)), old.util[, j])
   }
   util.v <- as.numeric(t(old.util))
@@ -437,7 +448,6 @@ for(rp in 1:R){
   }
   
   ##‰ñ‹Aƒ‚ƒfƒ‹‚Ì‰ñ‹Aƒpƒ‰ƒ[ƒ^‚ğƒZƒOƒƒ“ƒg•Ê‚ÉƒMƒuƒXƒTƒ“ƒvƒŠƒ“ƒO
-  
   #ƒZƒOƒƒ“ƒg‚ÌƒCƒ“ƒfƒbƒNƒX‚ğì¬
   zi1 <- Zi1 %*% 1:g
   index.zi1 <- list()
@@ -445,7 +455,7 @@ for(rp in 1:R){
   for(i in 1:g){
     index.zi1[[i]] <- subset(1:length(zi1), zi1==i)
   }
-
+  
   #ƒZƒOƒƒ“ƒg‚²‚Æ‚É@beta‚Ì•½‹Ï‚Æ•ªU‚ğŒvZ
   invcov <- solve(oldcov)
   B <- matrix(0, nrow=ncol(XM), ncol=g)
@@ -466,27 +476,24 @@ for(rp in 1:R){
     
     #‘½•Ï—Ê³‹K•ª•z‚©‚ç‰ñ‹AŒW”‚ğƒTƒ“ƒvƒŠƒ“ƒO
     oldbeta[, i] <- mvrnorm(1, B[, i], inv_XVX[[i]])
-    
-    #Œë·‚ğŒvZ
-    util.all[, i] <- XM %*% oldbeta[, i]
-    er[, i] <- util.v - util.all[, i]
   }
+  
+  #Œë·‚ğŒvZ
+  util.all <- XM %*% oldbeta
+  er <- matrix(util.v, nrow=length(util.v), ncol=g) - util.all
   
   ##Cov‚Ì•ª•z‚Ìƒpƒ‰ƒ[ƒ^‚ÌŒvZ‚ÆmcmcƒTƒ“ƒvƒŠƒ“ƒO(‘S‘Ì‚Å‹¤’Ê)
   #‹tƒEƒBƒVƒƒ[ƒg•ª•z‚Ìƒpƒ‰ƒ[ƒ^‚ğŒvZ
-  R.error <- matrix(rowSums(er * Z.vec), nrow=hhpt, ncol=member-1, byrow=T)
+  R.error <- matrix(rowSums((er * Z.vec)), nrow=hhpt, ncol=member-1, byrow=T)
+  Sn <- nu + hhpt
   IW.R <- V + matrix(rowSums(apply(R.error, 1, function(x) x %*% t(x))), nrow=member-1, ncol=member-1, byrow=T)
   
-  #‹tƒEƒBƒVƒƒ[ƒg•ª•z‚Ì©—R“x‚ğŒvZ
-  Sn <- nu + hhpt
-  
   #‹tƒEƒBƒVƒƒ[ƒg•ª•z‚©‚çCov‚ğƒTƒ“ƒvƒŠƒ“ƒO
-  Cov_hat <- rwishart(Sn, solve(IW.R))$IW
-  oldcov <- cov2cor(Cov_hat)
-    
+  oldcov <- rwishart(Sn, solve(IW.R))$IW
   
   ##‘½•Ï—Ê³‹K•ª•z‚Ì–Ş“xŠÖ”‚ğƒZƒOƒƒ“ƒg•Ê‚ÉŒvZ
-  detcov <- det(oldcov)
+  det_Cov_hat <- det(oldcov)
+  inv_Cov_hat <- solve(oldcov)
   LLi <- matrix(0, nrow=hhpt, ncol=g)
   
   for(i in 1:g){
@@ -494,22 +501,22 @@ for(rp in 1:R){
     util.bind <- cbind(old.util, util.seg)
     
     #‘½•Ï—Ê³‹K•ª•z‚Ì–Ş“x‚ğŒvZ
-    LLi[, i] <- apply(util.bind, 1, function(x) dmv(x[1:(member-1)], x[member:(2*(member-1))], invcov, detcov))
+    LLi[, i] <- apply(util.bind, 1, function(x) dmv(x[1:(member-1)], x[member:(2*(member-1))], inv_Cov_hat, det_Cov_hat))
   }
-
+  
   #ID•Ê‚É–Ş“x‚ÌÏ‚ğŒvZ
   LLind <- as.matrix(data.frame(id=ID$id, L=LLi) %>%
                        dplyr::group_by(id) %>%
                        dplyr::summarise_each(funs(prod), L.1, L.2, L.3))
   
   logl <- sum(log(rowSums(LLind[, -1] * Z1)))   #‘Î”–Ş“x‚Ì˜a
-
+  
   
   ##öİƒZƒOƒƒ“ƒg‚ğ¶¬
   #öİ•Ï”z‚ÌŠ„“–Šm—¦
-  Z_logit <- exp(logit) * LLind[, -1]
-  Pr_Z <- Z_logit / matrix(rowSums(Z_logit), nrow=hh, ncol=g)
-
+  d1 <- exp(logit) * LLind[, -1]
+  Pr_Z <- d1 / matrix(rowSums(d1), nrow=hh, ncol=g)
+  
   #ƒZƒOƒƒ“ƒg‚ğ‘½€•ª•z‚æ‚è”­¶
   Z1 <- t(apply(Pr_Z, 1, function(x) rmultinom(1, 1, x)))
   z1 <- Z1 %*% 1:g
@@ -527,45 +534,97 @@ for(rp in 1:R){
     Zi1[r2, ] <- matrix(Z1[i, ], nrow=pt[i], ncol=g, byrow=T)
   }
   
+  
   ##z1‚ÌƒZƒOƒƒ“ƒgŠ„“–‚©‚ç‘½€ƒƒWƒbƒgƒ‚ƒfƒ‹‚Ìtheta‚ğƒTƒ“ƒvƒŠƒ“ƒO
   #MHƒTƒ“ƒvƒŠƒ“ƒO‚ÅŒÅ’èŒø‰Êbeta‚ÌƒTƒ“ƒvƒŠƒ“ƒO
-  newtheta <- oldtheta + rnorm(length(oldtheta), 0, 0.05)   #ƒ‰ƒ“ƒ_ƒ€ƒEƒH[ƒN
-  
-  #ƒ‰ƒ“ƒ_ƒ€ƒEƒH[ƒNƒTƒ“ƒvƒŠƒ“ƒO
-  #‘Î”–Ş“x‚Æ‘Î”–‘O•ª•z‚ğŒvZ
-  lognew <- LL_logit(theta=newtheta, Z=Z1, Zx=Zx.v, hh, g)$LL
-  logold <- LL_logit(theta=oldtheta, Z=Z1, Zx=Zx.v, hh, g)$LL
-  logpnew <- lndMvn(newtheta, zeta, Azeta)
-  logpold <- lndMvn(oldtheta, zeta, Azeta)
-  
-  #MHƒTƒ“ƒvƒŠƒ“ƒO
-  alpha <- min(1, exp(lognew + logpnew - logold - logpold))
-  if(alpha == "NAN") alpha <- -1
-  
-  #ˆê—l—”‚ğ”­¶
-  u <- runif(1)
-  
-  #u < alpha‚È‚çV‚µ‚¢ŒÅ’èŒø‰Êbeta‚ğÌ‘ğ
-  if(u < alpha){
-    oldtheta <- newtheta
+  if(rp==1 | rp==100 | rp==500 | rp%%1000==0){
+    print("Å“K‰»")
+    res <- optim(oldtheta, LL_opt, gr=NULL, Z=Z1, Zx=Zx.v, hh=hh, g=g, method="BFGS", hessian=TRUE, 
+                 control=list(fnscale=-1))
+    oldtheta <- res$par
+    rw <- -diag(solve(res$hessian))
     
-    #‚»‚¤‚Å‚È‚¢‚È‚çŒÅ’èŒø‰Êbeta‚ğXV‚µ‚È‚¢
   } else {
-    oldtheta <- oldtheta
+    
+    newtheta <- oldtheta + rnorm(length(oldtheta), 0, rw)   #ƒ‰ƒ“ƒ_ƒ€ƒEƒH[ƒN
+    
+    #ƒ‰ƒ“ƒ_ƒ€ƒEƒH[ƒNƒTƒ“ƒvƒŠƒ“ƒO
+    #‘Î”–Ş“x‚Æ‘Î”–‘O•ª•z‚ğŒvZ
+    lognew <- LL_logit(theta=newtheta, Z=Z1, Zx=Zx.v, hh, g)$LL
+    logold <- LL_logit(theta=oldtheta, Z=Z1, Zx=Zx.v, hh, g)$LL
+    logpnew <- lndMvn(newtheta, zeta, Azeta)
+    logpold <- lndMvn(oldtheta, zeta, Azeta)
+    
+    #MHƒTƒ“ƒvƒŠƒ“ƒO
+    alpha <- min(1, exp(lognew + logpnew - logold - logpold))
+    if(alpha == "NAN") alpha <- -1
+    
+    #ˆê—l—”‚ğ”­¶
+    u <- runif(1)
+    
+    #u < alpha‚È‚çV‚µ‚¢ŒÅ’èŒø‰Êbeta‚ğÌ‘ğ
+    if(u < alpha){
+      oldtheta <- newtheta
+      
+      #‚»‚¤‚Å‚È‚¢‚È‚çŒÅ’èŒø‰Êbeta‚ğXV‚µ‚È‚¢
+    } else {
+      oldtheta <- oldtheta
+    }
   }
   
   ##Œø—pŠÖ”‚ğ‚ÆƒƒWƒbƒg‚ÌXV
+  oldcov <- cov2cor(oldcov)
+    
   old.utilm <- matrix(rowSums(util.all * Z.vec), nrow=hhpt, ncol=member-1, byrow=T)
   logit <- matrix(Zx.v %*% oldtheta, nrow=hh, ncol=g, byrow=T)
   
-  ##ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚ğ•Û‘¶
+  ##ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚Ì•Û‘¶‚Æƒpƒ‰ƒ[ƒ^‚ÌŠm”F
   if(rp%%keep==0){
     print(rp)
     mkeep <- rp/keep
+    
+    #ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚ğ•Û‘¶
+    BETA1[mkeep, ] <- oldbeta[, 1]
+    BETA2[mkeep, ] <- oldbeta[, 2]
+    BETA3[mkeep, ] <- oldbeta[, 3]
+    SIGMA[mkeep, ] <- as.numeric(oldcov)
+    THETA[mkeep, ] <- oldtheta
+    Z.VEC[mkeep, ] <- z1
+    Util[, , mkeep] <- old.util 
+    
+    #ƒpƒ‰ƒ[ƒ^‚ğŠm”F
     print(round(rbind(t(oldbeta), t(beta.z)), 2))
-    print(round(cbind(oldcov, Cov), 2))
-    print(c(colSums(Z1)/sum(Z1), r_rate))
-    print(c(logl, LL_true))
+    print(round(cbind(cov2cor(oldcov), Cov), 2))
+    print(round(rbind(oldtheta, theta.z), 2))
+    print(round(c(colSums(Z1)/sum(Z1), r_rate), 2))
+    print(logl)
+    print(alpha)
   }
 }
 
+####„’èŒ‹‰Ê‚Æ—v–ñ####
+##ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚ğƒvƒƒbƒg
+matplot(BETA1[, 1:4], type="l", ylab="beta1‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA1[, 5:9], type="l", ylab="beta1‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA1[, 10:13], type="l", ylab="beta1‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA1[, 14:17], type="l", ylab="beta1‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA1[, 18:22], type="l", ylab="beta1‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA2[, 1:4], type="l", ylab="beta2‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA2[, 5:9], type="l", ylab="beta2‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA2[, 10:13], type="l", ylab="beta2‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA2[, 14:17], type="l", ylab="beta2‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA2[, 18:22], type="l", ylab="beta2‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA3[, 1:4], type="l", ylab="beta3‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA3[, 5:9], type="l", ylab="beta3‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA3[, 10:13], type="l", ylab="beta3‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA3[, 14:17], type="l", ylab="beta3‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(BETA3[, 18:22], type="l", ylab="beta3‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+
+matplot(SIGMA[, 1:4], type="l", ylab="beta3‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+matplot(SIGMA[, 5:9], type="l", ylab="beta3‚Ì‰ñ‹AŒW”", xlab="ƒTƒ“ƒvƒŠƒ“ƒO”")
+
+cbind(Z, Z1, ZZ1)
+
+round(table(y[(Zi1 %*% 1:g)==1])/sum(table(y[(Zi1 %*% 1:g)==1])), 3)
+round(table(y[(Zi1 %*% 1:g)==2])/sum(table(y[(Zi1 %*% 1:g)==2])), 3)
+round(table(y[(Zi1 %*% 1:g)==3])/sum(table(y[(Zi1 %*% 1:g)==3])), 3)
