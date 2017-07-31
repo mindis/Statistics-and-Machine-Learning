@@ -65,7 +65,7 @@ covmatrix <- function(col, corM, lower, upper){
 #set.seed(8437)
 ##データの設定
 hh <- 500   #プレイヤー数
-pt <- rpois(hh, 5)   #選択機会数
+pt <- rpois(hh, 10)   #選択機会数
 pt <- ifelse(pt==0, 1, pt)   #選択機会数が0なら1に置き換え
 hhpt <- sum(pt)   #総サンプル数
 member <- 10   #選択可能メンバー数
@@ -235,9 +235,9 @@ cbind(ID.v, z.vec)   #データを確認
 
 ##多項プロビットモデルより好きなメンバーを発生
 #回帰パラメータの設定
-beta0.z <- rbind(c(3.5, 2.4, 2.7, 0.7, 1.0, 0.8, -0.5, -0.2, 1.4),
-                 c(1.6, 1.0, 0.8, 2.8, 4.0, 2.8, 1.2, -0.7, 0.6),
-                 c(0.7, -0.3, -0.4, 1.2, 1.5,0.6, 2.6, 3.0, 3.3))
+beta0.z <- rbind(c(2.3, 2.0, 1.8, 0.7, -0.3, -0.8, -0.5, 1.2, 0.4),
+                 c(0.6, -0.3, 0.8, 1.9, 2.3, 1.8, 0.2, -0.3, 0.6),
+                 c(0.7, -0.3, -0.4, 1.0, 0.5, 0.6, 1.7, 2.0, 2.2))
 beta1.z <- matrix(runif(g*2, 0, 1.2), nrow=g, ncol=2, byrow=T)
 beta2.z <- matrix(runif(g*2, -1.2, 1.2), nrow=g, ncol=2, byrow=T)
 beta3.z <- matrix(runif(g*(member-1), 0, 1.2), nrow=g, ncol=member-1, byrow=T)
@@ -604,6 +604,7 @@ for(rp in 1:R){
 
 ####推定結果と要約####
 ##サンプリング結果をプロット
+#回帰係数のプロット
 matplot(BETA1[, 1:4], type="l", ylab="beta1の回帰係数", xlab="サンプリング数")
 matplot(BETA1[, 5:9], type="l", ylab="beta1の回帰係数", xlab="サンプリング数")
 matplot(BETA1[, 10:13], type="l", ylab="beta1の回帰係数", xlab="サンプリング数")
@@ -620,11 +621,22 @@ matplot(BETA3[, 10:13], type="l", ylab="beta3の回帰係数", xlab="サンプリング数")
 matplot(BETA3[, 14:17], type="l", ylab="beta3の回帰係数", xlab="サンプリング数")
 matplot(BETA3[, 18:22], type="l", ylab="beta3の回帰係数", xlab="サンプリング数")
 
-matplot(SIGMA[, 1:4], type="l", ylab="beta3の回帰係数", xlab="サンプリング数")
-matplot(SIGMA[, 5:9], type="l", ylab="beta3の回帰係数", xlab="サンプリング数")
+#分散共分散行列のプロット
+matplot(SIGMA[, 1:9], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 10:18], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 19:27], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 28:36], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 37:45], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 46:54], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 55:63], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 64:72], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 73:81], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
 
-cbind(Z, Z1, ZZ1)
+#階層モデルの回帰係数のパラメータ
+matplot(THETA[, 1:4], type="l", ylab="thetaの回帰係数", xlab="サンプリング数")
+matplot(THETA[, 5:8], type="l", ylab="thetaの回帰係数", xlab="サンプリング数")
+matplot(THETA[, 9:14], type="l", ylab="thetaの回帰係数", xlab="サンプリング数")
 
-round(table(y[(Zi1 %*% 1:g)==1])/sum(table(y[(Zi1 %*% 1:g)==1])), 3)
-round(table(y[(Zi1 %*% 1:g)==2])/sum(table(y[(Zi1 %*% 1:g)==2])), 3)
-round(table(y[(Zi1 %*% 1:g)==3])/sum(table(y[(Zi1 %*% 1:g)==3])), 3)
+
+
+
