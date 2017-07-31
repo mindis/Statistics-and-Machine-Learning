@@ -254,3 +254,31 @@ old.util1 <- old.utilm1 + mvrnorm(nrow(old.utilm1), rep(0, member-1), oldcov)
 
 
 ####マルコフ連鎖モンテカルロ法で多項-ランクプロビットモデルを推定####
+
+##順位選択結果と整合的な潜在効用を発生させる
+#多変量正規分布の条件付き期待値と条件付き分散を計算
+S <- rep(0, member-1)
+
+for(j in 1:(member-1)){
+  MVR <- cdMVN(mu=old.utilm, Cov=oldcov, dependent=j, U=old.util)   #条件付き期待値と条件付き分散を計算
+  UM[, j] <- MVR$CDmu   #条件付き期待値を取り出す
+  S[j] <- sqrt(MVR$CDvar)   #条件付き分散を取り出す
+  
+  #潜在変数を発生させる
+  #切断領域の設定
+  rank.u <- t(apply(cbind(old.util[, -j], 0), 1, function(x) sort(x, decreasing=TRUE)))[, 1:3]
+  rank.u <- ifelse(Rank==member, 0, rank.u)
+  
+  #切断正規分布より潜在変数を発生
+  old.util[, j] <- ifelse(Rank[, 1]==j, rtnorm(mu=UM[, j], S[j], a=rank.u[, 1], b=100), 
+                          ifelse(Rank[, 2]==j, rtnorm(mu=UM[, j], S[j], a=rank.u[, 2], b=rank.u[, 1]),
+                                 ifelse(Rank[, 3]==j, rtnorm(mu=UM[, j], S[j], a=rank.u[, 3], b=rank.u[, 2]),
+                                        rtnorm(mu=UM[, j], sigma=S[j], a=-100, b=rank.u[, 3]))))
+  
+  #潜在変数に無限が含まれているなら数値を置き換える
+  if(sum(is.infinite(old.util[, j]))==0) {next}
+  old.util[, j] <- ifelse(is.infinite(old.util[, j])==TRUE, ifelse(Rank[, 1]==j, runif(1, rank.u[, 1], 100), 
+                                                                   ifelse(Rank[, 2]==j, runif(1, rank.u[, 2], rank.u[, 1]),
+                                                                          ifelse(Rank[, 3]==j, runif(1, rank.u[, 3], rank.u[, 2]),
+                                                                                 old.util[, j]))))  
+}
