@@ -150,7 +150,7 @@ for(i in 1:10000){
   print(i)
   
   #回帰係数のパラメ-タの設定
-  b <- a + runif(length(a), -0.35, 0.35)
+  b <- a + runif(length(a), -0.4, 0.4)
   beta.t <- b
   
   ##相対効用を発生させる
@@ -162,7 +162,7 @@ for(i in 1:10000){
   y <- apply(cbind(U2, 0), 1, which.max)
   
   #基準メンバーが適当な人数に選ばれるまでループさせる
-  if(sum(y==member) > 20 & sum(y==member) < 100) {break} else {next}
+  if(sum(y==member) > 15 & sum(y==member) < 100) {break} else {next}
 }
 
 #選択メンバーを0、1行列に変換
@@ -212,7 +212,8 @@ X.array <- array(0, dim=c(member-1, ncol(XM), hh))
 for(i in 1:hh){
   X.array[, , i] <- XM[ID$id==i, ]
 }
-YX.array <- array(0, dim=c(member-1, ncol(XM)+1, hh))
+YX1.array <- array(0, dim=c(member-1, ncol(XM)+1, hh))
+YX2.array <- array(0, dim=c(member-1, ncol(XM)+1, hh))
 
 #IDの設定
 id_r <- matrix(1:nrow(XM), nrow=hh, ncol=member-1, byrow=T)
@@ -257,28 +258,61 @@ old.util1 <- old.utilm1 + mvrnorm(nrow(old.utilm1), rep(0, member-1), oldcov)
 
 ##順位選択結果と整合的な潜在効用を発生させる
 #多変量正規分布の条件付き期待値と条件付き分散を計算
-S <- rep(0, member-1)
+S1 <- rep(0, member-1)
 
 for(j in 1:(member-1)){
-  MVR <- cdMVN(mu=old.utilm, Cov=oldcov, dependent=j, U=old.util)   #条件付き期待値と条件付き分散を計算
-  UM[, j] <- MVR$CDmu   #条件付き期待値を取り出す
-  S[j] <- sqrt(MVR$CDvar)   #条件付き分散を取り出す
+  MVR1 <- cdMVN(mu=old.utilm1, Cov=oldcov, dependent=j, U=old.util1)   #条件付き期待値と条件付き分散を計算
+  UM1[, j] <- MVR1$CDmu   #条件付き期待値を取り出す
+  S1[j] <- sqrt(MVR1$CDvar)   #条件付き分散を取り出す
   
   #潜在変数を発生させる
   #切断領域の設定
-  rank.u <- t(apply(cbind(old.util[, -j], 0), 1, function(x) sort(x, decreasing=TRUE)))[, 1:3]
+  rank.u <- t(apply(cbind(old.util1[, -j], 0), 1, function(x) sort(x, decreasing=TRUE)))[, 1:3]
   rank.u <- ifelse(Rank==member, 0, rank.u)
   
   #切断正規分布より潜在変数を発生
-  old.util[, j] <- ifelse(Rank[, 1]==j, rtnorm(mu=UM[, j], S[j], a=rank.u[, 1], b=100), 
-                          ifelse(Rank[, 2]==j, rtnorm(mu=UM[, j], S[j], a=rank.u[, 2], b=rank.u[, 1]),
-                                 ifelse(Rank[, 3]==j, rtnorm(mu=UM[, j], S[j], a=rank.u[, 3], b=rank.u[, 2]),
-                                        rtnorm(mu=UM[, j], sigma=S[j], a=-100, b=rank.u[, 3]))))
+  old.util1[, j] <- ifelse(Rank[, 1]==j, rtnorm(mu=UM1[, j], S1[j], a=rank.u[, 1], b=100), 
+                          ifelse(Rank[, 2]==j, rtnorm(mu=UM1[, j], S1[j], a=rank.u[, 2], b=rank.u[, 1]),
+                                 ifelse(Rank[, 3]==j, rtnorm(mu=UM1[, j], S1[j], a=rank.u[, 3], b=rank.u[, 2]),
+                                        rtnorm(mu=UM1[, j], sigma=S1[j], a=-100, b=rank.u[, 3]))))
   
   #潜在変数に無限が含まれているなら数値を置き換える
-  if(sum(is.infinite(old.util[, j]))==0) {next}
-  old.util[, j] <- ifelse(is.infinite(old.util[, j])==TRUE, ifelse(Rank[, 1]==j, runif(1, rank.u[, 1], 100), 
+  if(sum(is.infinite(old.util1[, j]))==0) {next}
+  old.util1[, j] <- ifelse(is.infinite(old.util1[, j])==TRUE, ifelse(Rank[, 1]==j, runif(1, rank.u[, 1], 100), 
                                                                    ifelse(Rank[, 2]==j, runif(1, rank.u[, 2], rank.u[, 1]),
                                                                           ifelse(Rank[, 3]==j, runif(1, rank.u[, 3], rank.u[, 2]),
-                                                                                 old.util[, j]))))  
+                                                                                 old.util1[, j]))))  
 }
+
+util1.v <- as.numeric(t(old.util1))   #発生させた潜在効用をベクトルに変換
+
+
+##betaの分布のパラメータの計算とMCMCサンプリング
+#z.vecとX.vecを結合して多次元配列に変更
+YX1.bind <- cbind(util1.v, XM)
+for(i in 1:hh){
+  YX1.array[, , i] <- YX1.bind[id_r[i, ], ]
+}
+
+##ギブスサンプリングでlalphaとsigmaを推定
+#alphaのギブスサンプリング
+invcov <- solve(oldcov)
+xvx1.vec <- rowSums(apply(X.array, 3, function(x) t(x) %*% invcov %*% x))
+XVX1 <- matrix(xvx1.vec, nrow=ncol(XM), ncol=ncol(XM), byrow=T)
+XVY1 <- rowSums(apply(YX1.array, 3, function(x) t(x[, -1]) %*% invcov %*% x[, 1]))
+
+#alphaの分布の分散共分散行列のパラメータ
+inv_XVX1 <- solve(XVX1 + Adelta)
+
+#alphaの分布の平均パラメータ
+A <- inv_XVX1 %*% (XVY1 + Adelta %*% Deltabar)   #alphaの平均 
+a1 <- as.numeric(A)
+
+#多変量正規分布から回帰係数をサンプリング
+oldalpha <- mvrnorm(1, a1, inv_XVX)
+
+
+##Covの分布のパラメータの計算とmcmcサンプリング
+
+
+
