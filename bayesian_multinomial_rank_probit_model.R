@@ -233,86 +233,187 @@ Adelta <- solve(100 * diag(rep(1, ncol(XM)))) #回帰係数の事前分布の分散
 ##サンプリング結果の保存用配列
 Util1 <- array(0, dim=c(hh, member-1, R/keep))
 Util2 <- array(0, dim=c(hh, member-1, R/keep))
+ALPHA <- matrix(0, nrow=R/keep, ncol=ncol(XM))
 BETA <- matrix(0, nrow=R/keep, ncol=ncol(XM))
 THETA <- matrix(0, nrow=R/keep, ncol=ncol(XM))
-SIGMA1 <- matrix(0, nrow=R/keep, ncol=(member-1)^2)
-SIGMA2 <- matrix(0, nrow=R/keep, ncol=(member-1)^2)
+SIGMA <- matrix(0, nrow=R/keep, ncol=(member-1)^2)
 
 
 ##初期値の設定
-oldalpha <- c(runif(member-1, 0, 3), runif(ncol(XM)-(member-1), 0, 1.0))   
+oldalpha <- c(runif(member-1, 0, 3), runif(ncol(XM)-(member-1), 0, 1.0))  
+oldbeta <- oldalpha
+
 
 #分散共分散行列の初期値
 corM.f <- corrM(col=member-1, lower=0, upper=0)   #相関行列を作成
 Sigma.f <- covmatrix(col=member-1, corM=corM.f, lower=1, upper=1)   #分散共分散行列
-oldcov <- Sigma.f$covariance
+oldcov1 <- Sigma.f$covariance
+oldcov2 <- oldcov1
+
 
 #効用の平均構造の初期値
 old.utilm1 <- matrix(XM %*% oldalpha, nrow=hh, ncol=member-1, byrow=T)
+old.utilm2 <- matrix(XM %*% oldbeta, nrow=hh, ncol=member-1, byrow=T)
 
 #効用の初期値
-old.util1 <- old.utilm1 + mvrnorm(nrow(old.utilm1), rep(0, member-1), oldcov)
+old.util1 <- old.utilm1 + mvrnorm(nrow(old.utilm1), rep(0, member-1), oldcov1)
+old.util2 <- old.utilm2 + mvrnorm(nrow(old.utilm2), rep(0, member-1), oldcov)
 
 
 ####マルコフ連鎖モンテカルロ法で多項-ランクプロビットモデルを推定####
+for(rp in 1:R){
+  
+  ##順位選択結果と整合的な潜在効用を発生させる
+  #多変量正規分布の条件付き期待値と条件付き分散を計算
+  S1 <- rep(0, member-1)
+  
+  for(j in 1:(member-1)){
+    MVR1 <- cdMVN(mu=old.utilm1, Cov=oldcov1, dependent=j, U=old.util1)   #条件付き期待値と条件付き分散を計算
+    UM1[, j] <- MVR1$CDmu   #条件付き期待値を取り出す
+    S1[j] <- sqrt(MVR1$CDvar)   #条件付き分散を取り出す
 
-##順位選択結果と整合的な潜在効用を発生させる
-#多変量正規分布の条件付き期待値と条件付き分散を計算
-S1 <- rep(0, member-1)
+    
+    #潜在変数を発生させる
+    #切断領域の設定
+    rank.u <- t(apply(cbind(old.util1[, -j], 0), 1, function(x) sort(x, decreasing=TRUE)))[, 1:3]
+    rank.u <- ifelse(Rank==member, 0, rank.u)
+  
+    #切断正規分布より潜在変数を発生
+    old.util1[, j] <- ifelse(Rank[, 1]==j, rtnorm(mu=UM1[, j], S1[j], a=rank.u[, 1], b=100), 
+                            ifelse(Rank[, 2]==j, rtnorm(mu=UM1[, j], S1[j], a=rank.u[, 2], b=rank.u[, 1]),
+                                   ifelse(Rank[, 3]==j, rtnorm(mu=UM1[, j], S1[j], a=rank.u[, 3], b=rank.u[, 2]),
+                                          rtnorm(mu=UM1[, j], sigma=S1[j], a=-100, b=rank.u[, 3]))))
+  }
+  
+  util1.v <- as.numeric(t(old.util1))   #発生させた潜在効用をベクトルに変換
+  
+  
+  ##betaの分布のパラメータの計算とMCMCサンプリング
+  #z.vecとX.vecを結合して多次元配列に変更
+  YX1.bind <- cbind(util1.v, XM)
+  for(i in 1:hh){
+    YX1.array[, , i] <- YX1.bind[id_r[i, ], ]
+  }
+  
+  ##ギブスサンプリングでlalphaとsigmaを推定
+  #alphaのギブスサンプリング
+  invcov1 <- solve(oldcov1)
+  xvx1.vec <- rowSums(apply(X.array, 3, function(x) t(x) %*% invcov1 %*% x))
+  XVX1 <- matrix(xvx1.vec, nrow=ncol(XM), ncol=ncol(XM), byrow=T)
+  XVY1 <- rowSums(apply(YX1.array, 3, function(x) t(x[, -1]) %*% invcov1 %*% x[, 1]))
+  
+  #alphaの分布の分散共分散行列のパラメータ
+  inv_XVX1 <- solve(XVX1 + Adelta)
+  
+  #alphaの分布の平均パラメータ
+  A <- inv_XVX1 %*% (XVY1 + Adelta %*% Deltabar)   #alphaの平均 
+  a1 <- as.numeric(A)
 
-for(j in 1:(member-1)){
-  MVR1 <- cdMVN(mu=old.utilm1, Cov=oldcov, dependent=j, U=old.util1)   #条件付き期待値と条件付き分散を計算
-  UM1[, j] <- MVR1$CDmu   #条件付き期待値を取り出す
-  S1[j] <- sqrt(MVR1$CDvar)   #条件付き分散を取り出す
+  #多変量正規分布から回帰係数をサンプリング
+  oldalpha <- mvrnorm(1, a1, inv_XVX1)
   
-  #潜在変数を発生させる
-  #切断領域の設定
-  rank.u <- t(apply(cbind(old.util1[, -j], 0), 1, function(x) sort(x, decreasing=TRUE)))[, 1:3]
-  rank.u <- ifelse(Rank==member, 0, rank.u)
   
-  #切断正規分布より潜在変数を発生
-  old.util1[, j] <- ifelse(Rank[, 1]==j, rtnorm(mu=UM1[, j], S1[j], a=rank.u[, 1], b=100), 
-                          ifelse(Rank[, 2]==j, rtnorm(mu=UM1[, j], S1[j], a=rank.u[, 2], b=rank.u[, 1]),
-                                 ifelse(Rank[, 3]==j, rtnorm(mu=UM1[, j], S1[j], a=rank.u[, 3], b=rank.u[, 2]),
-                                        rtnorm(mu=UM1[, j], sigma=S1[j], a=-100, b=rank.u[, 3]))))
+  ##Covの分布のパラメータの計算とmcmcサンプリング
+  #逆ウィシャート分布のパラメータを計算
+  R.error1_M <- matrix(util1.v - XM %*% oldalpha, nrow=hh, ncol=member-1, byrow=T)
+  R.error1 <- matrix(rowSums(apply(R.error1_M, 1, function(x) x %*% t(x))), nrow=member-1, ncol=member-1, byrow=T)
+  IW.R1 <- V + R.error1
   
-  #潜在変数に無限が含まれているなら数値を置き換える
-  if(sum(is.infinite(old.util1[, j]))==0) {next}
-  old.util1[, j] <- ifelse(is.infinite(old.util1[, j])==TRUE, ifelse(Rank[, 1]==j, runif(1, rank.u[, 1], 100), 
-                                                                   ifelse(Rank[, 2]==j, runif(1, rank.u[, 2], rank.u[, 1]),
-                                                                          ifelse(Rank[, 3]==j, runif(1, rank.u[, 3], rank.u[, 2]),
-                                                                                 old.util1[, j]))))  
+  #逆ウィシャート分布の自由度を計算
+  Sn1 <- nu + hh
+  
+  #逆ウィシャート分布からCovをサンプリング
+  Cov_hat1 <- rwishart(Sn1, solve(IW.R1))$IW
+  oldcov1 <- cov2cor(Cov_hat1)
+  
+  
+  ##選択結果と整合的な潜在効用を発生させる
+  #条件付き期待値と条件付き分散を計算
+  S2 <- rep(0, member-1)
+  
+  for(j in 1:(member-1)){
+    MVR2 <- cdMVN(mu=old.utilm2, Cov=oldcov2, dependent=j, U=old.util2)   #条件付き分布を計算
+    UM2[, j] <- MVR2$CDmu   #条件付き期待値を取り出す
+    S2[j] <- sqrt(MVR2$CDvar)    #条件付き分散を取り出す
+    
+    #潜在変数を発生させる
+    #切断領域の設定
+    max.u <- apply(cbind(old.util2[, -j], 0), 1, max)
+    max.u <- ifelse(y==member, 0, max.u)
+    
+    #切断正規分布より潜在変数を発生
+    old.util2[, j] <- ifelse(y==j, rtnorm(mu=UM2[, j], sigma=S2[j], a=max.u, b=100), 
+                            rtnorm(mu=UM2[, j], sigma=S2[j], a=-100, b=max.u))
+    old.util2[, j] <- ifelse(is.infinite(old.util2[, j]), ifelse(Y==j, max.u + runif(1), max.u - runif(1)), old.util2[, j])
+  }
+  
+  util2.v <- as.numeric(t(old.util2))   #発生させた潜在効用をベクトルに変換
+  
+  
+  ##betaの分布のパラメータの計算とmcmcサンプリング
+  #z.vecとX.vecを結合して多次元配列に変更
+  YX2.bind <- cbind(util2.v, XM)
+  for(i in 1:hh){
+    YX2.array[, , i] <- YX2.bind[id_r[i, ], ]
+  }
+  
+  ##回帰モデルのギブスサンプリングでbetaとsigmaを推定
+  #betaのギブスサンプリング
+  invcov2 <- solve(oldcov2)
+  xvx2.vec <- rowSums(apply(X.array, 3, function(x) t(x) %*% invcov2 %*% x))
+  XVX2 <- matrix(xvx2.vec, nrow=ncol(XM), ncol=ncol(XM), byrow=T)
+  XVY2 <- rowSums(apply(YX2.array, 3, function(x) t(x[, -1]) %*% invcov2 %*% x[, 1]))
+  
+  #alphaの分布の分散共分散行列のパラメータ
+  inv_XVX2 <- solve(XVX2 + Adelta)
+  inv_XVX3 <- solve(XVX1/2 + XVX2/2 + Adelta)
+  
+  #betaの分布の平均パラメータ
+  B <- inv_XVX2 %*% (XVY2 + Adelta %*% Deltabar)
+  C <- inv_XVX2 %*% (XVY2/2 + XVY1/2 + Adelta %*% Deltabar)
+  b1 <- as.numeric(B)
+  c1 <- as.numeric(C)
+  
+  #多変量正規分布から回帰係数をサンプリング
+  oldbeta <- mvrnorm(1, b1, inv_XVX2)   #betaのサンプリング
+  oldtheta <- mvrnorm(1, c1, inv_XVX3)   #alphaとbetaの結合回帰係数thetaのサンプリング
+  
+  
+  ##Covの分布のパラメータの計算とmcmcサンプリング
+  #逆ウィシャート分布のパラメータを計算
+  R.error2_M <- matrix(util2.v - XM %*% oldbeta, nrow=hh, ncol=member-1, byrow=T)
+  R.error2 <- matrix(rowSums(apply(R.error2_M, 1, function(x) x %*% t(x))), nrow=member-1, ncol=member-1, byrow=T)
+  IW.R2 <- IW.R1 + R.error2 
+  
+  #逆ウィシャート分布の自由度を計算
+  Sn2 <- nu + hh
+  
+  #逆ウィシャート分布からCovをサンプリング
+  Cov_hat2 <- rwishart(Sn2, solve(IW.R2))$IW
+  oldcov2 <- cov2cor(Cov_hat2)
+  
+  
+  ##潜在効用とパラメータを更新
+  old.utilm1 <- matrix(XM %*% oldalpha, nrow=hh, ncol=member-1, byrow=T)
+  old.utilm2 <- matrix(XM %*% oldbeta, nrow=hh, ncol=member-1, byrow=T)
+  
+  
+  ##サンプリング結果を保存
+  if(rp%%keep==0){
+    print(rp)
+    mkeep <- rp/keep
+    Util1[, , mkeep] <- old.util1
+    Util2[, , mkeep] <- old.util2
+    ALPHA[mkeep, ] <- oldalpha
+    BETA[mkeep, ] <- oldbeta
+    BETA[mkeep, ] <- oldtheta
+    SIGMA[mkeep, ] <- as.numeric(oldcov2)
+    
+    print(round(cbind(oldcov, Cov), 2))
+    print(round(rbind(oldalpha, alpha.t), 2))
+    print(round(rbind(oldbeta, beta.t), 2))
+    print(round(oldtheta, 2))
+  }
 }
-
-util1.v <- as.numeric(t(old.util1))   #発生させた潜在効用をベクトルに変換
-
-
-##betaの分布のパラメータの計算とMCMCサンプリング
-#z.vecとX.vecを結合して多次元配列に変更
-YX1.bind <- cbind(util1.v, XM)
-for(i in 1:hh){
-  YX1.array[, , i] <- YX1.bind[id_r[i, ], ]
-}
-
-##ギブスサンプリングでlalphaとsigmaを推定
-#alphaのギブスサンプリング
-invcov <- solve(oldcov)
-xvx1.vec <- rowSums(apply(X.array, 3, function(x) t(x) %*% invcov %*% x))
-XVX1 <- matrix(xvx1.vec, nrow=ncol(XM), ncol=ncol(XM), byrow=T)
-XVY1 <- rowSums(apply(YX1.array, 3, function(x) t(x[, -1]) %*% invcov %*% x[, 1]))
-
-#alphaの分布の分散共分散行列のパラメータ
-inv_XVX1 <- solve(XVX1 + Adelta)
-
-#alphaの分布の平均パラメータ
-A <- inv_XVX1 %*% (XVY1 + Adelta %*% Deltabar)   #alphaの平均 
-a1 <- as.numeric(A)
-
-#多変量正規分布から回帰係数をサンプリング
-oldalpha <- mvrnorm(1, a1, inv_XVX)
-
-
-##Covの分布のパラメータの計算とmcmcサンプリング
-
 
 
