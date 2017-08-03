@@ -257,7 +257,7 @@ old.utilm2 <- matrix(XM %*% oldbeta, nrow=hh, ncol=member-1, byrow=T)
 
 #効用の初期値
 old.util1 <- old.utilm1 + mvrnorm(nrow(old.utilm1), rep(0, member-1), oldcov1)
-old.util2 <- old.utilm2 + mvrnorm(nrow(old.utilm2), rep(0, member-1), oldcov)
+old.util2 <- old.utilm2 + mvrnorm(nrow(old.utilm2), rep(0, member-1), oldcov2)
 
 
 ####マルコフ連鎖モンテカルロ法で多項-ランクプロビットモデルを推定####
@@ -406,14 +406,37 @@ for(rp in 1:R){
     Util2[, , mkeep] <- old.util2
     ALPHA[mkeep, ] <- oldalpha
     BETA[mkeep, ] <- oldbeta
-    BETA[mkeep, ] <- oldtheta
+    THETA[mkeep, ] <- oldtheta
     SIGMA[mkeep, ] <- as.numeric(oldcov2)
     
-    print(round(cbind(oldcov, Cov), 2))
+    print(round(cbind(oldcov2, Cov), 2))
     print(round(rbind(oldalpha, alpha.t), 2))
     print(round(rbind(oldbeta, beta.t), 2))
     print(round(oldtheta, 2))
   }
 }
 
+####推定結果と要約####
+##サンプリング結果をプロット
+#回帰係数のプロット
+matplot(ALPHA[, 1:4], type="l", ylab="alpha1の回帰係数", xlab="サンプリング数")
+matplot(ALPHA[, 5:9], type="l", ylab="alpha2の回帰係数", xlab="サンプリング数")
+matplot(ALPHA[, 10:13], type="l", ylab="alpha3の回帰係数", xlab="サンプリング数")
+matplot(BETA[, 1:4], type="l", ylab="beta1の回帰係数", xlab="サンプリング数")
+matplot(BETA[, 5:9], type="l", ylab="beta2の回帰係数", xlab="サンプリング数")
+matplot(BETA[, 10:13], type="l", ylab="beta3の回帰係数", xlab="サンプリング数")
+matplot(THETA[, 1:4], type="l", ylab="theta1の回帰係数", xlab="サンプリング数")
+matplot(THETA[, 5:9], type="l", ylab="theta2の回帰係数", xlab="サンプリング数")
+matplot(THETA[, 10:13], type="l", ylab="theta3の回帰係数", xlab="サンプリング数")
 
+
+#分散共分散行列のプロット
+matplot(SIGMA[, 1:9], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 10:18], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 19:27], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 28:36], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 37:45], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 46:54], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 55:63], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 64:72], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
+matplot(SIGMA[, 73:81], type="l", ylab="sigmaのパラメータ", xlab="サンプリング数")
