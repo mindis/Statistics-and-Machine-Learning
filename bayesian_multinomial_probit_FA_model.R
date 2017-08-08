@@ -1,6 +1,7 @@
 #####多項プロビットモデル#####
 library(MASS)
 library(bayesm)
+library(pyhch)
 library(condMVNorm)
 library(MCMCpack)
 library(glmm)
@@ -63,7 +64,7 @@ covmatrix <- function(col, corM, lower, upper){
 ####データの発生####
 #set.seed(8437)
 ##データの設定
-hh <- 1500   #プレイヤー数
+hh <- 2500   #プレイヤー数
 choise <- 10   #選択可能数
 st <- choise   #基準ブランド
 k <- 5   #回帰係数の数
@@ -97,7 +98,7 @@ for(i in 1:choise){
 }
 
 ##分散共分散行列の設定
-corM <- corrM(col=choise-1, lower=-0.6, upper=0.70)   #相関行列を作成
+corM <- corrM(col=choise-1, lower=-0.55, upper=0.75)   #相関行列を作成
 Sigma <- covmatrix(col=choise-1, corM=corM, lower=1, upper=1)   #分散共分散行列
 Cov <- Sigma$covariance
 
@@ -106,7 +107,7 @@ beta1 <- -6.3   #価格のパラメータ
 beta2 <- 7.2   #割引率のパラメータ
 beta3 <- 2.0   #特別陳列のパラメータ
 beta4 <- 1.8   #キャンペーンのパラメータ
-beta0 <- runif(choise-1, -0.6, 2.1)   #ブランド1～4の相対ベース販売力
+beta0 <- runif(choise-1, -0.4, 2.1)   #ブランド1～4の相対ベース販売力
 betat <- c(beta0, beta1, beta2, beta3, beta4)
 
 #基準ブランドとの相対説明変数
@@ -287,7 +288,7 @@ for(rp in 1:R){
   ##Covの分布のパラメータの計算とmcmcサンプリング
   #逆ウィシャート分布のパラメータを計算
   R.error <- matrix(util.v - XM %*% oldbeta, nrow=hh, ncol=choise-1, byrow=T)
-  IW.R <- V + matrix(rowSums(apply(R.error, 1, function(x) x %*% t(x))), nrow=choise-1, ncol=choise-1, byrow=T)
+  IW.R <- V + matrix(rowSums(apply(R.error, 1, function(x) x %*% t(x))), nrow=choise-1, ncol=choise-1)
   
   #逆ウィシャート分布の自由度を計算
   Sn <- nu + hh
@@ -300,18 +301,20 @@ for(rp in 1:R){
   #潜在効用と潜在効用の平均を更新
   old.utilm <- matrix(XM %*% oldbeta, nrow=hh, ncol=choise-1, byrow=T)
   Z <- old.util - old.utilm 
-  
+  Z <- scale(Z)
   
   ##潜在効用の誤差項から因子分析モデルを推定
   #多変量正規分布から潜在変数f(共通因子)をサンプリング
-  ADA <- t(A) %*% solve(A %*% t(A) + D^2)
-  F_mean <- t(ADA %*% t(Z))   #共通因子の平均
+  ADA <- t(A) %*% solve(A %*% t(A) + D)
+  F_mean <- Z %*% t(ADA)   #共通因子の平均
   F_var <- diag(factors) - ADA %*% A    #共通因子の分散共分散行列
   Fi <- t(apply(F_mean, 1, function(x) mvrnorm(1, x, F_var)))   #多変量正規分布から共通因子をサンプリング 
   
+  
   #ガンマ分布から独自因子dをサンプリング
   Z.error <- Z - Fi %*% t(A)
-  Zv.R <- matrix(rowSums(apply(Z.error, 1, function(x) x %*% t(x))), nrow=choise-1, ncol=choise-1, byrow=T)
+  Zv.R <- matrix(rowSums(apply(Z.error, 1, function(x) x %*% t(x))), nrow=choise-1, ncol=choise-1)
+  
   gamma_alpha <- (hh + alpha_d)/2   #alphaを計算
   gamma_beta <- (diag(Zv.R) + beta_d)/2   #betaを計算
   D <- diag(rgamma(length(gamma_beta), gamma_alpha, gamma_beta))   #ガンマ分布から独自因子をサンプリング
@@ -328,16 +331,10 @@ for(rp in 1:R){
     A[i, ] <- mvrnorm(1, A_mu, A_cov)
   }
   
-  #ZM <- as.matrix(data.frame(z=Z))
-  #res <- MCMCfactanal(ZM, factors=3, burnin=1, mcmc=2, seed=NA, a0=alpha_d, b0=beta_d)
-  #score <- matrix(summary(res)$statistics[1:(factors*ncol(ZM)), 1], nrow=choise-1, ncol=factors, byrow=T)
-  
   ##サンプリング結果を保存
   if(rp%%keep==0){
     print(rp)
-    res <- fa(r=Z, nfactors=factors, fm="ml", rotate="none", scores=T)
-    score <- res$Structure[, 1:3]
-  
+
     mkeep <- rp/keep
     Util[, , mkeep] <- old.util
     BETA[mkeep, ] <- oldbeta
@@ -347,7 +344,7 @@ for(rp in 1:R){
     FA.F[, , mkeep] <- Fi
     print(round(cbind(oldcov, Cov), 2))
     print(round(rbind(oldbeta, betat), 2))
-    print(round(rbind(t(A), t(score)), 2))
+    print(round(t(A), 2))
   }
 }
 
@@ -371,9 +368,31 @@ matplot(BETA[, 5:8], type="l", main="回帰係数のサンプリング結果", ylab="パラメー
 
 #分散供分散行列の可視化
 matplot(SIGMA[, 1:4], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
-matplot(SIGMA[, 5:8], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
-matplot(SIGMA[, 9:12], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
-matplot(SIGMA[, 13:16], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 5:9], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 10:13], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 14:18], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 19:22], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 23:27], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 28:31], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 32:36], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 37:40], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 41:45], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 46:49], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 50:54], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 55:58], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 59:63], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 64:67], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 68:72], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 73:76], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(SIGMA[, 77:81], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+
+#因子負荷量の可視化
+matplot(FA.A[, 1:4], type="l", main="因子負荷量のサンプリング結果", ylab="パラメータ推定値")
+matplot(FA.A[, 5:9], type="l", main="因子負荷量のサンプリング結果", ylab="パラメータ推定値")
+matplot(FA.A[, 10:13], type="l", main="因子負荷量のサンプリング結果", ylab="パラメータ推定値")
+matplot(FA.A[, 14:18], type="l", main="因子負荷量のサンプリング結果", ylab="パラメータ推定値")
+matplot(FA.A[, 19:22], type="l", main="因子負荷量のサンプリング結果", ylab="パラメータ推定値")
+matplot(FA.A[, 23:27], type="l", main="因子負荷量のサンプリング結果", ylab="パラメータ推定値")
 
 
 ##推定値の事後平均の比較
