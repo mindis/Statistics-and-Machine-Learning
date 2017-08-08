@@ -330,6 +330,9 @@ for(rp in 1:R){
     A_cov <- solve(inv.facov + diag(D)[i]*FF) 
     A[i, ] <- mvrnorm(1, A_mu, A_cov)
   }
+  A[1, 1] <- 0
+  A[2, 2] <- 0
+  A[3, 3] <- 0
   
   ##サンプリング結果を保存
   if(rp%%keep==0){
@@ -359,7 +362,7 @@ BETA.out <- out$betadraw
 SIGMA.out <- out$sigmadraw
 
 ####推定結果の要約と適合度の確認####
-burnin <- 5000/keep   #バーンイン期間
+burnin <- 10000/keep   #バーンイン期間
 
 ##サンプリング結果を可視化
 #回帰係数のプロット
