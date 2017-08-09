@@ -7,7 +7,7 @@ library(gtools)
 library(MNP)
 library(reshape2)
 library(dplyr)
-library(plyr)
+library(knitr)
 library(ggplot2)
 library(lattice)
 
@@ -82,7 +82,7 @@ r2 <- ifelse(r1 %in% c("ダイヤ", "鞠莉", "果南", "ルビィ"), "aqours", r1)
 rank <- matrix(r2, nrow=nrow(sf_data), ncol=3)
 
 
-##モブとaqoursが同時に選ばれているサンプルは除去
+##モブやaqoursが同時に選ばれているサンプルは除去
 #aqoursの重複を削除
 index1 <- subset(1:nrow(rank), rowSums(rank=="aqours") > 1)
 
@@ -181,6 +181,7 @@ cdMVN <- function(mu, Cov, dependent, U){
 R <- 40000
 sbeta <- 1.5
 keep <- 4
+factors <- 3
 llike <- array(0, dim=c(R/keep))   #対数尤度の保存用
 
 
@@ -238,7 +239,7 @@ D <- diag(runif(member-1, 0, 0.5))
 
 
 ####マルコフ連鎖モンテカルロ法でランクプロビットモデルを推定####
-for(rp in 20336:R){
+for(rp in 1:R){
   
   ##順位選択結果と整合的な潜在効用を発生させる
   #条件付き期待値と条件付き分散を計算
@@ -326,7 +327,7 @@ for(rp in 20336:R){
   FZ <- t(Fi) %*% Z
   d_sigma <- list()
   
-  for(i in 1:(choise-1)){
+  for(i in 1:(member-1)){
     d_sigma[[i]]  <- 1/diag(D)[i] * inv.facov
     A_mu <- solve(d_sigma[[i]] + FF) %*% FZ[, i]
     A_cov <- solve(inv.facov + diag(D)[i]*FF) 
@@ -387,11 +388,17 @@ matplot(SIGMA[, 68:72], type="l", main="分散共分散行列のサンプリング結果", ylab=
 matplot(SIGMA[, 73:76], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
 matplot(SIGMA[, 77:81], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
 
+#因子負荷量の可視化
+matplot(FA.A[, 1:4], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(FA.A[, 5:9], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+matplot(FA.A[, 10:13], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
+
+
 
 ##推定値の事後平均の比較
 #betaの要約統計量
 #メンバーの切片の要約推定量
-round(colMeans(BETA[burnin:, 1:(member-1)]), 3)   #betaの事後平均
+round(colMeans(BETA[burnin:nrow(BETA), 1:(member-1)]), 3)   #betaの事後平均
 round(apply(BETA[burnin:nrow(BETA), 1:(member-1)], 2, function(x) quantile(x, 0.05)), 2)   #5％分位点
 round(apply(BETA[burnin:nrow(BETA), 1:(member-1)], 2, function(x) quantile(x, 0.95)), 2)   #95％分位点
 round(apply(BETA[burnin:nrow(BETA), 1:(member-1)], 2, sd), 2)   #事後標準偏差
