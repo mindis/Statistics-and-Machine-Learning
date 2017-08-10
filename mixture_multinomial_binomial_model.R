@@ -66,7 +66,7 @@ LLobz <- function(theta1, theta2, n1, n2, X1, X2, r, k){
   
   LLho <- matrix(r, nrow=nrow(X1), ncol=k, byrow=T) * LLind   #観測データの尤度
   z <- LLho / matrix(apply(LLho, 1, sum), nrow=nrow(X1), ncol=k)   #潜在変数zの計算
-  LLosum <- sum(log(apply(matrix(r, nrow=nrow(X1), ncol=k) * LLind, 1, sum)))   #観測データの対数尤度の計算
+  LLosum <- sum(log(apply(matrix(r, nrow=nrow(X1), ncol=k, byrow=T) * LLind, 1, sum)))   #観測データの対数尤度の計算
   rval <- list(LLob=LLosum, z=z, LL=LLind, Li1=Li1, Li2=Li2)
   return(rval)
 }
@@ -138,4 +138,7 @@ round(z, 3)   #個人別のセグメントへの所属確率
 
 L$LLob   #観測データの対数尤度
 -2*(L$LLob) + 2*(k*nrow(theta1)+length(theta2) + 1)   #AIC
+
+
+
 
