@@ -1,15 +1,15 @@
-#####ランクプロビットモデル#####
+#####潜在変数ランクプロビットモデル#####
 library(MASS)
 library(bayesm)
 library(MCMCpack)
-library(condMVNorm)
+library(psych)
 library(gtools)
 library(MNP)
 library(reshape2)
 library(dplyr)
-library(knitr)
 library(ggplot2)
 library(lattice)
+library(qgraph)
 
 ####多変量正規乱数を発生させる関数####
 ##多変量正規分布からの乱数を発生させる
@@ -146,6 +146,15 @@ for(i in 1:hh){
   SCORE.v[index.v, ] <- v.score
 }
 
+##メンバー選択とレベルの関係を可視化
+index.muse1 <- subset(1:nrow(rank), rank[, 1] %in% c("穂乃果", "ことり", "海未", "凛", "花陽")) 
+index.muse2 <- subset(1:nrow(rank), rank[, 1] %in% c("真姫", "にこ", "希", "絵里")) 
+index.aqours <- subset(1:nrow(rank), rank[, 1] %in% c("千歌", "曜", "梨子", "花丸", "善子", "aqours", "モブ")) 
+
+boxplot(sf_data1$lv[index.muse1] ~ rank[index.muse1, 1], ylim=c(140, 1025))
+boxplot(sf_data1$lv[index.muse2] ~ rank[index.muse2, 1])
+boxplot(sf_data1$lv[index.aqours] ~ rank[index.aqours, 1])
+
 ##データを結合
 X <- data.frame(pop=Pop, lv=LV.v)
 XM <- as.matrix(X)
@@ -238,7 +247,7 @@ A <- matrix(runif((member-1)*factors, -1, 1), nrow=member-1, ncol=factors)
 D <- diag(runif(member-1, 0, 0.5))
 
 
-####マルコフ連鎖モンテカルロ法でランクプロビットモデルを推定####
+####マルコフ連鎖モンテカルロ法で潜在変数ランクプロビットモデルを推定####
 for(rp in 1:R){
   
   ##順位選択結果と整合的な潜在効用を発生させる
@@ -352,11 +361,8 @@ for(rp in 1:R){
   }
 }
 
-lovelive <- c("穂乃果", "ことり", "海未", "凛", "花陽", "真姫", "にこ", "希", "絵里", "千歌", "曜", "梨子", 
-              "花丸", "善子", "aqours", "モブ")
-
 ####推定結果の要約と適合度の確認####
-burnin <- 8000/keep   #バーンイン期間
+burnin <- 10000/keep   #バーンイン期間
 
 ##サンプリング結果を可視化
 #回帰係数のプロット
@@ -394,14 +400,64 @@ matplot(FA.A[, 5:9], type="l", main="分散共分散行列のサンプリング結果", ylab="パ
 matplot(FA.A[, 10:13], type="l", main="分散共分散行列のサンプリング結果", ylab="パラメータ推定値")
 
 
+##効用の散布図散布図行列の作成
+panel.hist <- function(x, ...){
+  usr <- par("usr"); on.exit(par(usr))
+  par(usr = c(usr[1:2], 0, 1.5) )
+  h <- hist(x, plot = FALSE)
+  breaks <- h$breaks; nB <- length(breaks)
+  y <- h$counts; y <- y/max(y)
+  rect(breaks[-nB], 0, breaks[-1], y, col = "grey", ...)
+}
+
+panel.cor <- function(x, y, digits = 2, prefix = "", cex.cor, ...){
+  usr <- par("usr"); on.exit(par(usr))
+  par(usr = c(0, 1, 0, 1))
+  r1 <- cor(x, y)
+  r2 <- abs(cor(x, y))
+  txt <- format(c(r1, 0.123456789), digits = digits)[1]
+  txt <- paste0(prefix, txt)
+  if(missing(cex.cor)) cex.cor <- 0.8/strwidth(txt)
+  text(0.5, 0.5, txt, cex = cex.cor * r2)
+}
+
+i <- 8000
+Util.Z <- Util[, , i] - matrix(XM %*% BETA[i, ], nrow=hh, ncol=member-1, byrow=T)
+colnames(Util.Z) <- lovelive[-member]
+
+#変数1～5の散布図行列
+pairs(as.data.frame(Util.Z[, 1:5]), panel=panel.smooth, bg="lightblue", diag.panel=panel.hist,
+      upper.panel=panel.cor)
+#変数6～9の散布図行列
+pairs(as.data.frame(Util.Z[, 6:9]), panel=panel.smooth, bg="lightblue", diag.panel=panel.hist,
+      upper.panel=panel.cor)
+#変数10～12の散布図行列
+pairs(as.data.frame(Util.Z[, 10:15]), panel=panel.smooth, bg="lightblue", diag.panel=panel.hist,
+      upper.panel=panel.cor)
+
 
 ##推定値の事後平均の比較
 #betaの要約統計量
 #メンバーの切片の要約推定量
-round(colMeans(BETA[burnin:nrow(BETA), 1:(member-1)]), 3)   #betaの事後平均
-round(apply(BETA[burnin:nrow(BETA), 1:(member-1)], 2, function(x) quantile(x, 0.05)), 2)   #5％分位点
-round(apply(BETA[burnin:nrow(BETA), 1:(member-1)], 2, function(x) quantile(x, 0.95)), 2)   #95％分位点
+round(beta.m1 <- colMeans(BETA[burnin:nrow(BETA), 1:(member-1)]), 3)   #betaの事後平均
+round(beta.q1 <- apply(BETA[burnin:nrow(BETA), 1:(member-1)], 2, function(x) quantile(x, 0.05)), 2)   #5％分位点
+round(beta.q2 <- apply(BETA[burnin:nrow(BETA), 1:(member-1)], 2, function(x) quantile(x, 0.95)), 2)   #95％分位点
 round(apply(BETA[burnin:nrow(BETA), 1:(member-1)], 2, sd), 2)   #事後標準偏差
+beta.q <- cbind(beta.q1, beta.q2)
+
+t(t(table(sf_data$X1位)))
+
+#人気度の信用区間の可視化
+plot(beta.q[1, ], rep(9, 2), type="l", xlab="人気", ylab="メンバー", xlim=c(-0.3, 0.9), ylim=c(0, 10), lwd=2, main="μ’ｓの人気の事後信用区間")
+lines(beta.q[2, ], rep(8, 2), type="l", lwd=2)
+lines(beta.q[3, ], rep(7, 2), type="l", lwd=2)
+lines(beta.q[4, ], rep(6, 2), type="l", lwd=2)
+lines(beta.q[5, ], rep(5, 2), type="l", lwd=2)
+lines(beta.q[6, ], rep(4, 2), type="l", lwd=2)
+lines(beta.q[7, ], rep(3, 2), type="l", lwd=2)
+lines(beta.q[8, ], rep(2, 2), type="l", lwd=2)
+lines(beta.q[9, ], rep(1, 2), type="l", lwd=2)
+
 
 #説明変数の要約推定量
 round(colMeans(BETA[burnin:nrow(BETA), member:ncol(BETA)]), 3)   #betaの事後平均
@@ -411,9 +467,40 @@ round(apply(BETA[burnin:nrow(BETA), member:ncol(BETA)], 2, sd), 2)   #事後標準偏
 
 
 #sigmaの要約統計量
-round(matrix(colMeans(SIGMA[burnin:nrow(SIGMA), ]), nrow=member-1, ncol=member-1), 2)   #sigmaの事後平均
+round(cor.m <- matrix(colMeans(SIGMA[burnin:nrow(SIGMA), ]), nrow=member-1, ncol=member-1), 2)   #sigmaの事後平均
 round(matrix(apply(SIGMA[burnin:nrow(SIGMA), ], 2, function(x) quantile(x, 0.05)), nrow=member-1, ncol=member-1), 2)   #5％分位点
 round(matrix(apply(SIGMA[burnin:nrow(SIGMA), ], 2, function(x) quantile(x, 0.95)), nrow=member-1, ncol=member-1), 2)   #95％分位点
 round(matrix(apply(SIGMA[burnin:nrow(SIGMA), ], 2, sd), nrow=member-1, ncol=member-1), 2) #事後標準偏差
 
 
+####因子分析モデルで因子構造を推定####
+##因子数を決定
+i <- 20000/keep
+plot(1:(member-1), eigen(cor.m)$values, 
+     type="l", ylab="固有値", xlab="変数数")
+factors <- 5   #因子数は5
+
+##MCMCサンプリング結果を用いて因子分析モデルを当てはめる
+res <- fa(r=cor.m, nfactors=5, fm="ml", rotate="promax", cor="cor", n.obs=hh)
+res
+
+
+####相関行列のシミュレーション####
+s <- 300000
+lovelive <- c("穂乃果", "ことり", "海未", "凛", "花陽", "真姫", "にこ", "希", "絵里", "千歌", "曜", "梨子", 
+              "花丸", "善子", "aqours")
+
+U.simul <- mvrnorm(s, rep(0, member-1), cor.m)
+colnames(U.simul) <- lovelive
+simul.max <- apply(U.simul, 1, which.max)
+
+simul.res <- table(simul.max)
+names(simul.res) <- lovelive
+t(t(simul.res/s))   #結果の集計
+
+
+####相関行列を可視化####
+cor.mus <- cor.m[1:9, 1:9]
+colnames(cor.mus) <- lovelive[1:9]
+
+qgraph(cor.mus, edge.labels=T, minimum=.2, layout="circle", palette="pastel")
