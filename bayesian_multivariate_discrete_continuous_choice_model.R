@@ -2,7 +2,8 @@
 library(MASS)
 library(bayesm)
 library(MCMCpack)
-library(psych)
+library(extraDistr)
+library(tmvtnorm)
 library(gtools)
 library(MNP)
 library(reshape2)
@@ -13,7 +14,7 @@ library(lattice)
 ####”CˆÓ‚Ì•ªU‹¤•ªUs—ñ‚ğì¬‚³‚¹‚éŠÖ”####
 ##‘½•Ï—Ê³‹K•ª•z‚©‚ç‚Ì—”‚ğ”­¶‚³‚¹‚é
 #”CˆÓ‚Ì‘ŠŠÖs—ñ‚ğì‚éŠÖ”‚ğ’è‹`
-corrM <- function(col, lower, upper){
+corrM <- function(col, lower, upper, eigen_lower, eigen_upper){
   
   rho <- matrix(runif(col^2, lower, upper), col, col)
   rho[upper.tri(rho)] <- 0
@@ -25,7 +26,7 @@ corrM <- function(col, lower, upper){
   P %*% Lambda %*% t(P)
   
   #V‚µ‚¢‘ŠŠÖs—ñ‚Ì’è‹`‚Æ‘ÎŠp¬•ª‚ğ1‚É‚·‚é
-  (Lambda.modified <- ifelse(Lambda < 0, 10e-6, Lambda))
+  (Lambda.modified <- ifelse(Lambda < 0, runif(1, eigen_lower, eigen_upper), Lambda))
   x.modified <- P %*% Lambda.modified %*% t(P)
   normalization.factor <- matrix(diag(x.modified),nrow = nrow(x.modified),ncol=1)^0.5
   Sigma <- x.modified <- x.modified / (normalization.factor %*% t(normalization.factor))
@@ -58,8 +59,8 @@ covmatrix <- function(col, corM, lower, upper){
 }
 
 ####ƒf[ƒ^‚Ì”­¶####
-hh <- 1500
-items <- 15   #ŠÏ‘ªƒuƒ‰ƒ“ƒh”
+hh <- 2000
+items <- 10   #ŠÏ‘ªƒuƒ‰ƒ“ƒh”
 
 
 ####à–¾•Ï”‚Ì”­¶####
@@ -74,6 +75,8 @@ for(i in 1:bin){
   X.bin[, i] <- rbinom(hh, 1, runif(1, 0.35, 0.65))
 }
 
+
+
 #‰¿Ši‚Æƒvƒƒ‚[ƒVƒ‡ƒ“à–¾•Ï”
 Price <- matrix(0, nrow=hh, ncol=items)
 Disp <- matrix(0, nrow=hh, ncol=items)
@@ -84,7 +87,7 @@ for(i in 1:items){
   lower <- runif(1, 0.4, 0.7)
   upper <- runif(1, 0.8, 1.0)
   Price[, i] <- runif(hh, lower, upper) 
-  Disp[, i] <- rbinom(hh, freq, runif(1, 0.2, 0.5))/freq
+  Disp[, i] <- rbinom(hh, freq, runif(1, 0.05, 0.6))/freq
 }
 
 
@@ -119,9 +122,10 @@ ID.vec <- data.frame(no=1:(hh*items), id=id.v, pd=pd)
 
 ####w”ƒ—L–³‚ğ‘½•Ï—Êƒvƒƒrƒbƒgƒ‚ƒfƒ‹‚Å”­¶‚³‚¹‚é####
 #‘ŠŠÖs—ñ‚Ìİ’è
-corM <- corrM(col=items, lower=-0.55, upper=0.85)   #‘ŠŠÖs—ñ‚ğì¬
+corM <- corrM(col=items, lower=-0.55, upper=0.9, eigen_lower=0.025, eigen_upper=0.35)   #‘ŠŠÖs—ñ‚ğì¬
 Sigma <- covmatrix(col=items, corM=corM, lower=1, upper=1)   #•ªU‹¤•ªUs—ñ
 Cov <- Sigma$covariance
+
 
 #‘Ã“–‚Èw”ƒ—¦‚ªo‚é‚Ü‚Åƒpƒ‰ƒ[ƒ^‚Ìİ’è‚ğŒJ‚è•Ô‚·
 for(i in 1:10000){
@@ -145,14 +149,15 @@ for(i in 1:10000){
   #‰“š•Ï”‚Ì”­¶
   y1 <- ifelse(U.vec > 0, 1, 0)
   Y1 <- matrix(y1, nrow=hh, ncol=items, byrow=T)
- 
+  
   #‘Ã“–‚Èw”ƒ—¦‚ªo‚é‚Ü‚ÅŒJ‚è•Ô‚·
-  if(min(colMeans(Y1)) > 0.1 & max(colMeans(Y1)) < 0.75) break   
+  if(min(colMeans(Y1)) > 0.15 & max(colMeans(Y1)) < 0.75) break   
 }
+
+
 
 #”­¶‚³‚¹‚½‰“š•Ï”‚ğWŒv
 colMeans(Y1); colSums(Y1)
-
 
 ####w”ƒ‚ª‚ ‚Á‚½ê‡Aƒ|ƒAƒ\ƒ“•ª•z‚©‚çw”ƒ”‚ğ”­¶####
 U.pois <- ifelse(U.mx < 0, 0, U.mx)   #ƒ|ƒAƒ\ƒ“•ª•z‚ÌŒø—p‚ğ’è‹`
@@ -229,7 +234,7 @@ round(rbind(u=mu, pr=colMeans(Y1), buy=Y2.mean), 3)   #Œø—pAw“üŠm—¦Aw”ƒ”—Ê‚
 
 ####ƒ}ƒ‹ƒRƒt˜A½ƒ‚ƒ“ƒeƒJƒ‹ƒ–@‚Å‘½•Ï—Ê—£U˜A‘±ƒ‚ƒfƒ‹‚ğ„’è####
 ##Ø’f³‹K•ª•z‚Ì—”‚ğ”­¶‚³‚¹‚éŠÖ”
-rtnorm <- function(mu, sigma, a, b){
+trunc_rnorm <- function(mu, sigma, a, b){
   FA <- pnorm(a, mu, sigma)
   FB <- pnorm(b, mu, sigma)
   return(qnorm(runif(length(mu))*(FB-FA)+FA, mu, sigma))
@@ -237,24 +242,24 @@ rtnorm <- function(mu, sigma, a, b){
 
 
 ##‘½•Ï—Ê³‹K•ª•z‚ÌğŒ•t‚«Šú‘Ò’l‚ÆğŒ•t‚«•ªU‚ğŒvZ‚·‚éŠÖ”
-cdMVN <- function(mean, Cov, dependent, U){
+cdMVN <- function(mu, Cov, dependent, U){
   
   #•ªU‹¤•ªUs—ñ‚ÌƒuƒƒbƒNs—ñ‚ğ’è‹`
   Cov11 <- Cov[dependent, dependent]
-  Cov12 <- Cov[dependent, -dependent, drop=FALSE]
-  Cov21 <- Cov[-dependent, dependent, drop=FALSE]
+  Cov12 <- Cov[dependent, -dependent]
+  Cov21 <- Cov[-dependent, dependent]
   Cov22 <- Cov[-dependent, -dependent]
   
   #ğŒ•t‚«•ªU‚ÆğŒ•t‚«•½‹Ï‚ğŒvZ
   CDinv <- Cov12 %*% solve(Cov22)
-  CDmu <- mean[, dependent] + t(CDinv %*% t(U[, -dependent] - mean[, -dependent]))   #ğŒ•t‚«•½‹Ï‚ğŒvZ
-  CDvar <- Cov11 - Cov12 %*% solve(Cov22) %*% Cov21   #ğŒ•t‚«•ªU‚ğŒvZ
+  CDmu <- mu[, dependent] + t(CDinv %*% t(U[, -dependent] - mu[, -dependent]))   #ğŒ•t‚«•½‹Ï‚ğŒvZ
+  CDvar <- 1 - CDinv %*% Cov21   #ğŒ•t‚«•ªU‚ğŒvZ
   val <- list(CDmu=CDmu, CDvar=CDvar)
   return(val)
 }
 
+
 ##ƒ|ƒAƒ\ƒ“‰ñ‹Aƒ‚ƒfƒ‹‚Ì‘Î”–Ş“x
-##•Ï—ÊŒø‰Êƒ|ƒAƒ\ƒ“‰ñ‹Aƒ‚ƒfƒ‹‚Ì‘Î”–Ş“x
 loglike <- function(theta, y, X){
   
   #–Ş“x‚ğ’è‹`‚·‚é
@@ -272,20 +277,29 @@ loglike <- function(theta, y, X){
 R <- 20000
 sbeta <- 1.5
 keep <- 4
+non_iden <- 5   #¯•Ê‚³‚ê‚È‚¢ƒpƒ‰ƒ[ƒ^‚ÌŒÂ”
+
+#^‚ÌğŒ•t‚«•ªU
+cd_Cov <- c()
+for(j in 1:items){
+  cd_Cov <- c(cd_Cov, cdMVN(matrix(U_mean.vec, nrow=hh, ncol=items, byrow=T), Cov, j, U.mx)$CDvar)
+}
+
 
 ##–‘O•ª•z‚Ìİ’è
 nu <- items   #‹tƒEƒBƒVƒƒ[ƒg•ª•z‚Ì©—R“x
-V <- nu*diag(items) + 5   #‹tƒEƒBƒVƒƒ[ƒg•ª•z‚Ìƒpƒ‰ƒ[ƒ^
+V <- solve(nu*diag(items))   #‹tƒEƒBƒVƒƒ[ƒg•ª•z‚Ìƒpƒ‰ƒ[ƒ^
 Deltabar <- rep(0, ncol(XM.vec))   #‘½•Ï—Êƒvƒƒrƒbƒgƒ‚ƒfƒ‹‚Ì‰ñ‹AŒW”‚Ì–‘O•ª•z‚Ì•½‹Ï
 Adelta <- solve(100 * diag(rep(1, k1)))   #‘½•Ï—Êƒvƒƒrƒbƒgƒ‚ƒfƒ‹‚Ì‰ñ‹AŒW”‚Ì–‘O•ª•z‚Ì•ªU
 Zetabar <- rep(0, k2)   #ƒ|ƒAƒ\ƒ“‰ñ‹Aƒ‚ƒfƒ‹‚Ì‰ñ‹AŒW”‚Ì–‘O•ª•z
 Azeta <- solve(100 * diag(rep(1, k2)))   #ƒ|ƒAƒ\ƒ“‰ñ‹Aƒ‚ƒfƒ‹‚Ì‰ñ‹AŒW”‚Ì–‘O•ª•z
 
 ##ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚Ì•Û‘¶—p”z—ñ
-Util <- matrix(0, nrow=mcmc/keep, ncol=items)
-BETA <- matrix(0, nrow=mcmc/keep, k1)
-SIGMA <- matrix(0, nrow=mcmc/keep, ncol=items^2)
+Util <- matrix(0, nrow=R/keep, ncol=items)
+BETA <- matrix(0, nrow=R/keep, k1)
+SIGMA <- matrix(0, nrow=R/keep, ncol=items^2)
 THETA <- matrix(0, nrow=R/keep, ncol=k2)
+
 
 ##ƒf[ƒ^‚Ìİ’è
 #ƒfƒUƒCƒ“s—ñ‚ğ‘½ŸŒ³”z—ñ‚É•ÏX
@@ -295,13 +309,16 @@ for(i in 1:hh){
 }
 YX.array <- array(0, dim=c(items, k1+1, hh))
 
-
 #ƒCƒ“ƒfƒbƒNƒX‚Ìì¬
 id_r <- matrix(1:(hh*items), nrow=hh, ncol=items, byrow=T)
+
 
 ##ŒvZ—pƒpƒ‰ƒ[ƒ^‚ÌŠi”[—p
 Z <- matrix(0, nrow=hh, ncol=items)   #Œø—pŠÖ”‚ÌŠi”[—p
 MVR.U <- matrix(0, nrow=hh, ncol=items)
+MVR.S <- rep(0, items)
+
+
 
 ##‰Šú’l‚Ìİ’è
 #‰ñ‹AŒW”‚Ì‰Šú’l
@@ -330,7 +347,7 @@ for(b in 1:items){
     #‰Šúƒpƒ‰ƒ[ƒ^‚Ìİ’è
     X <- cbind(X.cont, X.bin, Price[, b], Disp[, b])
     x <- c(runif(1, -0.5, 1.0), runif(cont, 0, 1), runif(bin, -0.5, 0.5), runif(1, -3.5, -2.5), runif(1, 2.0, 2.5))
-
+    
     #€ƒjƒ…[ƒgƒ“–@‚ÅÅ‘å‰»
     res <- try(optim(x, probit_LL, Y=Y1[, b], X=X, method="BFGS", hessian=FALSE, 
                      control=list(fnscale=-1)), silent=TRUE)
@@ -365,42 +382,40 @@ Z <- old.utilm + mvrnorm(hh, rep(0, items), oldcov)   #•½‹Ï\‘¢+Œë·
 a <- ifelse(Y1==0, -100, 0)
 b <- ifelse(Y1==1, 100, 0)
 
-
 ####ƒ}ƒ‹ƒRƒt˜A½ƒ‚ƒ“ƒeƒJƒ‹ƒ–@‚Å‘½•Ï—Ê—£U˜A‘±ƒ‚ƒfƒ‹‚ğ„’è####
 for(rp in 1:R){
-
+  
   ##ƒf[ƒ^Šg‘å–@‚ÅöİŒø—p‚ğ”­¶
   #‘I‘ğŒ‹‰Ê‚Æ®‡“I‚ÈöİŒø—p‚ğ”­¶‚³‚¹‚é
-  #öİŒø—p‚ğŒvZ
-  old.utilm<- matrix(XM.vec %*% oldbeta, nrow=hh, ncol=items, byrow=T)   #öİŒø—p‚Ì•½‹Ï\‘¢
-  
   #Ø’f³‹K•ª•z‚æ‚èöİŒø—p‚ğ”­¶
-  MVR.S <- c()
   for(j in 1:items){
     MVR <- cdMVN(old.utilm, oldcov, j, Z)   #‘½•Ï—Ê³‹K•ª•z‚ÌğŒ•t‚«•ª•z‚ğŒvZ
     MVR.U[, j] <- MVR$CDmu   #ğŒ•t‚«•½‹Ï‚ğ’Šo
-    MVR.S <- c(MVR.S, MVR$CDvar)   #ğŒ•t‚«•ªU‚ğ’Šo
-    Z[, j] <- rtnorm(MVR.U[, j], sqrt(MVR.S[j]), a[, j], b[, j])   #Ø’f³‹K•ª•z‚æ‚èöİ•Ï”‚ğ’Šo
+    MVR.S[j] <- sqrt(MVR$CDvar)   #ğŒ•t‚«•ªU‚ğ’Šo
+    Z[, j] <- trunc_rnorm(MVR.U[, j], MVR.S[j], a[, j], b[, j])   #Ø’f³‹K•ª•z‚æ‚èöİ•Ï”‚ğƒTƒ“ƒvƒŠƒ“ƒO
+    
+    #öİŒø—pZ‚ÉƒGƒ‰[‚ª‚ ‚Á‚½ê‡‚Ìˆ—
+    if(sum(is.infinite(Z[, j])) > 0 | sum(is.nan(Z[, j]) > 0)){
+      print("ƒGƒ‰[")
+      index.error <- subset(1:nrow(Z), is.infinite(Z[, j])==TRUE | is.nan(Z[, j])==TRUE)
+      Z[index.error, ] <- 0
+    }
   }
   
-  Z[is.infinite(Z)] <- 0
-  Z[is.nan(Z)] <- 0
-  Zold <- Z
+  z.vec <- as.numeric(t(Z))   #öİŒø—p‚ğƒxƒNƒgƒ‹‚É•ÏX
+  
   
   ##beta‚Ì•ª•z‚Ìƒpƒ‰ƒ[ƒ^‚ÌŒvZ‚ÆmcmcƒTƒ“ƒvƒŠƒ“ƒO
-  #z.vec‚ÆX.vec‚ğŒ‹‡‚µ‚Ä‘½ŸŒ³”z—ñ‚É•ÏX
-  z.vec <- as.numeric(t(Zold))   #öİŒø—p‚ğƒxƒNƒgƒ‹‚É•ÏX
-  YX.bind <- cbind(z.vec, XM.vec)
+  #beta‚Ì•½‹Ïƒpƒ‰ƒ[ƒ^‚ğŒvZ
+  XVX <- matrix(0, nrow=ncol(XM.vec), ncol=ncol(XM.vec))
+  XVY <- rep(0, ncol(XM.vec))
+  invcov <- solve(oldcov)
   
   for(i in 1:hh){
-    YX.array[, , i] <- YX.bind[id_r[i, ], ]
+    XVX <- XVX + t(X.array[, , i]) %*% invcov %*% X.array[, , i]
+    XVY <- XVY + t(X.array[, , i]) %*% invcov %*% z.vec[id_r[i, ]]
   }
-  
-  #beta‚Ì•½‹Ïƒpƒ‰ƒ[ƒ^‚ğŒvZ
-  invcov <- solve(oldcov)
-  xvx.vec <- rowSums(apply(X.array, 3, function(x) t(x) %*% invcov %*% x))
-  XVX <- matrix(xvx.vec, nrow=ncol(XM.vec), ncol=ncol(XM.vec), byrow=T)
-  XVY <- rowSums(apply(YX.array, 3, function(x) t(x[, -1]) %*% invcov %*% x[, 1]))
+  XVY <- as.numeric(XVY)
   
   #beta‚Ì•ª•z‚Ì•ªU‹¤•ªUs—ñƒpƒ‰ƒ[ƒ^
   inv_XVX <- solve(XVX + Adelta)
@@ -411,27 +426,39 @@ for(rp in 1:R){
   #‘½•Ï—Ê³‹K•ª•z‚©‚çbeta‚ğƒTƒ“ƒvƒŠƒ“ƒO
   oldbeta <- mvrnorm(1, as.numeric(B), inv_XVX)
   
+  #öİŒø—p‚Ì•½‹Ï\‘¢‚ğXV
+  util.vec <- XM.vec %*% oldbeta
+  old.util <- matrix(util.vec, nrow=hh, ncol=items, byrow=T)
+  
   ##Cov‚Ì•ª•z‚Ìƒpƒ‰ƒ[ƒ^‚ÌŒvZ‚ÆmcmcƒTƒ“ƒvƒŠƒ“ƒO
   #‹tƒEƒBƒVƒƒ[ƒg•ª•z‚Ìƒpƒ‰ƒ[ƒ^‚ğŒvZ
-  R.error <- matrix(z.vec - XM.vec %*% oldbeta, nrow=hh, ncol=items, byrow=T)
-  R <- solve(V) + matrix(rowSums(apply(R.error, 1, function(x) x %*% t(x))), nrow=items, ncol=items, byrow=T)
+  R.error <- matrix(z.vec - util.vec, nrow=hh, ncol=items, byrow=T)
+  IW.R <- V + matrix(rowSums(apply(R.error, 1, function(x) x %*% t(x))), nrow=items, ncol=items, byrow=T)
   
   #‹tƒEƒBƒVƒƒ[ƒg•ª•z‚Ì©—R“x‚ğŒvZ
   Sn <- nu + hh
   
   #‹tƒEƒBƒVƒƒ[ƒg•ª•z‚©‚çCov‚ğƒTƒ“ƒvƒŠƒ“ƒO
-  Cov_hat <- try(rwishart(Sn, solve(R))$IW, silent=TRUE)
-  if(class(Cov_hat)=="try-error") {Cov_hat <- oldcov}
+  Cov_hat <- rwishart(Sn, solve(IW.R))$IW
   
-
-  #•ªU‹¤•ªUs—ñ‚Ì‘ÎŠp¬•ª‚ğ1‚ÉŒÅ’è‚·‚é
+  
+  ##¯•Ê«‚Ì–â‘è‚ğ‰ñ”ğ‚·‚é‚½‚ß‚É•ªU‹¤•ªUs—ñ‚Ì‘ÎŠp¬•ª‚ğ1‚ÉŒÅ’è‚·‚é
+  lambda <- diag(diag(Cov_hat)^(-1/2))
   oldcov <- cov2cor(Cov_hat)
+  old.utilm <- old.util %*% lambda
+  Z <- Z %*% lambda
+  
   
   ##Œø—pŠÖ”‚©‚çw”ƒ—Ê‚ğƒxƒCƒWƒAƒ“ƒ|ƒAƒ\ƒ“‰ñ‹Aƒ‚ƒfƒ‹‚ÅŒ‹‚Ñ‚Â‚¯‚é
   #ƒ‰ƒ“ƒ_ƒ€ƒEƒH[ƒNƒTƒ“ƒvƒŠƒ“ƒO
-  newtheta <- oldtheta + rnorm(ncol(ZM), 0, 0.025) * c(0.5, 0.05, 0.1)
-  ZM[, 1] <- z.vec
+  if(rp %in% c(1, 100, 500, 1000, 10000)) {
+    print("rw‚ğXV")
+    res <- glm(y2 ~ -1 + ., data=data.frame(ZM), family=poisson)
+    rw <- summary(res)[[12]][, 2]^2
+  } 
   
+  newtheta <- oldtheta + mvrnorm(1, rep(0, ncol(ZM)), diag(rw))   #V‚µ‚¢theta
+  ZM[, 1] <- z.vec
   
   #‘Î”–Ş“x‚Æ‘Î”–‘O•ª•z‚ğŒvZ
   lognew <- loglike(theta=newtheta, y=y2, X=ZM)$LL
@@ -459,14 +486,78 @@ for(rp in 1:R){
   ##ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚ğ•Û‘¶
   mkeep <- rp/keep
   if(rp%%keep==0){
+    keep_er <- mkeep
+    Z_error <- Zold
     BETA[mkeep, ] <- oldbeta
     SIGMA[mkeep, ] <- as.numeric(oldcov)
     THETA[mkeep, ] <- oldtheta
     print(rp)
     print(round(rbind(oldbeta, betat), 2))
     print(round(rbind(oldtheta, thetat), 3))
-    print(round(cbind(oldcov[1:8, 1:8], Cov[1:8, 1:8]), 2))
+    print(round(rbind(MVR.S, sqrt(cd_Cov)), 2))
+    print(round(cbind(oldcov[1:5, 1:5], Cov[1:5,1:5]), 2))
     print(round(logl, 3))
   }
 }
 
+
+####ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚ÌŠm”F‚Æ—v–ñ####
+burnin <- 1000   #ƒo[ƒ“ƒCƒ“ŠúŠÔ‚Í4000ƒTƒ“ƒvƒ‹‚Ü‚Å
+
+##ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚Ìƒvƒƒbƒg
+#‰ñ‹AŒW”‚Ìƒvƒƒbƒg
+matplot(BETA[, 1:5], type="l", main="‰ñ‹AŒW”‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(BETA[, 6:10], type="l", main="‰ñ‹AŒW”‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(BETA[, 11:15], type="l", main="‰ñ‹AŒW”‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(BETA[, 16:20], type="l", main="‰ñ‹AŒW”‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(BETA[, 21:25], type="l", main="‰ñ‹AŒW”‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(BETA[, 26:30], type="l", main="‰ñ‹AŒW”‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(BETA[, 31:35], type="l", main="‰ñ‹AŒW”‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+
+#•ªU‹Ÿ•ªUs—ñ‚Ì‰Â‹‰»
+matplot(SIGMA[, 1:5], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 6:10], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 11:15], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 16:20], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 21:25], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 26:30], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 31:35], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 36:40], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 41:45], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 46:50], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 51:55], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 56:60], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 61:65], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 66:70], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 71:75], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 76:80], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 81:85], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 86:90], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+matplot(SIGMA[, 91:95], type="l", main="•ªU‹¤•ªUs—ñ‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+
+#ƒ|ƒAƒ\ƒ“‰ñ‹A‚Ìƒvƒƒbƒg
+matplot(THETA[, 1:4], type="l", main="‰ñ‹AŒW”‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê", ylab="ƒpƒ‰ƒ[ƒ^„’è’l")
+
+
+##„’èŒ‹‰Ê‚Ì—v–ñ
+#beta‚Ì—v–ñ“Œv—Ê
+round(colMeans(BETA[burnin:nrow(BETA), ]), 2)   #beta‚Ì–Œã•½‹Ï
+round(betat, 2)   #^‚Ìbeta
+round(apply(BETA[burnin:nrow(BETA), ], 2, function(x) quantile(x, 0.05)), 2)   #5“•ªˆÊ“_
+round(apply(BETA[burnin:nrow(BETA), ], 2, function(x) quantile(x, 0.95)), 2)   #95“•ªˆÊ“_
+round(apply(BETA[burnin:nrow(BETA), ], 2, sd), 2)   #–Œã•W€•Î·
+
+
+#sigma‚Ì—v–ñ“Œv—Ê
+round(colMeans(SIGMA[burnin:nrow(SIGMA), ]), 2)   #sigma‚Ì–Œã•½‹Ï
+round(as.numeric(Cov), 2)   #^‚Ìsigma
+round(apply(SIGMA[burnin:nrow(SIGMA), ], 2, function(x) quantile(x, 0.05)), 2)   #5“•ªˆÊ“_
+round(apply(SIGMA[burnin:nrow(SIGMA), ], 2, function(x) quantile(x, 0.95)), 2)   #95“•ªˆÊ“_
+round(apply(SIGMA[burnin:nrow(SIGMA), ], 2, sd), 2)   #–Œã•W€•Î·
+
+#theta‚Ì—v–ñ“Œv—Ê
+round(colMeans(THETA[burnin:nrow(THETA), ]), 2)   #beta‚Ì–Œã•½‹Ï
+round(thetat, 2)   #^‚Ìbeta
+round(apply(theta[burnin:nrow(THETA), ], 2, function(x) quantile(x, 0.05)), 2)   #5“•ªˆÊ“_
+round(apply(theta[burnin:nrow(THETA), ], 2, function(x) quantile(x, 0.95)), 2)   #95“•ªˆÊ“_
+round(apply(BETA[burnin:nrow(THETA), ], 2, sd), 2)   #–Œã•W€•Î·
