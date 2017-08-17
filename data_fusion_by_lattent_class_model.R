@@ -113,7 +113,8 @@ Pr2 <- exp(logit2)/matrix(rowSums(exp(logit2)), nrow=hh, ncol=k)
 Z2 <- t(apply(Pr2, 1, function(x) rmultinom(1, 1, x)))
 z2 <- Z2 %*% 1:k
 colMeans(Z2); colSums(Z2)   #結果を集計
- 
+mix_rate <- as.numeric(table(z2)/sum(table(z2))) 
+
 #欠損パターンと潜在クラスのクロス票
 table(z1, z2)
 round(table(z1, z2)/matrix(rowSums(table(z1, z2)), nrow=pattern, ncol=k), 3)
@@ -219,7 +220,6 @@ LLobz <- function(theta11, theta12, theta21, theta22, ns11, ns12, ns21, ns22, X1
   Z[z==2, ] <- z2
   Z[z==3, ] <- z3
   
-  
   #観測データの対数尤度の和を計算
   LLosum1 <- sum(log(apply(r[z==1, ] * LLind1, 1, sum)))   
   LLosum2 <- sum(log(apply(r[z==2, ] * LLind2, 1, sum)))  
@@ -231,16 +231,16 @@ LLobz <- function(theta11, theta12, theta21, theta22, ns11, ns12, ns21, ns22, X1
 }
 
 ##多項ロジットモデルの対数尤度関数
-loglike <- function(x, Z, z, hh, seg){
+loglike <- function(x, Zx, z, hh, seg){
   #パラメータの設定
   theta.z <- x
   
   #効用関数の設定
-  U <- matrix(Z %*% theta.z, nrow=hh, ncol=seg, byrow=T)
+  U <- matrix(Zx %*% theta.z, nrow=hh, ncol=seg, byrow=T)
   
   #対数尤度の計算
   d <- rowSums(exp(U))
-  LLl <- rowSums(z1 * U) - log(d)
+  LLl <- rowSums(z * U) - log(d)
   LL <- sum(LLl)
   return(LL)
 }
@@ -249,8 +249,21 @@ loglike <- function(x, Z, z, hh, seg){
 ##EMアルゴリズムの設定
 iter <- 0
 dl <- 100
-tol <- 1
+tol <- 0.5
 maxit <- c(10, 20) #準ニュートン法のステップ数
+
+
+##データの準備
+index.z13 <- subset(1:hh, z1 %in% c(1,3))
+index.z23 <- subset(1:hh, z1 %in% c(2,3))
+X11_z <- X11[index.z13, ]
+X12_z <- X12[index.z23, ]
+X21_z <- X21[index.z13]
+X22_z <- X22[index.z23]
+ns11_z <- ns11[index.z13]
+ns12_z <- ns12[index.z23]
+ns21_z <- ns21[index.z13]
+ns22_z <- ns22[index.z23]
 
 
 ##初期値の設定
@@ -306,16 +319,117 @@ opt <- which.max(val)   #ベストな対数尤度
 LL1 <- val[opt]
 Z <- Z.list[[opt]]
 beta <- x[[opt]]
-beta11 <- beta$beta11
-beta12 <- beta$beta12
-beta21 <- beta$beta21
-beta22 <- beta$beta22
 theta <- theta.x[opt, ]
+beta11 <- matrix(0, nrow=k, ncol=k1)
+beta12 <- matrix(0, nrow=k, ncol=k2)
+beta21 <- rep(0, k)
+beta22 <- rep(0, k)
 
 
 ####EMアルゴリズムによるデータ融合####
+while(abs(dl) >= tol){   #dlがtol以上なら繰り返す
 
-##完全データでのパラメータの推定
+  ##完全データでのパラメータの推定
+  #潜在クラスごとに重み付き対数尤度を最大化する
+  for(j in 1:k){
+    beta11[j, ] <- colSums((matrix(Z[index.z13, j], nrow=length(index.z13), ncol=k1) * X11_z) / sum(Z[index.z13, j] * ns11_z))
+    beta12[j, ] <- colSums((matrix(Z[index.z23, j], nrow=length(index.z23), ncol=k2) * X12_z) / sum(Z[index.z23, j] * ns12_z))
+    beta21[j] <- sum(Z[index.z13, j] * X21_z) / sum(Z[index.z13, j] * ns21_z)
+    beta22[j] <- sum(Z[index.z23, j] * X22_z) / sum(Z[index.z23, j] * ns22_z)
+  }
+  
+  ##多項ロジットモデルで個人ごとに混合率を推定
+  #準ニュートン法で最尤推定
+  res <- optim(theta, loglike, gr=NULL, Zx=Zx2, z=Z, hh=hh, seg=k, method="BFGS", hessian=FALSE, 
+               control=list(fnscale=-1))
+  theta <- res$par   #パラメータを更新
+  
+  #混合率を更新
+  U <- matrix(Zx2 %*% theta, nrow=hh, ncol=k, byrow=T)
+  r <- exp(U) / matrix(rowSums(exp(U)), nrow=hh, ncol=k)
+  
+  ##Eステップでの対数尤度の期待値
+  #観測データでの対数尤度の期待値を計算
+  obsllz <- LLobz(beta11, beta12, beta21, beta22, ns11, ns12, ns21, ns22, X11, X12, X21, X22, z.vec, r, k, n_seg)
+  LL <- obsllz$LLob
+  Z <- obsllz$Z
+  
+  ##EMアルゴリズムのパラメータの更新
+  iter <- iter+1
+  dl <- LL - LL1
+  LL1 <- LL
+  print(LL)
+  print(round(rbind(mix_rate=colSums(Z)/hh, mix_rate), 3))
+}
 
+####推定結果と要約####
+##真のパラメータで対数尤度を計算
+obsll_true <- LLobz(P11, P12, P21, P22, ns11, ns12, ns21, ns22, X11, X12, X21, X22, z.vec, Pr2, k, n_seg)
+LL_true <- obsll_true$LLob
+
+##推定されたパラメータ
+#betaの推定値と真の値
+round(rbind(beta11, P11), 3)
+round(rbind(beta12, P12), 3)
+round(rbind(beta21, P21), 3)
+round(rbind(beta22, P22), 3)
+
+#thetaの推定値
+round(theta, 3)
+#round(tval <- theta/sqrt(-diag(solve(res$hessian))), 3)   #t値
+
+#潜在クラスと混合率の推定値
+print(round(rbind(mix_rate=colSums(Z)/hh, mix_rate), 3))   #混合率の比較
+round(cbind(Z, z2), 3)   #潜在クラスの割当確率の推定値と真のクラス
+Z_seg <- apply(Z, 1, which.max)   #潜在クラスの割当
+
+
+##適合度を計算
+par <- length(beta11) + length(beta12) + length(beta21) + length(beta22)
+round(c(LL, LL_true), 3)   #最大化された対数尤度
+(AIC <- -2*LL + 2*par)   #AIC
+(BIC <- -2*LL + log(hh)*par) #BIC
+
+
+####推定された潜在クラスおよびパラメータからブートストラップ法で欠損値を代入####
+boot <- 500   #ブートストラップ回数
+
+#欠損データのインデックスを作成
+index.z1 <- subset(1:hh, z1==2)
+index.z2 <- subset(1:hh, z1==1)
+
+#データの格納用配列
+X11_samp <- X11
+X12_samp <- X12
+X21_samp <- X21
+X22_samp <- X22
+X11_boot <- array(0, dim=c(hh, k1, boot))
+X12_boot <- array(0, dim=c(hh, k2, boot))
+X21_boot <- matrix(0, nrow=hh, ncol=boot)
+X22_boot <- matrix(0, nrow=hh, ncol=boot)
+seg1 <- matrix(0, nrow=length(index.z1), ncol=boot)
+seg2 <- matrix(0, nrow=length(index.z2), ncol=boot)
+
+  
+##ブートストラッピングで欠損データをリサンプリング
+for(b in 1:boot){
+  print(b)
+  
+  #セグメント割当
+  seg1[, b] <- as.numeric(t(apply(Z[index.z1, ], 1, function(x) rmultinom(1, 1, x))) %*% 1:k)
+  seg2[, b] <- as.numeric(t(apply(Z[index.z2, ], 1, function(x) rmultinom(1, 1, x))) %*% 1:k)
+  
+  #セグメント割当からパラメータに基づいてリサンプリング
+  X11_samp[index.z1, ] <- t(apply(cbind(rpois(length(ns11[index.z1]), 40), beta11[seg1[, b], ]), 1, function(x) rmultinom(1, x[1], x[-1])))
+  X12_samp[index.z2, ] <- t(apply(cbind(rpois(length(ns12[index.z2]), 40), beta12[seg2[, b], ]), 1, function(x) rmultinom(1, x[1], x[-1])))
+  X21_samp[index.z1] <- apply(cbind(rpois(length(ns21[index.z1]), 30), beta21[seg1[, b]]), 1, function(x) rbinom(1, x[1], x[-1]))
+  X22_samp[index.z2] <- apply(cbind(rpois(length(ns22[index.z2]), 30), beta22[seg2[, b]]), 1, function(x) rbinom(1, x[1], x[-1]))
+  
+  #リサンプリング結果をリストに保存
+  X11_boot[, , b] <- X11_samp
+  X12_boot[, , b] <- X12_samp
+  X21_boot[, b] <- X21_samp
+  X22_boot[, b] <- X22_samp
+}
 
 
