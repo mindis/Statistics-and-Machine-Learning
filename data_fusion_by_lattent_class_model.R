@@ -122,7 +122,7 @@ round(table(z1, z2)/matrix(rowSums(table(z1, z2)), nrow=pattern, ncol=k), 3)
 ####観測変数の発生####
 #欠損パターンの1はラブライブ!のみ2はアイマスのみ3は両方観測
 k1 <- 9   #ラブライブデータの変数   
-k2 <- 11   #アイマスデータの変数
+k2 <- 10   #アイマスデータの変数
 
 #頻度を発生させる
 ns11 <- rpois(hh, 40)
@@ -197,21 +197,16 @@ LLobz <- function(theta11, theta12, theta21, theta22, ns11, ns12, ns21, ns22, X1
     Li22 <- apply(cbind(ns22, X22), 1, function(x) dbinom(x[-1], x[1], theta22[i]))   #アイマスの二項分布の尤度
     
     #尤度を計算
-    Li1 <- Li11[z==1] * Li21[z==1]
-    Li2 <- Li12[z==2] * Li22[z==2]
-    Li3 <- Li11[z==3] * Li12[z==3] * Li21[z==3] * Li22[z==3]
-    
-    #尤度を潜在クラスごとに代入
-    LLind1[, i] <- Li1
-    LLind2[, i] <- Li2
-    LLind3[, i] <- Li3
+    Li1 <- Li11[z==1] * Li21[z==1]   #アイマスデータが欠損の尤度
+    Li2 <- Li12[z==2] * Li22[z==2]   #ラブライブ！データが欠損の尤度
+    Li3 <- Li11[z==3] * Li12[z==3] * Li21[z==3] * Li22[z==3]   #両方観測データの尤度
+    LLind1[, i] <- Li1; LLind2[, i] <- Li2; LLind3[, i] <- Li3
   }
   
   #観測データの尤度を計算
   LLho1 <- matrix(r[z==1, ], nrow=n_seg[1], ncol=k, byrow=T) * LLind1   #ラブライブのみの観測データの尤度
   LLho2 <- matrix(r[z==2, ], nrow=n_seg[2], ncol=k, byrow=T) * LLind2   #アイマスのみの観測データの尤度
   LLho3 <- matrix(r[z==3, ], nrow=n_seg[3], ncol=k, byrow=T) * LLind3   #両方観測の観測データの尤度
-  
   
   #潜在変数zの計算
   z1 <- LLho1 / matrix(apply(LLho1, 1, sum), nrow=n_seg[1], ncol=k)  
@@ -255,11 +250,12 @@ loglike <- function(x, Z, z, hh, seg){
 iter <- 0
 dl <- 100
 tol <- 1
+maxit <- c(10, 20) #準ニュートン法のステップ数
 
 
 ##初期値の設定
 #ベストな初期パラメータを選択
-rp <- 100   #繰り返し数
+rp <- 20   #繰り返し数
 Z.list <- list()
 val <- c()
 x <- list()
@@ -283,7 +279,7 @@ for(m in 1:rp){
     beta22[j] <- runif(1, 0.2, 0.6)
   }
   beta <- list(beta11=beta11, beta12=beta12, beta21=beta21, beta22=beta22)
-  x[[rp]] <- beta 
+  x[[m]] <- beta 
   
   #潜在クラス割当のパラメータの初期値
   theta0 <- runif(k-1, -0.55, 0.55)
@@ -292,7 +288,7 @@ for(m in 1:rp){
   theta3 <- runif((k-1)*(multi-1), -0.7, 0.7)
   theta4 <- runif((k-1)*(pattern-1), -1.0, 1.0)
   theta <- c(theta0, theta1, theta2, theta3, theta4)
-  theta.x[rp, ] <- theta
+  theta.x[m, ] <- theta
   
   #事前確率の初期値
   logit <- matrix(Zx2 %*% theta, nrow=hh, ncol=k, byrow=T)
@@ -301,6 +297,25 @@ for(m in 1:rp){
   #観測データの対数尤度を計算
   oll <- LLobz(beta11, beta12, beta21, beta22, ns11, ns12, ns21, ns22, X11, X12, X21, X22, z.vec, r, k, n_seg)
   val <- c(val, oll$LLob)
-  Z.list[[rp]] <- oll$Z
+  Z.list[[m]] <- oll$Z
   print(m)
 }
+
+##ベストなパラメータを選択
+opt <- which.max(val)   #ベストな対数尤度
+LL1 <- val[opt]
+Z <- Z.list[[opt]]
+beta <- x[[opt]]
+beta11 <- beta$beta11
+beta12 <- beta$beta12
+beta21 <- beta$beta21
+beta22 <- beta$beta22
+theta <- theta.x[opt, ]
+
+
+####EMアルゴリズムによるデータ融合####
+
+##完全データでのパラメータの推定
+
+
+
