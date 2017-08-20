@@ -487,7 +487,6 @@ for(rp in 1:R){
   mkeep <- rp/keep
   if(rp%%keep==0){
     keep_er <- mkeep
-    Z_error <- Zold
     BETA[mkeep, ] <- oldbeta
     SIGMA[mkeep, ] <- as.numeric(oldcov)
     THETA[mkeep, ] <- oldtheta
