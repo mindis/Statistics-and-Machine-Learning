@@ -195,16 +195,16 @@ y2[y1==0] <- NA   #カードを持っている場合のみ覚醒有無を定義する
 loglike <- function(x, y1, y2, XM1, XM2, CARD, type, member, c_num, hhpt){
 
   #パラメータの設定
-  beta1 <- x[, c(1, 3:(length(x)-2))]
-  beta2 <- x[, c(2:(member-1 + c_num-1 + 2), length(x)-1, length(x))]
+  beta1 <- x[c(1, 3:(length(x)-2))]
+  beta2 <- x[c(2:(member-1 + c_num-1 + 2), length(x)-1, length(x))]
   
   #ログサム変数のパラメータを0～1に収まるように変換しておく
-  beta1[, (length(beta1)-1):length(beta1)] <- exp(beta1[, (ncol(beta1)-1):ncol(beta1)])/
-                                                          (1+exp(beta1[, (ncol(beta1)-1):ncol(beta1)]))
+  beta1[(length(beta1)-1):length(beta1)] <- exp(beta1[(length(beta1)-1):length(beta1)])/
+                                                          (1+exp(beta1[(length(beta1)-1):length(beta1)]))
   
   #ロジットとログサム変数を定義
   logit2 <- cbind(1, XM2) %*% beta2   #覚醒有無のロジット
-  logsum <- log(1 + exp(cbind(1, XM2)[, 1:(ncol(XM2)-2)] %*% beta2[, 1:(ncol(XM2)-2)]))   #ログサム変数
+  logsum <- log(1 + exp(cbind(1, XM2)[1:(ncol(XM2)-2)] %*% beta2[1:(ncol(XM2)-2)]))   #ログサム変数
   logit1 <- cbind(1, XM1, matrix(logsum, nrow=hhpt, ncol=type-1)*CARD) %*% beta1   #カード所有有無のロジット
   
   #対数尤度を定義する
@@ -222,5 +222,11 @@ loglike <- function(x, y1, y2, XM1, XM2, CARD, type, member, c_num, hhpt){
   LL <- LL.l + LL.b
   return(LL)
 }
+
+##対数尤度を最大化する
+x <- runif(k1, -0.5, 0.5)
+res <- optim(x, loglike, y1=y1, y2=y2, XM1=XM1, XM2=XM2, CARD=CARD, type=type, member=member, c_num=c_num, hhpt=hhpt, 
+             method="BFGS", hessian=FALSE, control=list(fnscale=-1, trace=TRUE))
+res$par
 
 
