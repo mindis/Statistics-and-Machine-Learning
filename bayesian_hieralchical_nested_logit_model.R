@@ -59,7 +59,7 @@ covmatrix <- function(col, corM, lower, upper){
 
 
 ####ƒf[ƒ^‚Ì”­¶####
-hh <- 2000
+hh <- 1500
 member <- 9   #ƒƒ“ƒo[”
 c_num <- 8   #ˆß‘•ƒpƒ^[ƒ“
 hhpt <- hh*member*c_num   #‘S•Ï””
@@ -93,12 +93,11 @@ XM1 <- as.matrix(X)
 XM2 <- XM1[, -ncol(XM1)]
 
 #ƒpƒ‰ƒ[ƒ^”
-k1 <- 2 + ncol(XM1) + ncol(XM2)
+k1 <- 2 + ncol(XM1) + ncol(XM2) - (member-1)
 k2 <- 2
 k11 <- 1:(ncol(XM1)+1)
-k12 <- (ncol(XM1)+2):k1
-
-
+k12 <- c(ncol(XM1)+2, 2:member, (ncol(XM1)+3):k1)
+k13 <- k12[c(1, (member+1):(length(k12)-2))]
 
 ##ID‚ÌÝ’è
 id <- rep(1:hh, rep(member*c_num, hh))
@@ -139,13 +138,11 @@ Cov <- corrM(col=k1, lower=-0.55, upper=0.9, eigen_lower=0.025, eigen_upper=0.35
 #ŒÂ‘ÌŠÔ‰ñ‹Aƒpƒ‰ƒ[ƒ^‚ÌÝ’è
 theta1 <- c(runif(1, -1.1, -0.55), runif(member-1, -0.2, 0.85), runif(c_num-1, -0.5, 0.7), 
             runif(1, -0.7, -0.5), runif(1, -0.5, -0.3), runif(1, 0.05, 0.15), runif(1, -1.3, -1.0), 
-            runif(member-1, -0.2, 0.85), runif(c_num-1, -0.5, 0.7), runif(1, -0.8, -0.5), 
-            runif(1, -0.55, -0.3))
+            runif(c_num-1, -0.5, 0.7), runif(1, -0.8, -0.5), runif(1, -0.55, -0.3))
 
 theta2 <- matrix(c(runif(k3, -0.4, 0.5), runif((member-1)*k3, -0.4, 0.4), runif((c_num-1)*k3, -0.5, 0.5), 
                    runif(k3, -0.4, 0.4), runif(k3, -0.4, 0.4), runif(k3, -0.1, 0.15), runif(k3, -0.4, 0.4), 
-                   runif((member-1)*k3, -0.4, 0.5), runif((c_num-1)*k3, -0.45, 0.6), runif(k3, -0.4, 0.3), 
-                   runif(k3, -0.3, 0.3)), nrow=k3, ncol=k1, byrow=T)
+                   runif((c_num-1)*k3, -0.45, 0.6), runif(k3, -0.4, 0.3), runif(k3, -0.3, 0.3)), nrow=k3, ncol=k1, byrow=T)
 
 #ƒpƒ‰ƒ[ƒ^‚ÌŒ‹‡
 theta <- rbind(theta1, theta2)
@@ -163,7 +160,7 @@ rho <- exp(rho.par)/(1+exp(rho.par))
 #‰ñ‹AŒW”‚ÌÝ’è
 beta1 <- beta[, k11]
 beta2 <- beta[, k12]
-
+beta3 <- beta[, k13]
 
 ##‰ž“š•Ï”‚Ì”­¶
 #ƒƒWƒbƒg‚ÆƒƒOƒTƒ€•Ï”‚ð’è‹`
@@ -175,7 +172,7 @@ logsum.list <- list()
 for(i in 1:hh){
   print(i)
   #ƒƒOƒTƒ€•Ï”‚Ì’è‹`
-  logsum.list[[i]] <- log(1 + exp(cbind(1, XM2[ID$id==i, 1:(ncol(XM2)-2)]) %*% beta2[i, 1:(ncol(XM2)-1)]))
+  logsum.list[[i]] <- log(1 + exp(cbind(1, XM2[ID$id==i, member:(ncol(XM2)-2)]) %*% beta3[i, ]))
   logsum.ind <- matrix(logsum.list[[i]], nrow=member*c_num, ncol=k2)*CARD[ID$id==i, ]
   
   #ƒƒWƒbƒg‚Ì’è‹`
@@ -202,15 +199,16 @@ y2[y1==0] <- NA   #ƒJ[ƒh‚ðŽ‚Á‚Ä‚¢‚éê‡‚Ì‚ÝŠoÁ—L–³‚ð’è‹`‚·‚é
 ####ƒ}ƒ‹ƒRƒt˜A½ƒ‚ƒ“ƒeƒJƒ‹ƒ–@‚ÅŠK‘wƒxƒCƒYƒlƒXƒeƒbƒhƒƒWƒbƒgƒ‚ƒfƒ‹‚ð„’è####
 ####ƒ}ƒ‹ƒRƒt˜A½ƒ‚ƒ“ƒeƒJƒ‹ƒ–@‚Ì„’è‚Ì‚½‚ß‚Ì€”õ####
 ##ƒlƒXƒeƒbƒhƒƒWƒbƒgƒ‚ƒfƒ‹‚Ì‘Î”–Þ“xŠÖ”
-loglike <- function(x, y1, y2, XM1, XM2, CARD, type, member, c_num, hhpt, k11, k12, k2){
+loglike <- function(x, y1, y2, XM1, XM2, CARD, type, member, c_num, hhpt, k11, k12, k13, k2){
   
   #ƒpƒ‰ƒ[ƒ^‚ÌÝ’è
   beta1 <- x[k11]
   beta2 <- x[k12]
+  beta3 <- x[k13]
   rho <- exp(x[(length(x)-1):length(x)])/(1+exp(x[(length(x)-1):length(x)]))   #ƒpƒ‰ƒ[ƒ^‚Í0`1
   
   #ƒƒOƒTƒ€•Ï”‚Ì’è‹`
-  logsum <- log(1 + exp(cbind(1, XM2[, 1:(ncol(XM2)-2)]) %*% beta2[1:(ncol(XM2)-1)]))  #ƒƒOƒTƒ€•Ï”
+  logsum <- log(1 + exp(cbind(1, XM2[, member:(ncol(XM2)-2)]) %*% beta3))  #ƒƒOƒTƒ€•Ï”
   logsum.card <- matrix(logsum, nrow=hhpt, ncol=k2)*CARD
   
   #ƒƒWƒbƒg‚Ì’è‹`
@@ -238,7 +236,7 @@ loglike <- function(x, y1, y2, XM1, XM2, CARD, type, member, c_num, hhpt, k11, k
 #„’è‚³‚ê‚½ƒpƒ‰ƒ[ƒ^‚ð‰Šú’l‚ÌŽQl‚É‚·‚é@
 x <- c(runif(k1, -0.5, 0.5), 0.8, 0.5)
 res <- optim(x, loglike, y1=y1, y2=y2, XM1=XM1, XM2=XM2, CARD=CARD, type=type, member=member, c_num=c_num, hhpt=hhpt,
-             k11=k11, k12=k12, k2=k2, method="BFGS", hessian=TRUE, control=list(fnscale=-1, trace=TRUE))
+             k11=k11, k12=k12, k13=k13, k2=k2, method="BFGS", hessian=TRUE, control=list(fnscale=-1, trace=TRUE))
 
 #„’èŒ‹‰Ê
 x1 <- res$par
@@ -268,8 +266,7 @@ index.ones <- subset(1:hhpt, y1==1)
 
 index.par1 <- k11
 index.par2 <- k12
-index.logsum <- k12[1:(length(k12)-2)]
-
+index.logsum <- list(x=c(1, (member+1):(ncol(XM12)-2)), par=k12[par=c(1, (member+1):(length(k12)-2))])
 
 #‘Î”–Þ“x‚Ì•Û‘¶—p”z—ñ
 logpnew1 <- matrix(0, nrow=hh, ncol=1)
@@ -281,8 +278,8 @@ Deltabar <- matrix(0, nrow=ncol(cbind(1, ZM)), ncol=k1)   #‰ñ‹Aƒpƒ‰ƒ[ƒ^‚ÌŠK‘wƒ
 Adelta <- 0.01 * diag(rep(1, ncol(ZMi)))   #‰ñ‹Aƒpƒ‰ƒ[ƒ^‚ÌŠK‘wƒ‚ƒfƒ‹‚Ì‰ñ‹AŒW”‚Ì•ªŽU‚ÌŽ–‘O•ª•z
 nu <- (ncol(ZM)+1)+k1   #‹tƒEƒBƒVƒƒ[ƒg•ª•z‚ÌŽ©—R“x
 V <- nu * diag(k1)   #‹tƒEƒBƒVƒƒ[ƒg•ª•z‚Ìƒpƒ‰ƒ[ƒ^
-mu <- rep(-3, 2)
-sigma <- 0.01 * diag(2)
+mu <- rep(-3, k2)
+sigma <- 0.01 * diag(k2)
 
 ##ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚Ì•Û‘¶—p”z—ñ
 #ƒpƒ‰ƒ[ƒ^‚Ì•Û‘¶—p”z—ñ
@@ -298,7 +295,7 @@ llike <- array(0, dim=c(R/keep))
 ##‰Šú’l‚ÌÝ’è
 #‰ñ‹Aƒyƒ‰ƒ[ƒ^‚Ì‰Šú’l
 tau1 <- mvrnorm(hh, rep(0, k1), diag(0.3, k1))
-oldbetas <- matrix(x1[1:(k1)], nrow=hh, ncol=k1, byrow=T) + tau1
+oldbetas <- matrix(x1[1:k1], nrow=hh, ncol=k1, byrow=T) + tau1
 
 oldBetas <- matrix(0, nrow=hhpt, ncol=k1) 
 for(i in 1:hh){
@@ -323,7 +320,7 @@ LL_nest <- function(Betas, rho, ID, y1, y2, XM1, XM2, CARD, hhpt, index.par1, in
   rho1 <- exp(rho)/(1+exp(rho))   #ƒpƒ‰ƒ[ƒ^‚Í0`1
   
   #ƒƒOƒTƒ€•Ï”‚Ì’è‹`
-  logsum <- log(1 + exp(rowSums(XM2[, 1:(ncol(XM2)-2)] * Betas[, index.logsum])))  #ƒƒOƒTƒ€•Ï”
+  logsum <- log(1 + exp(rowSums(XM2[, index.logsum$x] * Betas[, index.logsum$par])))  #ƒƒOƒTƒ€•Ï”
   logsum.mx <- matrix(logsum, nrow=hhpt, ncol=k2) * CARD
   
   #ƒƒWƒbƒg‚Ì’è‹`
@@ -432,11 +429,11 @@ for(rp in 1:R){
   
   ##‘Î”–Þ“x‚Æ‘Î”Ž–‘O•ª•z‚ðŒvŽZ
   lognew2 <- LL_nest(Betas=oldBetas, rho=rhon, ID=ID, y1=y1, y2=y2, XM1=XM11, XM2=XM12, CARD=CARD, hhpt=hhpt, 
-                    index.par1=index.par1, index.par2=index.par2, index.logsum=index.logsum, index.ones=index.ones, 
-                    k2=k2, z=1)
+                     index.par1=index.par1, index.par2=index.par2, index.logsum=index.logsum, index.ones=index.ones, 
+                     k2=k2, z=1)
   logold2 <- LL_nest(Betas=oldBetas, rho=rhod, ID=ID, y1=y1, y2=y2, XM1=XM11, XM2=XM12, CARD=CARD, hhpt=hhpt, 
-                    index.par1=index.par1, index.par2=index.par2, index.logsum=index.logsum, index.ones=index.ones, 
-                    k2=k2, z=1)
+                     index.par1=index.par1, index.par2=index.par2, index.logsum=index.logsum, index.ones=index.ones, 
+                     k2=k2, z=1)
   logpnew2 <- lndMvn(rhon, mu, sigma)
   logpold2 <- lndMvn(rhod, mu, sigma)
   
@@ -451,7 +448,7 @@ for(rp in 1:R){
   if(rand2 < alpha2){
     oldrho.r <- rhon
     
-  #‚»‚¤‚Å‚È‚¢‚È‚çrho‚ðXV‚µ‚È‚¢
+    #‚»‚¤‚Å‚È‚¢‚È‚çrho‚ðXV‚µ‚È‚¢
   } else {
     oldrho.r <- rhod
   }
@@ -467,7 +464,7 @@ for(rp in 1:R){
   oldVbeta <- out$Sigma
   oldVbeta_inv <- solve(oldVbeta)
   
-
+  
   ##ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚ð•Û‘¶
   if(rp%%keep==0){
     cat("ƒÄ*'ƒŽ')ƒÄ <‚¤‚Á‚¤[ ‚¿‚å‚Á‚Æ‚Ü‚Á‚Ä‚Ë", paste(rp/R*100, "“"), fill=TRUE)
@@ -484,3 +481,4 @@ for(rp in 1:R){
     print(rp)
   }
 }
+
