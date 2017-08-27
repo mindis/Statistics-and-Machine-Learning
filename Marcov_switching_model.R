@@ -68,26 +68,25 @@ y <- Y %*% 1:k2
 
 ####EMアルゴリズム####
 ##前向きアルゴリズムでalphaを推定
-alpha <- matrix(0, nrow=nrow(Y), ncol=k1)
-alpha1 <- matrix(0, nrow=nrow(Y), ncol=k1)
-alpha_s <- matrix(0, nrow=nrow(Y), ncol=k1)
-alpha_mu <- matrix(0, nrow=nrow(Y), 1)
-B_vec <- matrix(0, nrow=nrow(Y), ncol=k1)
+alpha <- matrix(0, nrow=n, ncol=k1)
+alpha1 <- matrix(0, nrow=n, ncol=k1)
+alpha_s <- matrix(0, nrow=n, ncol=k1)
+alpha_mu <- rep(0, n)
+B_vec <- matrix(0, nrow=n, ncol=k1)
 
 B_vec[1, ] <- B[, y[1]]
 alpha[1, ] <- rho * B_vec[1, ]
 alpha1[1, ] <- alpha[1, ]
-alpha_mu[1, ] <- 1 / sum(alpha[1, ])
-alpha_s[1, ] <- alpha_mu[1, ] * alpha[1, ] 
+alpha_mu[1] <- 1 / sum(alpha[1, ])
+alpha_s[1, ] <- alpha_mu[1] * alpha[1, ] 
 
 for(i in 2:nrow(Y)){
  B_vec[i, ] <- B[, y[i]]
- alpha[i, ] <- alpha_s[i-1, ] %*% A * B_vec[i, ]
+ alpha[i, ] <- (matrix(alpha_s[i-1, ], nrow=1, ncol=k1) %*% A) * B_vec[i, ]
  alpha1[i, ] <- alpha1[i-1, ] %*% A * B_vec[i, ]
- alpha_mu[i, ] <- 1 / sum(alpha[i, ])
- alpha_s[i, ] <- alpha[i, ] * alpha_mu[i, ]
+ alpha_mu[i] <- 1 / sum(alpha[i, ])
+ alpha_s[i, ] <- alpha[i, ] * alpha_mu[i]
 }
-
 
 ##後ろ向きアルゴリズムでbetaを推定
 beta <- matrix(0, nrow=n, ncol=k1)
@@ -96,7 +95,7 @@ beta_s <- matrix(0, nrow=n, ncol=k1)
 
 beta[n, ] <- 1
 beta1[n, ] <- 1
-beta_s[n, ] <- alpha_mu[n, ]
+beta_s[n, ] <- alpha_mu[n]
 
 for(i in n:2){
   beta[i-1, ] <- A %*% (B_vec[i, ] * beta_s[i, ])
@@ -107,13 +106,14 @@ for(i in n:2){
 ##パラメータを更新
 A_vec <- matrix(A[1, ], nrow=n-1, ncol=k1, byrow=T)
 
-a1 <- alpha1[1:(n-1), ] * A_vec * B_vec[2:n, ] * beta1[2:n, ]
-a2 <- alpha1[1:(n-1), ] * beta1[1:(n-1), ] 
+a11 <- alpha1[1:(n-1), ] * A_vec * B_vec[2:n, ] * beta1[2:n, ]
+a12 <- alpha1[1:(n-1), ] * beta1[1:(n-1), ] 
 
-a1 <- alpha_s[1:(n-1), ] * A_vec * B_vec[2:n, ] * beta_s[2:n, ]
-a2 <- alpha_s[1:(n-1), ] * beta_s[1:(n-1), ] / matrix(alpha_mu[1:(n-1), ], nrow=n-1, ncol=k1)
+a21 <- alpha_s[1:(n-1), ] * A_vec * B_vec[2:n, ] * beta_s[2:n, ]
+a22 <- alpha_s[1:(n-1), ] * beta_s[1:(n-1), ] / alpha_mu[1:(n-1), ]
 
-sum(colSums(a1)/colSums(a2))
+sum(colSums(a11)/colSums(a12))
+sum(colSums(a21)/colSums(a22))
 
 
 P2 <- function(x, A, B, rho) {
