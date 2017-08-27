@@ -8,7 +8,7 @@ library(ggplot2)
 library(lattice)
 
 ####データの発生####
-n <- 500   #サンプル数
+n <- 300   #サンプル数
 k1 <- 4   #切り替え数
 k2 <- 6   #観測確率のパラメータ数
 
@@ -47,4 +47,100 @@ for(i in 2:n){
 
 
 ####EMアルゴリズムでマルコフ切り替えモデルを推定####
+##初期値の設定
+#初期確率の設定
+rho <- rep(0.25, k1)   
+
+#マルコフ推移行列の初期値の設定
+A <- matrix(0, nrow=k1, ncol=k1)
+for(i in 1:k1){
+  p_rand <- runif(k1, 0.1, 1)
+  A[i, ] <- p_rand / sum(p_rand)
+}
+
+#観測モデルのパラメータ
+B <- matrix(0, nrow=k1, ncol=k2)
+for(i in 1:k1){
+  p_rand <- runif(k2, 0.1, 1)
+  B[i, ] <- p_rand / sum(p_rand)
+}
+y <- Y %*% 1:k2
+
+####EMアルゴリズム####
+##前向きアルゴリズムでalphaを推定
+alpha <- matrix(0, nrow=nrow(Y), ncol=k1)
+alpha1 <- matrix(0, nrow=nrow(Y), ncol=k1)
+alpha_s <- matrix(0, nrow=nrow(Y), ncol=k1)
+alpha_mu <- matrix(0, nrow=nrow(Y), 1)
+B_vec <- matrix(0, nrow=nrow(Y), ncol=k1)
+
+B_vec[1, ] <- B[, y[1]]
+alpha[1, ] <- rho * B_vec[1, ]
+alpha1[1, ] <- alpha[1, ]
+alpha_mu[1, ] <- 1 / sum(alpha[1, ])
+alpha_s[1, ] <- alpha_mu[1, ] * alpha[1, ] 
+
+for(i in 2:nrow(Y)){
+ B_vec[i, ] <- B[, y[i]]
+ alpha[i, ] <- alpha_s[i-1, ] %*% A * B_vec[i, ]
+ alpha1[i, ] <- alpha1[i-1, ] %*% A * B_vec[i, ]
+ alpha_mu[i, ] <- 1 / sum(alpha[i, ])
+ alpha_s[i, ] <- alpha[i, ] * alpha_mu[i, ]
+}
+
+
+##後ろ向きアルゴリズムでbetaを推定
+beta <- matrix(0, nrow=n, ncol=k1)
+beta1 <- matrix(0, nrow=n, ncol=k1)
+beta_s <- matrix(0, nrow=n, ncol=k1)
+
+beta[n, ] <- 1
+beta1[n, ] <- 1
+beta_s[n, ] <- alpha_mu[n, ]
+
+for(i in n:2){
+  beta[i-1, ] <- A %*% (B_vec[i, ] * beta_s[i, ])
+  beta1[i-1, ] <- A %*% (B_vec[i, ] * beta1[i, ])
+  beta_s[i-1, ] <- beta[i-1, ] * alpha_mu[i-1, ] 
+}
+
+##パラメータを更新
+A_vec <- matrix(A[1, ], nrow=n-1, ncol=k1, byrow=T)
+
+a1 <- alpha1[1:(n-1), ] * A_vec * B_vec[2:n, ] * beta1[2:n, ]
+a2 <- alpha1[1:(n-1), ] * beta1[1:(n-1), ] 
+
+a1 <- alpha_s[1:(n-1), ] * A_vec * B_vec[2:n, ] * beta_s[2:n, ]
+a2 <- alpha_s[1:(n-1), ] * beta_s[1:(n-1), ] / matrix(alpha_mu[1:(n-1), ], nrow=n-1, ncol=k1)
+
+sum(colSums(a1)/colSums(a2))
+
+
+P2 <- function(x, A, B, rho) {
+  # forward algorithm
+  N <- length(x)  # size of data
+  alpha <- rho * B[, x[1]]  # alpha1(i) = rho_i * b(i, x_1)
+  for (n in 2:N)
+    alpha <- (matrix(alpha, nrow=1, ncol=length(alpha)) %*% A) * B[, x[n]]
+  return(alpha)
+}
+
+P3 <- function(x, A, B, rho) {
+  # backward algorithm
+  N <- length(x)  # size of data
+  beta <- 1       # beta_n
+  for (n in N:2) {
+    # compute upto beta_1
+    beta <- A %*% matrix(B[, x[n]] * beta, ncol=1, nrow=nrow(B))
+  }
+  AA <- rho * beta * B[, x[1]] 
+  return(AA)
+}
+beta_s[1, ]
+rho * beta1[2, ] *B[, Y[1, ]==1]/sum(rho * beta1[2, ] *B[, Y[1, ]==1])
+rho * beta1[2, ] * B_vec[1, ] 
+P3(Y %*% 1:k2, A, B, rho)
+beta1[1, ]
+
+P2(Y %*% 1:k2, A, B, rho)
 
