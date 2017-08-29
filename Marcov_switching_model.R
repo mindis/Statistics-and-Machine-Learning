@@ -8,7 +8,7 @@ library(ggplot2)
 library(lattice)
 
 ####データの発生####
-n <- 1000   #サンプル数
+n <- 3000   #サンプル数
 k1 <- 3   #切り替え数
 k2 <- 2   #観測確率のパラメータ数
 
@@ -89,13 +89,10 @@ for(i in 1:n){
   L <- c(L, dmultinom(Y[i, ], 1, P[which.max(Z[i, ]), ]))
 }
 LT <- sum(log(L))
-
+LLl <- c()
 
 ####EMアルゴリズム(バウムウェルチアルゴリズム)で隠れマルコフモデルを推定####
 while(abs(dl) >= tol){
-  A <- Pr
-  B <- P
-  rho <- Pf
   
   ##前向きアルゴリズムでalphaを推定
   B_vec[1, ] <- B[, y[1]]
@@ -142,11 +139,11 @@ while(abs(dl) >= tol){
   LL <- sum(log(1/alpha_mu))
   dl <- LL - LL1
   LL1 <- LL
+  LLl <- c(LLl, LL)
   print(LL)
 }
 
+plot(1:length(LLl), LLl, type="l", main="対数尤度の変化", ylab="対数尤度", xlab="繰り返し数")
 round(cbind(B, P), 3)
 round(cbind(A, Pr), 3)
 LT
-
-
