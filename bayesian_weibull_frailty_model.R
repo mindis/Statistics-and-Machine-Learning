@@ -11,7 +11,7 @@ library(ggplot2)
 library(lattice)
 
 ##データの設定
-hh <- 500
+hh <- 1000
 pt <- rpois(hh, 15.0)
 pt <- ifelse(pt==0, 1, pt)
 hhpt <- sum(pt)
@@ -65,13 +65,14 @@ for(i in 1:10000){
   print(i)
   alpha <- runif(1, 0.8, 1.2)   #形状パラメータ
   b1 <- c(runif(1, 0, 1.2), runif(k1/2, 0, 0.7), runif(k1/2, -0.4, 0.9), runif(k2+k3, -0.5, 1.0))   #固定効果のパラメータ
-  u <- rnorm(hh, 0, 0.5)   #フレイルティーのパラメータ
+  v.par <- runif(1, 0.4, 0.75)
+  u <- rnorm(hh, 0, v.par)   #フレイルティーのパラメータ
   
   #ワイブル分布からイベント時間を発生
   lambda <- exp(X %*% b1 + Z %*% u)   #線形結合
   y <- rweibull(nrow(lambda), alpha, lambda)
   
-  if(min(y) > 0.01) break
+  if(min(y) > 0.001) break
 }
 
 ##打ち切りの設定
@@ -123,7 +124,7 @@ ID <- do.call(rbind, ID.list)
 no <- 1:nrow(ID)
 X <- do.call(rbind, X.list)
 Z <- do.call(rbind, Z.list)
-z <- unlist(z.list)
+z <- 1-unlist(z.list)
 
 #データの確認と可視化
 round(data.frame(no, ID[, 2:3], y, z, x=X, z=Z[, 1:10]), 2)
@@ -135,8 +136,10 @@ table(z)   #打ち切り数
 ##ワイブル比例ハザードモデルの対数尤度
 loglike <- function(alpha, beta, v, y, X, Z, z){
   lambda <- exp(X %*% beta + Z %*% v)   #線形結合
-  LL <- sum(z*(log(lambda)+log(alpha)+(alpha-1)*log(y)) - lambda*y^alpha)   #対数尤度を計算
-  return(LL)
+  LLi <- z*(log(lambda)+log(alpha)+(alpha-1)*log(y)) - lambda*y^alpha   #対数尤度を計算
+  LL <- sum(LLi)
+  LL.val <- list(LL=LL, LLi=LLi)
+  return(LL.val)
 }
 
 ##アルゴリズムの設定
@@ -165,11 +168,13 @@ beta.random <- rep(0, nrow=hh)   #変量効果の事前分布の平均を0に固定
 BETA <- matrix(0, nrow=R/keep, ncol=ncol(X))
 ALPHA <- matrix(0, nrow=R/keep, ncol=1)
 RANDOM <- matrix(0, nrow=R/keep, ncol=hh)
+SIGMA <- matrix(0, nrow=R/keep, ncol=1)
 
 ##初期値の設定
 oldalpha <- runif(1, 0.6, 1.5)   #形状パラメータ
 oldbetas <- c(runif(1, 0, 1.4), runif(k1/2, 0, 1.0), runif(k1/2, -1.0, 1.0), runif(k2+k3, -1.0, 1.0))   #固定効果のパラメータ 
 betas.random <- rnorm(hh, 0, 0.75)
+cov.random <- 1.0
 
 ##ランダムウォークの分散
 #ワイブル比例ハザードモデルの対数尤度
@@ -200,32 +205,115 @@ rw_beta <- 0.5*diag(-diag(solve(res$hessian))[2:length(res$par)])
 
 ####MCMCでワイブル共有フレイルティモデルを推定####
 ##マルコフ連鎖モンテカルロ法でパラメータをサンプリング
-
-##MHサンプリングで固定効果をサンプリング
-betad <- oldbetas
-betan <- betad + mvrnorm(1, rep(0, ncol(X)), rw_beta)
-
-#対数尤度と対数事前分布を計算
-lognew1 <- loglike(oldalpha, betan, betas.random, y, X, Z, z)
-logold1 <- loglike(oldalpha, betad, betas.random, y, X, Z, z)
-logpnew1 <- lndMvn(betan, betas, sigma)
-logpold1 <- lndMvn(betad, betas, sigma)
-
-#MHサンプリング
-alpha1 <- min(1, exp(lognew1 + logpnew1 - logold1 - logpold1))
-if(alpha == "NAN") alpha1 <- -1
-
-#一様乱数を発生
-u <- runif(1)
-
-#u < alphaなら新しい固定効果betaを採択
-if(u < alpha1){
-  oldbetas <- betan
-  logl <- lognew1
+for(rp in 1:R){
   
-  #そうでないなら固定効果betaを更新しない
-} else {
-  logl <- logold1
+  ##MHサンプリングで固定効果をサンプリング
+  betad <- oldbetas
+  betan <- betad + 0.5 * mvrnorm(1, rep(0, ncol(X)), rw_beta)
+  
+  #対数尤度と対数事前分布を計算
+  lognew1 <- loglike(oldalpha, betan, betas.random, y, X, Z, z)$LL
+  logold1 <- loglike(oldalpha, betad, betas.random, y, X, Z, z)$LL
+  logpnew1 <- lndMvn(betan, betas, sigma)
+  logpold1 <- lndMvn(betad, betas, sigma)
+  
+  #MHサンプリング
+  alpha1 <- min(1, exp(lognew1 + logpnew1 - logold1 - logpold1))
+  if(alpha == "NAN") alpha1 <- -1
+  
+  #一様乱数を発生
+  u <- runif(1)
+  
+  #u < alphaなら新しい固定効果betaを採択
+  if(u < alpha1){
+    oldbetas <- betan
+    logl <- lognew1
+    
+    #そうでないなら固定効果betaを更新しない
+  } else {
+    logl <- logold1
+  }
+  
+  rate1 <- as.numeric((oldbetas!=betad)[1])
+  
+  
+  ##MHサンプリングで形状パラメータをサンプリング
+  alphad <- abs(oldalpha)
+  alphan <- abs(alphad + rnorm(1, 0, 0.1))
+  
+  #対数尤度と対数事前分布を計算
+  lognew2 <- loglike(alphan, oldbetas, betas.random, y, X, Z, z)$LL
+  logold2 <- loglike(alphad, oldbetas, betas.random, y, X, Z, z)$LL
+  logpnew2 <- -1/2 * alpha_sigma^(-1) * (log(alphan) - alpha_mu)^2
+  logpold2 <- -1/2 * alpha_sigma^(-1) * (log(alphad) - alpha_mu)^2
+  
+  #MHサンプリング
+  alpha2 <- min(1, exp(lognew2 + logpnew2 - logold2 - logpold2))
+  if(alpha2 == "NAN") alpha2 <- -1
+  
+  #一様乱数を発生
+  u <- runif(1)
+  
+  #u < alphaなら新しい固定効果betaを採択
+  if(u < alpha2){
+    oldalpha <- alphan
+    
+    #そうでないなら固定効果betaを更新しない
+  } else {
+    oldalpha <- alphad
+  }
+  
+  ##MHサンプリングでフレイルティパラメータをサンプリング
+  betad.random <- betas.random
+  betan.random <- betad.random + rnorm(hh, 0, 0.3)
+  
+  #事前分布の誤差を計算
+  er.new <- betan.random - beta.random
+  er.old <- betad.random - beta.random
+  inv.cov <- cov.random^-1
+  
+  #対数尤度と対数事前分布を計算
+  lognew3 <- loglike(oldalpha, oldbetas, betan.random, y, X, Z, z)$LLi
+  logold3 <- loglike(oldalpha, oldbetas, betad.random, y, X, Z, z)$LLi
+  logpnew3 <- -0.5 * inv.cov * er.new^2
+  logpold3 <- -0.5 * inv.cov * er.old^2
+  
+  #ID別に対数尤度の和を取る
+  lognew.ind <- as.matrix(data.frame(logl=lognew3, id=ID$id) %>%
+                            dplyr::group_by(id) %>%
+                            dplyr::summarize(sum=sum(logl)))[, 2]
+  
+  logold.ind <- as.matrix(data.frame(logl=logold3, id=ID$id) %>%
+                            dplyr::group_by(id) %>%
+                            dplyr::summarize(sum=sum(logl)))[, 2]
+  
+  #MHサンプリング
+  rand <- runif(hh)
+  LLind.diff <- exp(lognew.ind + logpnew3 - logold.ind - logpold3)   #棄却率を計算
+  alpha3 <- ifelse(LLind.diff > 1, 1, LLind.diff)
+  betas.random <- ifelse(alpha3 > rand, betan.random, betad.random)   #alphaがrandを上回っていたら採択
+  rate3 <- sum(betas.random==betad.random)/hh
+  
+  ##逆ガンマ分布から分散成分をサンプリング
+  shape <- hh+tau1
+  scale <- sum((betas.random - beta.random)^2)+tau2
+  cov.random <- rinvgamma(1, shape, scale)
+  
+  
+  ##パラメータの格納とサンプリング結果の表示
+  if(rp%%keep==0){
+    mkeep <- rp/keep
+    BETA[mkeep, ] <- oldbetas
+    ALPHA[mkeep, ] <- oldalpha
+    RANDOM[mkeep, ] <- betas.random
+    SIGMA[mkeep, ] <- cov.random
+    
+    print(rp)
+    print(round(c(logl, res$value), 2))
+    print(round(rbind(c(oldalpha, oldbetas), c(alpha, b1)), 2))
+    print(round(c(sqrt(cov.random), v.par), 3))
+    print(round(c(rate1, rate3), 3))
+  }
 }
 
-##MHサンプリングで形状パラメータをサンプリング
+matplot(RANDOM[, 120:130], type="l")
