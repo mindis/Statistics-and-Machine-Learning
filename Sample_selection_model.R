@@ -16,19 +16,15 @@ corrM <- function(col, lower, upper, eigen_lower, eigen_upper){
   rho[upper.tri(rho)] <- 0
   Sigma <- rho + t(rho)
   diag(Sigma) <- 1
-  (X.Sigma <- eigen(Sigma))
-  (Lambda <- diag(X.Sigma$values))
-  P <- X.Sigma$vector
-  P %*% Lambda %*% t(P)
+  X.Sigma <- eigen(Sigma)
+  Lambda <- diag(X.Sigma$values)
   
   #新しい相関行列の定義と対角成分を1にする
-  (Lambda.modified <- ifelse(Lambda < 0, runif(1, eigen_lower, eigen_upper), Lambda))
+  Lambda.modified <- ifelse(Lambda < 0, runif(1, eigen_lower, eigen_upper), Lambda)
   x.modified <- P %*% Lambda.modified %*% t(P)
   normalization.factor <- matrix(diag(x.modified),nrow = nrow(x.modified),ncol=1)^0.5
   Sigma <- x.modified <- x.modified / (normalization.factor %*% t(normalization.factor))
-  eigen(x.modified)
   diag(Sigma) <- 1
-  round(Sigma, digits=3)
   return(Sigma)
 }
 
@@ -165,6 +161,6 @@ for(i in 1:1000){
   if(class(res) == "try-error") {next} else {break}   #エラー処理
 }
 
-round(rbind(res$par, c(alpha0, beta0, sigma0, rho)), 2)
+round(rbind(res$par, c(alpha0, beta0, sigma0, rho0)), 2)
 
 
