@@ -63,7 +63,7 @@ covmatrix <- function(col, corM, lower, upper){
 ####データの発生####
 #set.seed(8437)
 ##データの設定
-hh <- 1000   #プレイヤー数
+hh <- 2500   #プレイヤー数
 choise <- 5   #選択可能数
 st <- 5   #基準ブランド
 k <- 5   #回帰係数の数
@@ -117,9 +117,7 @@ CAMP.r <- CAMP[, -5] - CAMP[, 5]
 
 ##回帰モデルを推定するために説明変数をベクトル形式に変更設定
 #切片の設定
-p <- c(1, rep(0, choise-1))
-bp <- matrix(p, nrow=hh*choise, ncol=choise-1, byrow=T)
-BP <- subset(bp, rowSums(bp) > 0)
+BP <- matrix(diag(choise-1), nrow=hh*(choise-1), ncol=choise-1, byrow=T)
 
 
 #説明変数の設定
@@ -232,15 +230,15 @@ for(rp in 1:R){
     MVR <- cdMVN(mu=old.utilm, Cov=oldcov, dependent=j, U=old.util)   #条件付き分布を計算
     UM[, j] <- MVR$CDmu   #条件付き期待値を取り出す
     S[j] <- sqrt(MVR$CDvar)    #条件付き分散を取り出す
-  
+    
     #潜在変数を発生させる
     #切断領域の設定
     max.u <- apply(cbind(old.util[, -j], 0), 1, max)
     max.u <- ifelse(Y==choise, 0, max.u)
-   
+    
     #切断正規分布より潜在変数を発生
     old.util[, j] <- ifelse(Y==j, rtnorm(mu=UM[, j], sigma=S[j], a=max.u, b=100), 
-                                rtnorm(mu=UM[, j], sigma=S[j], a=-100, b=max.u))
+                            rtnorm(mu=UM[, j], sigma=S[j], a=-100, b=max.u))
     old.util[, j] <- ifelse(is.infinite(old.util[, j]), ifelse(Y==j, max.u + runif(1), max.u - runif(1)), old.util[, j])
   }
   util.v <- as.numeric(t(old.util))
@@ -339,11 +337,5 @@ round(as.numeric(Cov), 3)   #真の値
 round(apply(SIGMA[burnin:nrow(SIGMA), ], 2, function(x) quantile(x, 0.05)), 2)   #5％分位点
 round(apply(SIGMA[burnin:nrow(SIGMA), ], 2, function(x) quantile(x, 0.95)), 2)   #95％分位点
 round(apply(SIGMA[burnin:nrow(SIGMA), ], 2, sd), 2)   #事後標準偏差
-
-
-
-
-
-
 
 
