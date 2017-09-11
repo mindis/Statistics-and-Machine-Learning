@@ -52,7 +52,7 @@ covmatrix <- function(col, corM, lower, upper){
 
 
 ####説明変数の発生####
-N <- 5000   #サンプル数
+N <- 10000   #サンプル数
 
 ##利用歴があるかどうかを決定する説明変数
 cont1 <- 3; bin1 <- 4; multi1 <- 4
@@ -93,27 +93,82 @@ X <- cbind(1, X.cont, X.bin)
 
 ####二変量正規分布から応答変数を発生####
 #分散共分散行列を設定
-sigma0 <- 1.5
 rho0 <- 0.6
-Cov0 <- matrix(c(1, rho0*sqrt(sigma0), rho0*sqrt(sigma0), sigma0), nrow=2, ncol=2)
-
+Cov0 <- matrix(c(1, rho0, rho0, 1), nrow=2, ncol=2)
 
 for(i in 1:1000){
   print(i)
+  
   #パラメータを設定
-  alpha0 <- c(runif(1, -0.8, -0.5), runif(cont1, 0, 0.8), runif(bin1+multi1-1, -0.5, 1.0))
-  beta0 <- c(runif(1, 0.3, 0.5), runif(cont2, 0, 0.5), runif(bin2, -0.3, 0.5))
+  alpha0 <- c(runif(1, -0.8, -0.5), runif(cont1, 0, 0.8), runif(bin1+multi1-1, -0.7, 1.0))
+  beta0 <- c(runif(1, -0.6, 0.5), runif(cont2, 0, 0.7), runif(bin2, -0.8, 0.8))
   
   #応答変数の平均構造
   y1 <- Z %*% alpha0
   y2 <- X %*% beta0
   
-  #多変量正規分布から応答変数を発生
+  ##多変量正規分布から応答変数を発生
   Y <- t(apply(cbind(y1, y2), 1, function(x) mvrnorm(1, x, Cov0)))
-  y2 <- exp(Y[, 2])
+  y2 <- ifelse(Y[, 2] > 0, 1, 0)
   y1 <- ifelse(Y[, 1] > 0, 1, 0)
   
-  if(max(y2) < 150) break
+  if(sum(y1) > N/3 & sum(y1) < N/1.5) break
 }
+
+#集計値
 summary(cbind(y1, y2))
 cor(Y)
+mean(y1)
+sum(y2[y1==1])/length(y2[y1==1])
+
+
+####最尤法で二変量プロビットモデルによるサンプルセレクションモデルを推定####
+##二変量プロビットモデルのサンプルセレクションモデルの対数尤度関数を定義
+loglike <- function(theta, Z, X, y1, y2, k1, k2){
+  #theta <- c(alpha0, beta0, rho0)
+  
+  #パラメータの設定  
+  alpha <- theta[1:k1]
+  beta <- theta[(k1+1):(k2)]
+  rho <- theta[length(theta)]
+  
+  #平均構造
+  alphaZ <- Z %*% alpha
+  betaX <- X %*% beta
+  
+  #対数尤度の計算
+  LL1 <- sum((1-y1) * log(pnorm(-alphaZ, 0, 1))) 
+  LL2 <- sum(y1 * ((1-y2)*log(pnorm(-betaX)) + y2*log(pnorm(betaX))))
+  LL3 <- sum(y1 * y2*log(pnorm((alphaZ + rho*(betaX))/sqrt(1-rho^2))))
+  LL4 <- sum(y1 * (1-y2)*log(pnorm((alphaZ + rho*(-betaX))/sqrt(1-rho^2))))
+  LL <- LL1 + LL2 + LL3 + LL4
+  return(LL)
+}
+
+##準ニュートン法で対数尤度を最大化
+k1 <- ncol(Z)
+k2 <- k1 + ncol(X)
+
+for(i in 1:1000){
+  print(i)
+  #初期パラメータの設定
+  alpha1 <- c(runif(1, -0.8, -0.5), runif(cont1, 0, 0.8), runif(bin1+multi1-1, -0.5, 1.0))
+  beta1 <- c(runif(1, 0.3, 0.5), runif(cont2, 0, 0.5), runif(bin2, -0.3, 0.5))
+  rho1 <- runif(1, 0.3, 0.7)
+  theta0 <- c(alpha1, beta1, rho1)
+  
+  #準ニュートン法で対数尤度を最大化
+  res <- try(optim(theta0, loglike, Z=Z, X=X, y1=y1, y2=y2, k1=k1, k2=k2, method="BFGS", 
+                   hessian=TRUE, control=list(fnscale=-1, trace=TRUE)), silent=TRUE)
+  if(class(res) == "try-error") {next} else {break}   #エラー処理
+}
+
+####推定結果と要約####
+theta <- res$par[-length(res$par)]
+rho <- res$par[length(res$par)]
+LL <- res$value
+
+#推定結果と真の値の比較
+round(rbind(theta=theta, thetat=c(alpha0, beta0)), 3)   #回帰係数の推定値と真の推定値の比較
+round(c(rho, rho0), 3)   #相関の推定値と真の相関の推定値
+
