@@ -126,6 +126,8 @@ b2 <- matrix(runif(k*(bin1+multi1-1), -0.7, 0.7), nrow=bin1+multi1-1, ncol=k)
 
 BETA <- rbind(mu_score, b1, b2)   #パラメータを結合
 rownames(BETA) <- c()
+BETAT <- BETA
+
 
 ##応答変数の発生
 Mu <- X %*% BETA + Z %*% b.random   #平均構造
@@ -171,9 +173,88 @@ Adelta <- 0.01 * diag(1, ncol(X))   #回帰パラメータの分散の事前分布
 nu <- (ncol(X)+1)+k   #逆ウィシャート分布の自由度
 V <- nu * diag(k)   #逆ウィシャート分布のパラメータ
 
+
 #変量効果の事前分布
-Bbar <- rep(0, n)
+Bbar <- rep(0, k)
+A <- 0.01 * diag(1, k)
+nu.random <- k
+V.random <- nu.random * diag(k)
+
+##サンプリング結果の格納用配列
+BETA <- matrix(0, nrow=R/keep, ncol=ncol(X)*k)
+SIGMA <- matrix(0, nrow=R/keep, ncol=k*k)
+Random <- array(0, dim=c(n, k, R/keep))
+Cov.Random <- matrix(0, nrow=R/keep, ncol=k)
+Mu.random <- matrix(0, nrow=R/keep, ncol=k)
+
+##MCMC推定のための定数の計算
+mu_random <- matrix(0, nrow=n, ncol=k)
+sigma_random <- array(0, dim=c(k, k, n))
 
 
+##初期値の設定
+oldbeta <- solve(t(X) %*% X) %*% t(X) %*% Y.comp
+oldsigma <- t(Y.comp - X %*% oldbeta) %*% (Y.comp - X %*% oldbeta)/nrow(X)
+beta_random <- solve(t(Z) %*% Z) %*% t(Z) %*% (Y.comp - X %*% oldbeta)
+cov_random <- t((Y.comp - X %*% oldbeta) - Z %*% oldrandom) %*% ((Y.comp - X %*% oldbeta) - Z %*% oldrandom)/nrow(Z)
 
 
+####MCMCで混合多変量回帰モデルを推定####
+for(rp in 1:R){
+  
+  ##ギブスサンプリングで固定効果betaとsigmaをサンプリング
+  y.er <- Y.comp - Z %*% beta_random   #応答変数と変量効果の誤差を計算
+  
+  #ベイジアン多変量回帰モデルを推定
+  out <- rmultireg(y.er, X, Deltabar, Adelta, nu, V)   
+  oldbeta <- out$B
+  oldsigma <- out$Sigma
+
+  ##ギブスサンプリングで変量効果をサンプリング
+  z.er <- Y.comp - X %*% oldbeta
+  
+  #IDごとに平均を計算
+  mu <- as.matrix(data.frame(id=ID$c.id, z=z.er) %>%
+                               dplyr::group_by(id) %>%
+                               dplyr::summarize_each(funs(mean), everything()))[, -1]
+  
+  #ベイズ推定のための計算
+  inv_random <- solve(cov_random) 
+  inv_sigma <- solve(oldsigma)
+  
+  for(i in 1:n){
+    n.inv_sigma <- g[i]*inv_sigma
+    mu_random[i, ] <- solve(inv_random + n.inv_sigma) %*% (n.inv_sigma %*% mu[i, ])
+    sigma_random[, , i] <- solve(inv_random + n.inv_sigma)
+    beta_random[i, ] <- mvrnorm(1, mu_random[i, ], sigma_random[, , i])
+  }
+  
+  #階層モデルの分散をサンプリング
+  #逆ウィシャート分布のパラメータを計算
+  R <- solve(V.random) + matrix(rowSums(apply(beta_random, 1, function(x) x %*% t(x))), nrow=k, ncol=k, byrow=T)
+  Sn <- nu.random + n
+  
+  #逆ウィシャート分布から階層モデルの分散をサンプリング
+  cov_random <- rwishart(Sn, solve(R))$IW
+  
+  
+  ##パラメータの格納とサンプリング結果の表示
+  if(rp%%keep==0){
+    mkeep <- rp/keep
+    BETA[mkeep, ] <- as.numeric(oldbeta)
+    SIGMA[mkeep, ] <- as.numeric(oldsigma)
+    Random[, , mkeep] <- beta_random
+    Cov.Random[mkeep, ] <- diag(cov_random)
+
+    print(rp)
+    print(round(cbind(oldbeta, BETAT), 2))
+    print(round(cbind(cov2cor(oldsigma), Cor0), 2))
+    print(round(rbind(diag(cov_random), diag(CorH)), 2))
+  }
+}
+
+matplot(Cov.Random, type="l")
+matplot(SIGMA[, 1:8], type="l")
+matplot(BETA[, 1:8], type="l")
+
+round(cbind(mu, mu_random), 2)
