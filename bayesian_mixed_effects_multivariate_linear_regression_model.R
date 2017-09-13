@@ -196,7 +196,7 @@ sigma_random <- array(0, dim=c(k, k, n))
 oldbeta <- solve(t(X) %*% X) %*% t(X) %*% Y.comp
 oldsigma <- t(Y.comp - X %*% oldbeta) %*% (Y.comp - X %*% oldbeta)/nrow(X)
 beta_random <- solve(t(Z) %*% Z) %*% t(Z) %*% (Y.comp - X %*% oldbeta)
-cov_random <- t((Y.comp - X %*% oldbeta) - Z %*% oldrandom) %*% ((Y.comp - X %*% oldbeta) - Z %*% oldrandom)/nrow(Z)
+cov_random <- t((Y.comp - X %*% oldbeta) - Z %*% beta_random) %*% ((Y.comp - X %*% oldbeta) - Z %*% beta_random)/nrow(Z)
 
 
 ####MCMC‚Å¬‡‘½•Ï—Ê‰ñ‹Aƒ‚ƒfƒ‹‚ğ„’è####
@@ -252,6 +252,7 @@ for(rp in 1:R){
     print(round(rbind(diag(cov_random), diag(CorH)), 2))
   }
 }
+
 
 matplot(Cov.Random, type="l")
 matplot(SIGMA[, 1:8], type="l")
