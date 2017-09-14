@@ -254,8 +254,8 @@ for(rp in 1:R){
 }
 
 
-matplot(Cov.Random, type="l")
-matplot(SIGMA[, 1:8], type="l")
+matplot(Cov.Random[, 1:4], type="l")
+matplot(SIGMA[, 1:20], type="l")
 matplot(BETA[, 1:8], type="l")
 
 round(cbind(mu, mu_random), 2)
