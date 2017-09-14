@@ -78,7 +78,7 @@ LLobz <- function(theta, y, r, k){
   }
   LLho <- matrix(r, nrow=nrow(y), ncol=k, byrow=T) * LLind   #観測データの尤度
   z <- LLho / matrix(apply(LLho, 1, sum), nrow=nrow(y), ncol=k)   #潜在変数zの計算
-  LLosum <- sum(log(apply(matrix(r, nrow=nrow(y), ncol=k) * LLind, 1, sum)))   #観測データの対数尤度の計算
+  LLosum <- sum(log(apply(matrix(r, nrow=nrow(y), ncol=k, byrow=T) * LLind, 1, sum)))   #観測データの対数尤度の計算
   rval <- list(LLob=LLosum, z=z, LL=LLind, Li=Li)
   return(rval)
 }
