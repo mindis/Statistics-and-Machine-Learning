@@ -98,18 +98,21 @@ for(i in 1:hh){
   } else {
     index2 <- c(index1, length(index1)+1)
   }
-
+  
   #応答変数の打ち切りを設定
   if(max(c_sum) > 100 & length(index1) > 0){
+    print(1)
     y_vec <- c(y_ind[index1], dt-c_sum[length(index1)])
+    z[length(y_vec)] <- 1
   } else if(max(c_sum) > 100 & length(index1)==0) {
+    print(2)
     y_vec <- 100
     z <- 1
   } else {
+    print(3)
     y_vec <- y_ind[index2]
-    z[length(y_vec)] <- 1
   }
-
+  
   #打ち切られた変数を格納
   y.list[[i]] <- y_vec[index2]
   ID.list[[i]] <- ID[id==i, ][index2, ]
@@ -127,7 +130,7 @@ Z <- do.call(rbind, Z.list)
 z <- 1-unlist(z.list)
 
 #データの確認と可視化
-round(data.frame(no, ID[, 2:3], y, z, x=X, z=Z[, 1:10]), 2)
+round(data.frame(no, ID[, 2:3], y, z), 2)
 hist(y, col="grey", breaks=30, main="イベント時間", xlab="経過時間")
 table(z)   #打ち切り数
 
