@@ -39,8 +39,8 @@ for(i in 1:hh){
 }
 
 ##時変の説明変数
-Price <- rbeta(hhpt, 7.5, 1.5)   #旧作の平均値引率
-Disc <- rbeta(hhpt, 2.0, 6.5)   #旧作の値引きゲームの割合
+Price <- scale(rbeta(hhpt, 7.5, 1.5))   #旧作の平均値引率
+Disc <- scale(rbeta(hhpt, 2.0, 6.5))   #旧作の値引きゲームの割合
 Prom <- rbinom(hhpt, 1, 0.4)   #プロモーション有無
 
 #新作ゲーム本数とジャンルの発生
@@ -90,10 +90,10 @@ for(i in 1:1000){
   ##固定効果のパラメータを発生
   #生存モデルのパラメータの設定
   alpha0 <- runif(1, 0.8, 1.8)   #形状パラメータ
-  beta0 <- c(runif(1, 0, 5.0), runif(1, 0.2, 0.8), runif(1, -0.8, -0.3), runif(1, -0.7, -0.2), runif(g, -0.4, 0))
+  beta0 <- c(runif(1, 0, 5.0), runif(1, 0.1, 0.4), runif(1, -0.4, -0.1), runif(1, -0.7, -0.2), runif(g, -0.4, 0))
   
   #頻度モデルのパラメータの設定
-  gamma0 <- c(runif(1, 0, 0.5), runif(1, -0.4, 0), runif(1, 0, 0.3), runif(1, 0, 0.35), runif(g, 0, 0.2)) 
+  gamma0 <- c(runif(1, 0, 0.5), runif(1, -0.25, 0), runif(1, 0, 0.25), runif(1, 0, 0.35), runif(g, 0, 0.2)) 
   
   ##生存モデルと頻度モデルの応答変数を発生
   #平均構造を設定
@@ -429,6 +429,7 @@ for(rp in 1:R){
   }
 }
 
-matplot(BETA, type="l")
-
-
+matplot(BETA[, 6:10], type="l")
+matplot(THETA0[, 1:5], type="l")
+matplot(SIGMA, type="l")
+XM
