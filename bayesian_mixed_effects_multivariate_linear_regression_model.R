@@ -1,4 +1,4 @@
-#####欠損データのある混合多変量回帰モデル#####
+#####欠損データのある変量効果多変量回帰モデル#####
 library(MASS)
 library(nlme)
 library(glmm)
@@ -160,7 +160,7 @@ Y <- ifelse(Y==0, NA, Y)
 colSums(is.na(Y)); round(colMeans(is.na(Y)), 2)
 
 
-####マルコフ連鎖モンテカルロ法で混合多変量回帰モデルを推定####
+####マルコフ連鎖モンテカルロ法で変量効果多変量回帰モデルを推定####
 #アルゴリズムの設定
 R <- 20000
 sbeta <- 1.5
@@ -209,14 +209,14 @@ for(rp in 1:R){
   out <- rmultireg(y.er, X, Deltabar, Adelta, nu, V)   
   oldbeta <- out$B
   oldsigma <- out$Sigma
-
+  
   ##ギブスサンプリングで変量効果をサンプリング
   z.er <- Y.comp - X %*% oldbeta
   
   #IDごとに平均を計算
   mu <- as.matrix(data.frame(id=ID$c.id, z=z.er) %>%
-                               dplyr::group_by(id) %>%
-                               dplyr::summarize_each(funs(mean), everything()))[, -1]
+                    dplyr::group_by(id) %>%
+                    dplyr::summarize_each(funs(mean), everything()))[, -1]
   
   #ベイズ推定のための計算
   inv_random <- solve(cov_random) 
@@ -224,8 +224,9 @@ for(rp in 1:R){
   
   for(i in 1:n){
     n.inv_sigma <- g[i]*inv_sigma
-    mu_random[i, ] <- solve(inv_random + n.inv_sigma) %*% (n.inv_sigma %*% mu[i, ])
-    sigma_random[, , i] <- solve(inv_random + n.inv_sigma)
+    inv_mixed <- solve(inv_random + n.inv_sigma)
+    mu_random[i, ] <- inv_mixed %*% (n.inv_sigma %*% mu[i, ])
+    sigma_random[, , i] <- inv_mixed
     beta_random[i, ] <- mvrnorm(1, mu_random[i, ], sigma_random[, , i])
   }
   
@@ -245,14 +246,13 @@ for(rp in 1:R){
     SIGMA[mkeep, ] <- as.numeric(oldsigma)
     Random[, , mkeep] <- beta_random
     Cov.Random[mkeep, ] <- diag(cov_random)
-
+    
     print(rp)
     print(round(cbind(oldbeta, BETAT), 2))
     print(round(cbind(cov2cor(oldsigma), Cor0), 2))
     print(round(rbind(diag(cov_random), diag(CorH)), 2))
   }
 }
-
 
 matplot(Cov.Random[, 1:4], type="l")
 matplot(SIGMA[, 1:20], type="l")
