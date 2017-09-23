@@ -9,7 +9,7 @@ library(ggplot2)
 #set.seed(31489)
 
 ####データの発生####
-N <- 10000
+N <- 50000
 choise <- 10   #選択肢数
 k <- 3   #階層数
 n1 <- 2   #ネスト1のネスト数
@@ -39,7 +39,7 @@ c.id <- rep(1:choise, N)
 ID <- data.frame(no=1:length(id), u.id=u.id, c.id=c.id)
 
 #切片の設定
-Value <- matrix(as.numeric(diag(choise)), nrow=N*choise, ncol=choise, byrow=T)[, -10]
+Value <- matrix(as.numeric(diag(choise)), nrow=N*choise, ncol=choise, byrow=T)[, -choise]
 
 #ベクトル変換
 Gacha_vec <- as.numeric(t(Gacha))
@@ -217,7 +217,7 @@ for(i in 1:100){
   #準ニュートン法で対数尤度を最大化
   res <- try(optim(theta0, loglike, Y=Y, X=XM, nest01=nest01, nest1=nest1, nest2=nest2, nest1z=nest1z, nest2z=nest2z, 
                    N=N, choise=choise, n1=n1, n2=n2, index_rho1=index_rho1, index_rho2=index_rho2, 
-                   method="BFGS", hessian=TRUE, control=list(fnscale=-1)), silent=TRUE)
+                   method="BFGS", hessian=TRUE, control=list(fnscale=-1, trace=TRUE)), silent=TRUE)
   if(class(res) == "try-error") {next} else {break}   #エラー処理
   
 }
@@ -235,5 +235,6 @@ round(rbind(rho=c(rho1, rho2), rho0=c(rho01, rho02)), 3)   #ログサム変数のパラメ
 
 ##パラメータの仮説検定と適合度
 round(tval <- res$par/sqrt(-diag(solve(res$hessian))), 3)   #t値
+round(LL, 3)   #最大化された対数尤度
 round(AIC <- -2*res$value + 2*length(res$par), 3)   #AIC
 round(BIC <- -2*res$value + log(N)*length(res$par), 3) #BIC
