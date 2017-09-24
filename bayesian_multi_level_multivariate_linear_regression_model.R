@@ -56,7 +56,7 @@ covmatrix <- function(col, corM, lower, upper){
 
 ####データの発生####
 n <- 1000   #評価対象数
-g <- round(exp(rnorm(n, 2.4, 1.2)), 0)
+g <- round(exp(rnorm(n, 3.0, 1.0)), 0)
 g <- ifelse(g==0, 1, g)
 hh <- sum(g)   #評価者数
 k <- 8
@@ -188,7 +188,9 @@ mu_random <- matrix(0, nrow=n, ncol=k)
 sigma_random <- array(0, dim=c(k, k, n))
 
 #変量効果のデザイン行列Zの定数を設定
+Z_linear <- matrix(0, nrow(Z), k)
 Z_list <- list()
+Z_list_T <- list()
 z_vec_list <- list()
 zz_vec_list <- list()
 zz_inv_list <- list()
@@ -203,8 +205,10 @@ for(i in 1:n){
     Z_ind <- t(Z_ind)
   }
   #定数を計算
-  Z_list[[i]] <- t(Z_ind)
+  Z_list[[i]] <- Z_ind
+  Z_list_T[[i]] <- t(Z_ind)
 
+  
   #デザイン行列をベクトル形式に変換
   z_vec <- c()
   for(j in 1:nrow(Z_ind)){
@@ -212,11 +216,10 @@ for(i in 1:n){
   }
   
   #定数を計算
-  z_vec_list[[i]] <- z_vec
+  z_vec_list[[i]] <- t(z_vec)
   zz_vec_list[[i]] <- t(z_vec) %*% z_vec
   zz_inv_list[[i]] <- ginv(zz_vec_list[[i]])
 }
-
 
 ##初期値の設定
 oldbeta <- solve(t(X) %*% X) %*% t(X) %*% Y
@@ -225,16 +228,21 @@ beta_random <- ginv(t(Z) %*% Z) %*% t(Z) %*% (Y - X %*% oldbeta)
 cov_random <- var(matrix(as.numeric(t(beta_random)), nrow=n, ncol=k*2, byrow=T))
 cov_inv <- solve(cov_random)
 
+
 ####MCMCで混合多変量回帰モデルを推定####
 for(rp in 1:R){
   
   ##ギブスサンプリングで固定効果betaとsigmaをサンプリング
-  y.er <- Y - Z %*% beta_random   #応答変数と変量効果の誤差を計算
-  
+  #応答変数と変量効果の誤差を計算
+  for(i in 1:n) {Z_linear[index_id[[i]], ] <- Z_list[[i]] %*% beta_random[index_r[i, ], ]}   #Zの線形結合を計算
+  y.er <- Y - Z_linear   #誤差を計算
+  #y.er <- Y - Z %*% beta_random   #コレでもok
+     
   #ベイジアン多変量回帰モデルを推定
   out <- rmultireg(y.er, X, Deltabar, Adelta, nu, V)   
   oldbeta <- out$B
   oldsigma <- out$Sigma
+  
   
   ##ギブスサンプリングで変量効果をサンプリング
   z.er <- Y - X %*% oldbeta
@@ -242,16 +250,19 @@ for(rp in 1:R){
   #IDごとに変量効果をサンプリング
   for(i in 1:n){
     B <- solve(zz_vec_list[[i]] + cov_inv) 
-    b <- B %*% as.numeric(t(Z_list[[i]] %*% z.er[index_id[[i]], ]))
+    b <- B %*% z_vec_list[[i]] %*% as.numeric(t(z.er[index_id[[i]], ]))
+    #b <- B %*% as.numeric(t(Z_list_T[[i]] %*% z.er[index_id[[i]], ]))   #こちらでもOK
     beta_random[index_r[i, ], ] <- matrix(mvrnorm(1, b, B), nrow=2, ncol=k, byrow=T)
   }
+  
   beta_vec <- matrix(as.numeric(t(beta_random)), nrow=n, ncol=k*2, byrow=T)
   
-  #階層モデルの分散をサンプリング
+  
+  ##階層モデルの分散をサンプリング
   #逆ウィシャート分布のパラメータを計算
-  R_par <- solve(V.random) + matrix(rowSums(apply(beta_vec, 1, function(x) x %*% t(x))), nrow=k*2, ncol=k*2, byrow=T)
+  R_par <- solve(V.random) + diag(diag(t(beta_vec) %*% beta_vec))
   Sn <- nu.random + n
-
+  
   #逆ウィシャート分布から階層モデルの分散をサンプリング
   cov_random <- rwishart(Sn, solve(R_par))$IW
   cov_inv <- solve(cov_random)
@@ -271,7 +282,7 @@ for(rp in 1:R){
   }
 }
 
-matplot(Cov.Random[, 1:5], type="l")
+matplot(Cov.Random[, 1:16], type="l", ylim=c(0, 1))
 matplot(SIGMA[, 1:20], type="l")
 matplot(BETA[, 1:8], type="l")
 
