@@ -59,7 +59,7 @@ covmatrix <- function(col, corM, lower, upper){
 ####データの発生####
 #set.seed(8437)
 ##データの設定
-hh <- 6000   #サンプル数
+hh <- 3000   #サンプル数
 choise <- 5   #選択可能数
 st <- 5   #基準ブランド
 k <- 5   #説明変数の数
@@ -118,7 +118,7 @@ ID <- data.frame(no=1:(hh*choise), id=id, c=c)
 
 ####応答変数を発生####
 ##分散共分散行列の設定
-corM <- corrM(col=choise, lower=0, upper=0.9, eigen_lower=0.01, eigen_upper=0.2)   #相関行列を作成
+corM <- corrM(col=choise, lower=-0.55, upper=0.9, eigen_lower=0.01, eigen_upper=0.2)   #相関行列を作成
 Sigma <- covmatrix(col=choise, corM=corM, lower=1, upper=1)   #分散共分散行列
 Cov <- Sigma$covariance
 
@@ -143,7 +143,8 @@ colMeans(Y); colSums(Y)
 
 ####マルコフ連鎖モンテカルロ法で相関構造のある混合型ロジスティック回帰モデルを推定####
 ##多項ロジットモデルの対数尤度関数
-LLike <- function(logit, X, Y, hh, choise){
+LLike <- function(beta, theta, X, Y, hh, choise){
+  logit <- matrix(X %*% beta, nrow=hh, ncol=choise, byrow=T) + theta
   
   d <- rowSums(exp(logit))
   LLl <- rowSums(Y * logit) - log(d)
@@ -181,6 +182,9 @@ id_r <- matrix(1:(hh*choise), nrow=hh, ncol=choise, byrow=T)
 
 
 ##事前分布の設定
+betas <- rep(0, ncol(XM))
+rootBi <- 0.01 * diag(ncol(XM))
+
 nu <- ncol(XM)-2   #逆ウィシャート分布の自由度
 V <- nu*diag(choise)   #逆ウィシャート分布のパラメータ
 Deltabar <- rep(0, ncol(XM))  #回帰係数の平均の事前分布
@@ -196,6 +200,7 @@ SIGMA <- matrix(0, nrow=R/keep, ncol=choise^2)
 beta00 <- rep(0, ncol(XM))
 res <- optim(beta00, loglike, gr=NULL, XM, Y, hh, choise, method="BFGS", hessian=TRUE, control=list(fnscale=-1))
 oldbeta <- res$par
+rw <- diag(diag(-solve(res$hessian)))
 
 #分散共分散行列の初期値
 oldcov <- diag(choise)
@@ -204,66 +209,66 @@ cov_inv <- solve(oldcov)
 
 #効用の平均構造の初期値
 theta_mu <- matrix(XM %*% oldbeta, nrow=hh, ncol=choise, byrow=T)
-oldtheta <- matrix(XM %*% oldbeta, nrow=hh, ncol=choise, byrow=T) + mvrnorm(hh, rep(0, choise), oldcov)
+oldtheta <- mvrnorm(hh, rep(0, choise), oldcov)
 
 
 ####マルコフ連鎖モンテカルロ法でパラメータをサンプリング####
 for(rp in 1:R){
 
-  ##MH法でthetaをサンプリング
-  thetad <- oldtheta
-  thetan <- thetad + 0.5 * mvrnorm(hh, rep(0, choise), diag(choise))
+  ##MH法で回帰係数betaをサンプリング
+  betad <- oldbeta
+  betan <- betad + 0.25 * mvrnorm(1, rep(0, length(oldbeta)), rw)
   
-  #事前分布の誤差を計算
-  er_new <- thetan - theta_mu
-  er_old <- thetad - theta_mu
   
   #対数尤度と対数事前分布を計算
-  lognew <- LLike(logit=thetan, X=XM, Y=Y, hh=hh, choise=choise)$LLl
-  logold <- LLike(logit=thetad, X=XM, Y=Y, hh=hh, choise=choise)$LLl
-  logpnew <- apply(er_new, 1, function(x) -0.5 * (x %*% cov_inv %*% x))
-  logpold <- apply(er_old, 1, function(x) -0.5 * (x %*% cov_inv %*% x))
+  lognew1 <- LLike(beta=betan, theta=oldtheta, X=XM, Y=Y, hh=hh, choise=choise)$LL
+  logold1 <- LLike(beta=betad, theta=oldtheta, X=XM, Y=Y, hh=hh, choise=choise)$LL
+  logpnew1 <- lndMvn(betan, betas, rootBi)
+  logpold1 <- lndMvn(betad, betas, rootBi)
+  
+  #サンプリングするかどうかの決定
+  #MHサンプリング
+  alpha1 <- min(1, exp(lognew1 + logpnew1 - logold1 - logpold1))
+  if(alpha1 == "NAN") alpha1 <- -1
+  
+  #一様乱数を発生
+  u <- runif(1)
+  
+  #u < alphaなら新しいbetaを採択
+  if(u < alpha1){
+    oldbeta <- betan
+    logl <- lognew1
+    
+    #そうでないならbetaを更新しない
+  } else {
+    logl <- logold1
+  }
+  
+  ##MHサンプリングでthetaをサンプリング
+  thetad <- oldtheta
+  thetan <- oldtheta + 0.5 * mvrnorm(hh, rep(0, choise), diag(choise))
+  
+  #対数尤度と対数事前分布を計算
+  lognew2 <- LLike(beta=oldbeta, theta=thetan, X=XM, Y=Y, hh=hh, choise=choise)$LLl
+  logold2 <- LLike(beta=oldbeta, theta=thetad, X=XM, Y=Y, hh=hh, choise=choise)$LLl
+  logpnew2 <- apply(thetan, 1, function(x) -0.5 * (x %*% cov_inv %*% x))
+  logpold2 <- apply(thetad, 1, function(x) -0.5 * (x %*% cov_inv %*% x))
+  
   
   #サンプリングを採択するかどうかを決定
   rand <- runif(hh)   #一様乱数から乱数を発生
-  LLind.diff <- exp(lognew + logpnew - logold - logpold)   #採択率を計算
-  alpha <- ifelse(LLind.diff > 1, 1, LLind.diff)
-  alpha <- matrix(alpha, nrow=hh, ncol=choise)
+  LLind.diff <- exp(lognew2 + logpnew2 - logold2 - logpold2)   #採択率を計算
+  alpha2 <- ifelse(LLind.diff > 1, 1, LLind.diff)
+  alpha2 <- matrix(alpha2, nrow=hh, ncol=choise)
   
   #alphaに基づきbetaを採択
-  oldtheta.r <- ifelse(alpha > rand, thetan, oldtheta)   #alphaがrandを上回っていたら採択
+  oldtheta.r <- ifelse(alpha2 > rand, thetan, oldtheta)   #alphaがrandを上回っていたら採択
   adopt <- sum(oldtheta[, 1]!=oldtheta.r[, 1])/hh   #採択率
   oldtheta <- oldtheta.r   #パラメータを更新
   
-  
-  ##多変量回帰モデルのパラメータをサンプリング
-  util.v <- as.numeric(t(oldtheta))
-  
-  ##betaの分布のパラメータの計算とmcmcサンプリング
-  #z.vecとX.vecを結合して多次元配列に変更
-  YX.bind <- cbind(util.v, XM)
-  for(i in 1:hh){
-    YX.array[, , i] <- YX.bind[id_r[i, ], ]
-  }
-  
-  ##回帰モデルのギブスサンプリングでbetaとsigmaを推定
-  #betaのギブスサンプリング
-  XVX <- rowSums(apply(X.array, 3, function(x) t(x) %*% cov_inv %*% x))
-  XVY <- rowSums(apply(YX.array, 3, function(x) t(x[, -1]) %*% cov_inv %*% x[, 1]))
-  
-  #betaの分布の共分散行列
-  inv_XVX <- solve(XVX + Adelta)
-  
-  #betaの分布の平均パラメータ
-  B <- inv_XVX %*% (XVY + Adelta %*% Deltabar)   #betaの平均
-  b1 <- as.numeric(B)
-  oldbeta <- mvrnorm(1, b1, inv_XVX)   #多変量正規分布からbetaをサンプリング
-  oldbeta <- betat
-  theta_mu <- matrix(XM %*% oldbeta, nrow=hh, ncol=choise, byrow=T)
-  
-  ##Covの分布のパラメータの計算とmcmcサンプリング
+  ##階層モデルの分散共分散パラメータをサンプリング
   #逆ウィシャート分布のパラメータを計算
-  R.error <- oldtheta - theta_mu
+  R.error <- oldtheta
   IW.R <- V + t(R.error) %*% R.error
   
   #逆ウィシャート分布の自由度を計算
@@ -271,10 +276,10 @@ for(rp in 1:R){
   
   #逆ウィシャート分布からCovをサンプリング
   Cov_hat <- rwishart(Sn, solve(IW.R))$IW
-  cov_inv <- solve(oldcov)
   
   #識別性のためパラメータに制約をかける
   oldcov <- cov2cor(Cov_hat)
+  cov_inv <- solve(oldcov)
   
   ##パラメータの格納とサンプリング結果の表示
   if(rp%%keep==0){
@@ -283,12 +288,12 @@ for(rp in 1:R){
     SIGMA[mkeep, ] <- oldcov
     
     print(rp)
-    print(round(c(sum(lognew), res$value), 2))
+    print(round(c(logl, res$value), 2))
     print(round(rbind(oldbeta, res$par, betat), 3))
     print(round(cbind(oldcov, Cov), 3))
     print(round(adopt, 3))
   }
 }
 
-matplot(BETA[, 1:4], type="l")
+matplot(BETA[, 7:12], type="l")
 matplot(SIGMA[, 1:5], type="l")
