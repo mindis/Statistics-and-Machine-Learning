@@ -80,7 +80,7 @@ for(rp in 1:R){
   sur <- c()
   obz <- c()
   
-  for(j in 2:(n.occasions-1)){
+  for(j in 2:(n.occasions)){
     
     ##状態プロセスのパラメータを発生
     #最初の訪問時の潜在変数を定義
@@ -90,15 +90,14 @@ for(rp in 1:R){
     if(j!=n.occasions){
       z[index_z, j] <- rbinom(length(index_z), 1, phi*(1-p))   #生存しているかどうかを発生
       z[index_surv, j] <- 1   #観測時点は生存
+      obz_vec <- CH[z[, j]==1, j]
     } else {
       z[index_z, j] <- rbinom(length(index_z), 1, phi)
-      z[index_surv, j] <- 1
+      obz_vec <- CH[z[, j]==1 | z0[, j]==1, j]
     }
     
-    sur_vec <- z[index_z, j]
-    obz_vec <- CH[z[, j]==1, j]
-    
     #パラメータをサンプリング
+    sur_vec <- z[index_z, j]
     phi <- rbeta(1, a1 + sum(sur)+sum(sur_vec), b1 + length(sur)-sum(sur) + length(sur_vec)-sum(sur_vec))   
     p <- rbeta(1, a2 + sum(obz)+sum(obz_vec), b2 + length(obz)-sum(obz) + length(obz_vec)-sum(obz_vec)) 
   
