@@ -12,8 +12,8 @@ library(lattice)
 
 ####データの発生####
 ##データの設定
-hh <- 2000   #消費者数
-pt <- 30   #観測期間
+hh <- 10000   #消費者数
+pt <- 50   #観測期間
 hhpt <- hh*pt   #総サンプル数
 choise <- 6   #ブランド数
 
@@ -204,6 +204,94 @@ for(j in 1:pt){
   y2[ID$t==j] %*% Y2[ID$t==j, ] %*% 1:choise
 }
 
-sum(Y2)
+##発生させた変数の集計
+colSums(Y2)
+colMeans(Y2[y1==1, ])
+barplot(colSums(Y2))
 
 
+####最尤法で条件付きネステッドロジットモデルを推定####
+##条件付きネステッドロジットモデルの対数尤度関数を設定
+loglike <- function(x, y1, y2, X1, X2, nest, index1, index2, index3, hhpt, choise){
+  #パラメータの設定
+  alpha <- x[index1]
+  beta <- x[index2]
+  rho <- c(x[index3], 1)
+  
+  ##ブランド選択モデルの確率の定義
+  logit2 <- matrix(X2 %*% beta, nrow=hhpt, ncol=choise, byrow=T)
+  
+  #ブランド選択モデルのログサム変数の定義
+  nest_list <- list()
+  logsum02 <- matrix(0, nrow=hhpt, ncol=length(rho))
+  logsum01 <- rep(0, hhpt)
+  Pr02 <- matrix(0, nrow=hhpt, ncol=choise)
+  
+  for(i in 1:ncol(nest)){
+    nest_list[[i]] <- matrix(nest[, i], nrow=hhpt, ncol=choise, byrow=T)
+    U <- exp(logit2 * nest_list[[i]] / rho[i]) * nest_list[[i]]
+    Pr02[, nest[, i]==1] <- U[, nest[, i]==1] / rowSums(U)   #最下層の条件付き確率
+    logsum02[, i] <- log(rowSums(U))   #ログサム変数
+  }
+  
+  #ブランド選択確率を計算
+  Pr2 <- matrix(0, nrow=hhpt, ncol=choise)
+  V <- exp(logsum02 * matrix(rho, nrow=hhpt, ncol=length(rho), byrow=T))
+  CL <- V / rowSums(V)   #ネストの選択確率
+  
+  #最終的なブランド選択を計算
+  for(i in 1:ncol(nest)){
+    Pr2[, nest[, i]==1] <- matrix(CL[, i], nrow=hhpt, ncol=sum(nest[, i])) * Pr02[, nest[, i]==1]
+  }
+  
+  ##購買モデルの確率の定義
+  #ブランド購買モデルのログサム変数の定義
+  logsum01 <- log(rowSums(exp(logsum02)))
+  CV <- logsum01 / mean(logsum01)   #値が大きいので平均を引く
+  X1[, "logsum"] <- CV
+  
+  #ロジットと確率の定義
+  logit1 <- X1 %*% alpha
+  Pr1 <- exp(logit1)/(1+exp(logit1))
+  
+  ##対数尤度を定義
+  LL1 <- sum(y2 * log(Pr2))
+  LL2 <- sum(y1*log(Pr1) + (1-y1)*log(1-Pr1))
+  LL <- LL1 + LL2
+  return(LL)
+}
+
+
+##パラメータのインデックスの設定
+index1 <- 1:ncol(XM1)
+index2 <- (length(index1)+1):(length(index1)+ncol(XM2))
+index3 <- (index2[length(index2)]+1):(index2[length(index2)]+2)
+
+##準ニュートン法で条件付きネステッドロジットモデルのパラメータを推定
+for(i in 1:1000){
+  x <- c(rep(0, index2[length(index2)]), runif(2, 0.4, 0.7))
+  res <- try(optim(x, loglike, gr=NULL, y1=y1, y2=Y2, X1=XM1, X2=XM2, nest=nest, index1=index1, index2=index2, index3=index3,
+                   hhpt=hhpt, choise=choise, method="BFGS", hessian=TRUE, control=list(fnscale=-1, trace=TRUE)), silent=FALSE)
+  if(class(res)=="try-error") {next} else {break}   #エラー処理
+}
+
+##推定結果と適合度
+alpha <- res$par[index1]
+beta <- res$par[index2]
+rho <- res$par[index3]
+LL <- res$value
+
+#推定されたパラメータと真のパラメータを比較
+round(rbind(alpha, alpha0), 3)
+round(rbind(beta, beta0), 3)
+round(rbind(rho, rho0=rho0[1:2]), 3)
+
+#適合度の計算
+round(LL, 3)   #対数尤度
+round(tval <- res$par/sqrt(-diag(solve(res$hessian))), 3)   #t値
+round(AIC <- -2*res$value + 2*length(res$par), 3)   #AIC
+round(AIC <- -2*res$value + log(hhpt)*length(res$par), 3)   #BIC
+
+
+round(XM2, 3
+      )
