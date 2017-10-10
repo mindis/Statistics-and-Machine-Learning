@@ -106,7 +106,7 @@ sigma0 <- rep(0, seg)
 
 for(rp in 1:1000){
   print(rp)
-
+  
   ##パラメータを発生
   for(j in 1:seg){
     alpha0[j, ] <- runif(m, 0.7, 1.6)
@@ -121,7 +121,7 @@ for(rp in 1:1000){
   ##応答変数と時間依存性説明変数を逐次的に発生
   for(k in 1:seg){
     for(tm in 1:pt){
-
+      
       ##イベント時間を発生
       index <- subset(1:nrow(ID0), ID0$time==tm & seg_v==k)   #インデックスを設定
       lambda <- exp(XM01[index, ] %*% cbind(beta01[k, ], beta02[k, ]))   #イベント時間のスケールパラメータ
@@ -130,7 +130,7 @@ for(rp in 1:1000){
       Y01[index, 1] <- rweibull(nrow(lambda), shape=alpha0[k, 1], scale=lambda[, 1])
       Y01[index, 2] <- rweibull(nrow(lambda), shape=alpha0[k, 2], scale=lambda[, 2])
       y01[index] <- apply(Y01[index, ], 1, min)
-      z01[index] <- apply(Y01[index, ], 1, which.min)-1   #購買が遅い方を競合打ち切り
+      z01[index] <- abs(apply(Y01[index, ], 1, which.min)-2)   #購買が遅い方を競合打ち切り
       
       ##購入金額を発生
       #説明変数の設定
@@ -156,8 +156,8 @@ for(rp in 1:1000){
   if(max(y01) < 500 & max(y02) < 100) break
 }
 
-##継続時間が0.5未満かつ購買金額が0.5未満のサンプルを削除する
-index <- subset(1:length(y01), y01 > 0.5 & y02 > 0.5)
+##継続時間が1未満かつ購買金額が0.5未満のサンプルを削除する
+index <- subset(1:length(y01), y01 > 1.0 & y02 > 0.5)
 Y11 <- Y01[index, ]
 y11 <- y01[index]
 y12 <- y02[index]
@@ -283,6 +283,8 @@ loglike <- function(theta, alpha, y, X, z, m){
   return(LL)
 }
 
+
+
 ##継続時間と購買金額の同時分布の観測データの対数尤度
 obzll <- function(alpha, beta1, beta2, gamma, sigma, y1, y2, X1, X2, z, r, seg, m, hh){
   
@@ -349,8 +351,7 @@ phi2 <- 0.01   #逆ガンマ分布のスケールパラメータ
 
 
 ##サンプリング結果の保存用配列
-ALPHA1 <- matrix(0, nrow=R/keep, ncol=seg)
-ALPHA2 <- matrix(0, nrow=R/keep, ncol=seg)
+ALPHA <- matrix(0, nrow=R/keep, ncol=seg*m)
 BETA1 <- matrix(0, nrow=R/keep, ncol=ncol(X1)*seg)
 BETA2 <- matrix(0, nrow=R/keep, ncol=ncol(X1)*seg)
 GAMMA <- matrix(0, nrow=R/keep, ncol=ncol(X2)*seg)
@@ -393,9 +394,9 @@ gamma <- matrix(solve(t(X2[index, ]) %*% X2[index, ]) %*% t(X2[index, ]) %*% y2[
 #ワイブルモデルの初期値
 oldalpha <- matrix(res$par[1:m], nrow=seg, ncol=m, byrow=T) + matrix(rnorm(seg*m, 0, 0.2), nrow=seg, ncol=m)
 oldbeta1 <- matrix(res$par[(m+1):(m+ncol(X1))], nrow=seg, ncol=ncol(X1), byrow=T) + 
-                                    matrix(rnorm(seg*ncol(X1), 0, 0.3), nrow=seg, ncol=ncol(X1))
+  matrix(rnorm(seg*ncol(X1), 0, 0.3), nrow=seg, ncol=ncol(X1))
 oldbeta2 <- matrix(res$par[(m+1+ncol(X1)):(length(res$par))], nrow=seg, ncol=ncol(X1), byrow=T) + 
-                                    matrix(rnorm(seg*ncol(X1), 0, 0.3), nrow=seg, ncol=ncol(X1))
+  matrix(rnorm(seg*ncol(X1), 0, 0.3), nrow=seg, ncol=ncol(X1))
 
 
 #線形回帰モデルの初期値
@@ -423,10 +424,10 @@ for(j in 1:seg){
 
 ####マルコフ連鎖モンテカルロ法でパラメータをサンプリング####
 for(rp in 1:R){
-
+  
   ##セグメント別にパラメータをサンプリング
   for(k in 1:seg){
-  
+    
     ##セグメント別の変数の設定
     y1_seg <- y1[index_id[[k]]]
     y2_seg <- y2[index_id[[k]]]
@@ -473,7 +474,7 @@ for(rp in 1:R){
     ##MHサンプリングでワイブル競合リスクモデルで形状パラメータをサンプリング
     #パラメータをサンプリング
     alphad <- oldalphas
-    alphan <- alphad + 2*mvrnorm(1, rep(0, length(alpha)), rw_alpha)
+    alphan <- alphad + 3*mvrnorm(1, rep(0, length(alpha)), rw_alpha)
     
     #対数尤度と対数事前分布を計算
     lognew2 <- loglike(oldbetas, alphan, y1_seg, X1_seg, z_seg, m)
@@ -534,6 +535,7 @@ for(rp in 1:R){
   Z <- t(apply(oll, 1, function(x) rmultinom(1, 1, x)))
   r <- colSums(Z)/hh
   
+  
   #インデックスを更新
   index_z <- list()
   index_id <- list()
@@ -561,4 +563,5 @@ for(rp in 1:R){
     print(round(rbind(oldsigma, sigma0), 2))
   }
 }
+
 
