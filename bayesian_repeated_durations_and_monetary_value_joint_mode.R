@@ -110,8 +110,8 @@ for(rp in 1:1000){
   ##パラメータを発生
   for(j in 1:seg){
     alpha0[j, ] <- runif(m, 0.7, 1.6)
-    beta01[j, ] <- c(runif(1, 1.0, 3.0), runif(ncol(Pre), 0.3, 1.2), runif(ncol(Pay), -0.5, 1.2), runif(ncol(Visit), -0.7, 1.3),
-                     runif(NCOL(Root), -0.5, 0.9), runif(NCOL(Money), -0.8, -0.2))
+    beta01[j, ] <- c(runif(1, 3.0, 6.0), runif(ncol(Pre), 0.1, 0.5), runif(ncol(Pay), -0.25, 0.35), runif(ncol(Visit), -0.25, 0.35),
+                     runif(NCOL(Root), -0.2, 0.3), runif(NCOL(Money), -0.15, -0.05))
     beta02[j, ] <- beta01[j, ] + rnorm(ncol(X01), 0.1, 0.3)
     gamma0[j, ] <- c(runif(1, 0.2, 1.2), runif(ncol(Pre), -0.3, 0.4), runif(ncol(Pay), -0.3, 0.4), runif(ncol(Visit), -0.2, 0.4),
                      runif(NCOL(Root), -0.3, 0.4), runif(NCOL(Money), -0.6, -0.1), runif(NCOL(Re), 0.1, 0.25))
@@ -157,7 +157,7 @@ for(rp in 1:1000){
 }
 
 ##継続時間が1未満かつ購買金額が0.5未満のサンプルを削除する
-index <- subset(1:length(y01), y01 > 1.0 & y02 > 0.5)
+index <- subset(1:length(y01), y01 > 1 & y02 > 0.5)
 Y11 <- Y01[index, ]
 y11 <- y01[index]
 y12 <- y02[index]
@@ -563,5 +563,4 @@ for(rp in 1:R){
     print(round(rbind(oldsigma, sigma0), 2))
   }
 }
-
 
