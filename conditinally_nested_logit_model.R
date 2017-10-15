@@ -12,8 +12,8 @@ library(lattice)
 
 ####データの発生####
 ##データの設定
-hh <- 10000   #消費者数
-pt <- 50   #観測期間
+hh <- 3000   #消費者数
+pt <- 30   #観測期間
 hhpt <- hh*pt   #総サンプル数
 choise <- 6   #ブランド数
 
@@ -93,7 +93,7 @@ for(i in 1:hhpt){
   Royl_vec[r, ] <- diag(ROYL[i], choise)
 }
 Royl_vec <- Royl_vec[, -choise]
-
+Royl_vec
 #その他の変数のベクトル化
 Price_vec <- as.numeric(t(PRICE))
 Disc_vec <- as.numeric(t(DISC))
@@ -293,5 +293,3 @@ round(AIC <- -2*res$value + 2*length(res$par), 3)   #AIC
 round(AIC <- -2*res$value + log(hhpt)*length(res$par), 3)   #BIC
 
 
-round(XM2, 3
-      )
