@@ -24,9 +24,9 @@ seg <- 2
 
 ##説明変数の発生
 #もとの説明変数行列を発生
-topic <- 10   #トピック数
-k1 <- 300   #説明変数数
-freq <- rpois(hh, 200)   #ポアソン分布から頻度を発生
+topic <- 7   #トピック数
+k1 <- 200   #説明変数数
+freq <- rpois(hh, 150)   #ポアソン分布から頻度を発生
 
 #ディレクリ分布から出現確率を発生
 #パラメータの設定
@@ -58,7 +58,8 @@ for(i in 1:hh){
 }
 
 ##非負値行列因子分解で頻度行列を圧縮
-res2 <- nmf(t(X0), topic, "brunet")
+X_trance <- t(X0)   #転置行列
+res2 <- nmf(X0, topic, "brunet")   #KL基準で非負値行列因子分解を実行
 
 #真のトピックの出現確率と推定されたトピック確率を比較
 t_rate <- matrix(0, hh, topic) 
@@ -70,13 +71,12 @@ for(i in 1:hh){
   t_rate[i, ] <- rate
 }
 
-#最適なトピック数は10
-opt.topic <- 10
-Topic_rate <- round(cbind(t_rate, t(res2[[opt.topic-1]]@fit@H)/matrix(rowSums(t(res2[[opt.topic-1]]@fit@H)), nrow=hh, ncol=topic)), 3)
+#最適なトピック数は7
+opt.topic <- 7
+Topic_rate <- round(cbind(t_rate, res2@fit@W/matrix(rowSums(res2@fit@W), nrow=hh, ncol=topic)), 3)
 
 #トピックの出現確率を説明変数とする
-X <- (t(res2[[opt.topic-1]]@fit@H)/matrix(rowSums(t(res2[[opt.topic-1]]@fit@H)), nrow=hh, ncol=opt.topic))[, -opt.topic]
-X <- matrix(runif(hh*(opt.topic-1)), nrow=hh, ncol=opt.topic-1)
+X <- (res2@fit@W / matrix(rowSums(res2@fit@W), nrow=hh, ncol=opt.topic))[, -opt.topic]
 XM <- cbind(1, X)
 
 ##説明変数をベクトル化
@@ -134,7 +134,7 @@ for(i in 1:1000){
   ##二項ロジットモデルから複数選択かどうかの決定
   #パラメータの設定
   alpha00 <- c(-1.2, 1.0)
-  alpha01 <- matrix(runif(ncol(X)*seg, -1.2, 1.3), nrow=ncol(X), ncol=seg)
+  alpha01 <- matrix(runif(ncol(X)*seg, -2.1, 2.3), nrow=ncol(X), ncol=seg)
   alpha0 <- rbind(alpha00, alpha01)
   
   #ロジットと確率の計算
@@ -146,13 +146,14 @@ for(i in 1:1000){
   
   ##多項ロジットモデルおよびネステッドロジットモデルから選択結果を生成
   #パラメータの設定
-  beta00 <- matrix(runif((select-1)*seg, -1.4, 1.7), nrow=select-1, ncol=seg)
-  beta01 <- matrix(runif(ncol(X_vec)*seg, -1.2, 1.3), nrow=ncol(X_vec), ncol=seg)
+  beta00 <- matrix(runif((select-1)*seg, -1.0, 1.1), nrow=select-1, ncol=seg)
+  beta01 <- matrix(runif(ncol(X_vec)*seg, -2.0, 2.2), nrow=ncol(X_vec), ncol=seg)
   beta0 <- rbind(beta00, beta01)
   
   #ネスト構造の設定
   nest <- cbind(c(1, 1, rep(0, select-2)), c(0, 0, 1, 1, 1, 0, 0, 0), rbind(matrix(0, nrow=select-3, ncol=select-5), diag(select-5)))
   rho0 <- c(0.3, 0.5, rep(1, select-5))   #ログサム変数のパラメータ
+  rhot <- rho0[1:2]
   
   #ロジットの設定
   logit2 <- array(0, dim=c(hh, select, seg))
@@ -294,7 +295,7 @@ fr <- function(theta, y1, y2, X, X_vec, z1, nest, hh, select, seg, index1, index
   logit2[, , 1] <- matrix(X_vec %*% beta[, 1], nrow=hh, ncol=select, byrow=T)
   logit2[, , 2] <- matrix(X_vec %*% beta[, 2], nrow=hh, ncol=select, byrow=T)
   
-  #二項ロジットモデルの確率
+  #二項ロジットモデルの確率 
   Pr1 <- exp(logit1)/(1+exp(logit1))
   
   ##多項ロジットモデルの確率
@@ -341,7 +342,7 @@ fr <- function(theta, y1, y2, X, X_vec, z1, nest, hh, select, seg, index1, index
 ##EMアルゴリズムの設定
 iter <- 0
 dl <- 100   #EMステップでの対数尤度の初期値の設定
-tol <- 1
+tol <- 0.1
 
 #パラメータのインデックスを作成
 index1 <- 1:ncol(XM)
@@ -354,14 +355,14 @@ index5 <- max(index4)+1:sum(colSums(nest)>1)
 #二項ロジットモデルの初期値
 res1 <- glm(y1 ~ X, family="binomial")
 alpha <- matrix(res1$coefficients, nrow=ncol(X)+1, ncol=seg) + mvrnorm(ncol(X)+1, rep(0, seg), diag(0.1, seg))
-alpha[1, ] <- c(-1.0, 1.0)
+alpha[1, ] <- c(-1.4, 1.4)
 
 #多項ロジットモデルの初期値
 res2 <- multinom(y2 %*% 1:select ~ X)
 beta <- cbind(as.numeric(coef(res2))+rnorm(ncol(XM_vec), 0, 0.3), as.numeric(coef(res2))+rnorm(ncol(XM_vec), 0, 0.3))
 
 #ログサム変数のパラメータ
-rho <- c(0.6, 0.6)
+rho <- c(0.5, 0.5)
 rho0 <- c(rho, 1, 1, 1)
 
 #混合率の初期値
@@ -379,24 +380,24 @@ while(abs(dl) >= tol){
   
   ##準ニュートン法で完全データを最尤推定(Mステップ)
   theta <- c(as.numeric(alpha), as.numeric(beta), rho)
-  z1 <- seg_z
   res1 <- optim(theta, fr, gr=NULL, y1, y2, XM, XM_vec, z1, nest, hh, select, seg, index1, index2, index3,
-                index4, index5, method="BFGS", hessian=FALSE, control=list(fnscale=-1, trace=TRUE))
+                index4, index5, method="BFGS", hessian=FALSE, control=list(fnscale=-1, trace=TRUE, maxit=20))
 
   #パラメータを更新
   theta <- res1$par
   alpha <- cbind(theta[index1], theta[index2])
   beta <- cbind(theta[index3], theta[index4])
   rho <- theta[index5]
+  rho0 <- c(rho, rep(1, 3))
   cbind(beta, beta0)
 
   #混合率を更新
-  res2 <- try(optim(lambda, logitll, gr=NULL, X, z1[, 2], method="BFGS", hessian=FALSE, 
+  res2 <- try(optim(lambda, logitll, gr=NULL, XM, z1[, 1], method="BFGS", hessian=FALSE, 
                    control=list(fnscale=-1)), silent=TRUE)
-
+ 
   lambda <- res2$par 
   logit <- XM %*% lambda   #ロジット
-  r <- cbind(1-exp(logit)/(1+exp(logit)), exp(logit)/(1+exp(logit)))   #混合率
+  r <- cbind(exp(logit)/(1+exp(logit)), 1-exp(logit)/(1+exp(logit)))   #混合率
   
   ##観測データの対数尤度を評価(Eステップ)
   #観測データの対数尤度と潜在変数zの更新
@@ -411,7 +412,10 @@ while(abs(dl) >= tol){
   print(LL)
 }
 
-cbind(alpha, alpha0)
-cbind(beta, beta0)
-rho
-cbind(z1, seg_id)
+####推定結果と適合度の計算
+round(cbind(alpha, alpha0), 3)   #二項ロジットの推定値
+round(cbind(beta, beta0), 3)   #多項ロジットおよびネステッドロジットモデルの推定値
+round(c(rho, rhot), 3)   #ログサム変数のパラメータ
+round(cbind(z1, r, seg_id), 3)   #潜在変数zと真のセグメント割当
+colSums(z1)/hh   #混合率
+
