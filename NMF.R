@@ -19,7 +19,6 @@ library(lattice)
 
 ####データの発生####
 hh <- 3000
-select <- 8
 seg <- 2
 
 ##説明変数の発生
@@ -58,27 +57,16 @@ for(i in 1:hh){
 }
 
 ##非負値行列因子分解で頻度行列を圧縮
-res1 <- list()
-res2 <- list()
-k2 <- 20
+k <- 10
+X0_trance <- t(X0)
+res1 <- nmf(X0, k, "brunet")
+res2 <- nmf(X0_trance, k, "brunet")
 
-for(i in 2:k2){
-  print(i)
-  res1[[i-1]] <- nmf(X0, i, "lee")
-  res2[[i-1]] <- nmf(t(X0), i, "brunet")
-}
+H <- res2@fit@H
+W <- res2@fit@W
 
-sq_error1 <- c()
-sq_error2 <- c()
-for(i in 1:(k2-1)){
-  sq_error1 <- c(sq_error1, sum((X0 - basis(res1[[i]]) %*% coef(res1[[i]]))^2))
-  sq_error2 <- c(sq_error2, sum((X0 - t(basis(res2[[i]]) %*% coef(res2[[i]])))^2))
-}
+test <- round(cbind(t(solve(t(W) %*% W) %*% t(W) %*% X0_trance), t(H)), 3)
 
-##基底数を決定する
-plot(2:(length(sq_error1)+1), sq_error1, type="l")
-plot(2:(length(sq_error2)+1), sq_error2, type="l")
-rbind(sq_error1, sq_error2, 3)
 
 #真のトピックの出現確率と推定されたトピック確率を比較
 t_rate <- matrix(0, hh, topic) 
