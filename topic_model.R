@@ -10,11 +10,11 @@ library(ggplot2)
 ####データの発生####
 #set.seed(423943)
 #データの設定
-k <- 5   #トピック数
-d <- 300   #文書数
+k <- 8   #トピック数
+d <- 2000   #文書数
 v <- 200   #語彙数
-w <- 500   #1文書あたりの単語数
-  
+w <- 300   #1文書あたりの単語数
+
 #パラメータの設定
 alpha0 <- round(runif(k, 0.1, 1.25), 3)   #文書のディレクリ事前分布のパラメータ
 alpha1 <- rep(0.5, v)   #単語のディレクリ事前分布のパラメータ
@@ -46,7 +46,7 @@ for(i in 1:d){
 #文書行列を単語ごとの出現頻度行列に直す
 WXV <- list()
 for(i in 1:d){
- ind <- diag(WX[i, ])
+  ind <- diag(WX[i, ])
   id_v <- 1:v
   M <- data.frame(id_d=i, id_v, ind)
   MM <- subset(M, rowSums(M[, -(1:2)]) > 0)
@@ -84,6 +84,12 @@ burden_fr <- function(theta, phi, wd, k){
   return(bval)
 }
 
+##インデックスを作成
+doc_list <- list()
+word_list <- list()
+for(i in 1:length(unique(ID_d))) {doc_list[[i]] <- subset(1:length(ID_d), ID_d==i)}
+for(i in 1:length(unique(wd))) {word_list[[i]] <- subset(1:length(wd), wd==i)}
+gc(); gc()
 
 ####EMアルゴリズムの初期値を設定する####
 ##初期値をランダムに設定
@@ -106,17 +112,15 @@ r <- bfr$r   #混合率
 ##thetaの更新
 theta_r <- matrix(0, d, k)
 for(i in 1:d){
-  tsum <- apply(Br[ID_d==i, ], 2, sum)
+  tsum <- apply(Br[doc_list[[i]], ], 2, sum)
   theta_r[i, ] <- tsum / sum(tsum)
 }
 
 ##phiの更新
 phi_rr <- matrix(0, k, v)
 for(i in 1:v){
- index_v <- wd == i
- vf <- colSums(Br[index_v, 1:k])
- phi_rr[, i] <- vf
- phi_rr
+  vf <- colSums(Br[word_list[[i]], 1:k])
+  phi_rr[, i] <- vf
 }
 phi_r <- phi_rr / rowSums(phi_rr)
 
@@ -132,6 +136,8 @@ tol <- 1
 LLo <- LLS   #対数尤度の初期値
 LLw <- LLS
 
+out <- cbind(ID_d, wd, round(bfr$Br, 3))
+
 ###パラメータの更新
 ##負担率の計算
 while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
@@ -142,17 +148,16 @@ while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
   ##thetaの更新
   theta_r <- matrix(0, d, k)
   for(i in 1:d){
-    tsum <- apply(Br[ID_d==i, ], 2, sum)
+    tsum <- colSums(Br[doc_list[[i]], ])
     theta_r[i, ] <- tsum / sum(tsum)
   }
   
   ##phiの更新
   phi_rr <- matrix(0, k, v)
   for(i in 1:v){
-    index_v <- wd == i
-    vf <- colSums(Br[index_v, 1:k])
+    vf <- colSums(Br[word_list[[i]], 1:k])
     phi_rr[, i] <- vf
-    phi_rr
+
   }
   phi_r <- phi_rr / rowSums(phi_rr)
   
@@ -163,7 +168,7 @@ while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
   dl <- LLS-LLo
   LLo <- LLS
   LLw <- c(LLw, LLo)
-  print(LLw)
+  print(LLo)
 }
 
 ####推定結果と統計量####
@@ -186,25 +191,24 @@ pp <- dim(phi_r)[1]*dim(phi_r)[2]
 ##結果をグラフ化
 #thetaのプロット(50番目の文書まで)
 barplot(theta_r[1:100, 1], ylim=c(0, 1), col=c(1:ncol(phi_r)), density=50)
-  abline(h=mean(theta_r[, 1]), col=10, lty=5)
+abline(h=mean(theta_r[, 1]), col=10, lty=5)
 barplot(theta_r[1:100, 2], ylim=c(0, 1), col=c(1:ncol(phi_r)), density=50)
-  abline(h=mean(theta_r[, 2]), col=10, lty=5)
+abline(h=mean(theta_r[, 2]), col=10, lty=5)
 barplot(theta_r[1:100, 3], ylim=c(0, 1), col=c(1:ncol(phi_r)), density=50)
-  abline(h=mean(theta_r[, 2]), col=10, lty=5)
+abline(h=mean(theta_r[, 2]), col=10, lty=5)
 barplot(theta_r[1:100, 4], ylim=c(0, 1), col=c(1:ncol(phi_r)), density=50)
-  abline(h=mean(theta_r[, 2]), col=10, lty=5)
+abline(h=mean(theta_r[, 2]), col=10, lty=5)
 barplot(theta_r[1:100, 5], ylim=c(0, 1), col=c(1:ncol(phi_r)), density=50)
-  abline(h=mean(theta_r[, 2]), col=10, lty=5)
+abline(h=mean(theta_r[, 2]), col=10, lty=5)
 
 #phiのプロット(50番目の単語まで)
 barplot(phi_r[1, 1:50], ylim=c(0, 0.05), col=c(1:ncol(phi_r)), density=50)
-  abline(h=mean(phi_r[1, ]), col=10, lty=5)
+abline(h=mean(phi_r[1, ]), col=10, lty=5)
 barplot(phi_r[2, 1:50], ylim=c(0, 0.05), col=c(1:ncol(phi_r)), density=50)
-  abline(h=mean(phi_r[2, ]), col=10, lty=5)
+abline(h=mean(phi_r[2, ]), col=10, lty=5)
 barplot(phi_r[3, 1:50], ylim=c(0, 0.05), col=c(1:ncol(phi_r)), density=50)
-  abline(h=mean(phi_r[3, ]), col=10, lty=5)
+abline(h=mean(phi_r[3, ]), col=10, lty=5)
 barplot(phi_r[4, 1:50], ylim=c(0, 0.05), col=c(1:ncol(phi_r)), density=50)
-  abline(h=mean(phi_r[4, ]), col=10, lty=5)
+abline(h=mean(phi_r[4, ]), col=10, lty=5)
 barplot(phi_r[5, 1:50], ylim=c(0, 0.05), col=c(1:ncol(phi_r)), density=50)
-  abline(h=mean(phi_r[5, ]), col=10, lty=5)
-
+abline(h=mean(phi_r[5, ]), col=10, lty=5)
