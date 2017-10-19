@@ -200,5 +200,3 @@ for(rp in 1:R){
     print(colSums(z))
   }
 }
-
-
