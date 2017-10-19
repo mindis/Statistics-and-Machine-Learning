@@ -2,7 +2,10 @@
 library(MASS)
 library(mclust)
 library(reshape2)
-library(plyr)
+library(gtools)
+library(bayesm)
+library(mvtnorm)
+library(dplyr)
 library(ggplot2)
 library(lattice)
 
@@ -91,10 +94,111 @@ plot(Data[, 3:4], col=seg_id[seg_id %in% 1:5], pch=20, xlab="データ3の値", ylab=
 ####マルコフ連鎖モンテカルロ法で無限混合ガウス分布モデルを推定####
 ##アルゴリズムの設定
 R <- 10000
-keep <- 2
+keep <- 4
 sbeta <- 1.5
 iter <- 0
 
+##多変量正規分布の尤度関数
+dmv <- function(x, mean.vec, S, S_det, S_inv){
+  LLo <- (2*pi)^(-nrow(S)/2) * S_det^(-1/2) *
+                exp(-1/2 * (x - mean.vec) %*% S_inv %*% (x - mean.vec))
+  return(LLo)
+}
+
 ##事前分布の設定
+#多変量正規分布の事前分布
+mean0 <- rep(0, k)
+sigma0 <- diag(100, k)
+sigma0_inv <- solve(sigma0)
+mean_z <- colMeans(Data)   #提案分布の平均
+sigma_z <- diag(diag(var(Data))) * 7.5   #提案分布の分散
+
+#逆ウィシャート分布の事前分布
+nu <- k+1
+V <- nu * diag(k)
+
+#ディクレリ分布の事前分布
+alpha <- 1
+
+##初期値の設定
+seg0 <- 2   #初期セグメントは2つ
+res <- Mclust(Data, 2)   #混合正規分布を推定
+
+#潜在変数zの初期値
+z_vec <- apply(res$z, 1, which.max)
+z <- matrix(0, nrow=hh, ncol=seg0)
+for(i in 1:hh) {z[i, z_vec[i]] <- 1}
+
+#回帰パラメータの初期値
+oldmean <- t(res$parameters$mean)
+oldcov <- res$parameters$variance$sigma
+
+##パラメータの格納用配列
+Z <- matrix(0, nrow=R/keep, ncol=hh)
+
+####MCMCでパラメータをサンプリング
+for(rp in 1:R){
+
+  ##潜在変数zをサンプリング
+  z_len <- length(unique(z_vec))
+  LLi <- matrix(0, nrow=hh, ncol=z_len+1)
+  
+  #サンプリング済みの潜在変数の尤度
+  for(j in 1:z_len){
+    LLi[, j] <- dmvnorm(Data, oldmean[j, ], oldcov[, , j])
+  }
+  #新しい潜在変数の尤度
+  LLi[, z_len+1] <- dmvnorm(Data, mean_z, sigma_z)
+
+  #CRPを計算
+  gamma0 <- cbind(matrix(colSums(z), nrow=hh, ncol=z_len, byrow=T) - z, alpha)
+  matrix(colSums(z), nrow=hh, ncol=z_len, byrow=T)
+  
+  gamma1 <- LLi * gamma0/(hh-1-alpha)
+  
+  #多項分布より潜在変数zをサンプリング
+  z <- t(apply(gamma1/rowSums(gamma1), 1, function(x) rmultinom(1, 1, x)))
+  z <- z[, colSums(z) > 0]
+  z_vec <- z %*% 1:ncol(z)
+  
+  ##多変量正規分布のパラメータをサンプリング
+  z_cnt <- length(colSums(z) > 0)
+  if(z_cnt > nrow(oldmean)){
+    oldmean <- rbind(oldmean, 0)
+  }
+  oldmean <- oldmean[1:z_cnt, ]
+  oldcov <- array(0, dim=c(k, k, z_cnt))
+
+  
+  for(j in 1:z_cnt){
+    
+    #インデックスを作成
+    index <- subset(1:nrow(z), z[, j]==1)
+    
+    #逆ウィシャート分布から分散共分散行列をサンプリング
+    Vn <- nu + length(index)
+    er <- Data[index, ] - matrix(oldmean[j, ], nrow=length(index), ncol=ncol(Data), byrow=T)
+    R_par <- solve(V) + t(er) %*% er
+  
+    oldcov[, , j] <- rwishart(Vn, solve(R_par))$IW   #逆ウィシャート分布から分散共分散行列をサンプリング
+    
+    #平均をサンプリング
+    if(length(index) > 1){
+      mean_mu <- length(index)/(1+length(index))*colMeans(Data[index, ])   #平均パラメータの平均
+    } else {
+      mean_mu <- length(index)/(1+length(index))*Data[index, ] 
+    }
+    mean_cov <- oldcov[, , j] / (1+length(index))   #平均パラメータの分散共分散行列
+    oldmean[j, ] <- mvrnorm(1, mean_mu, mean_cov)
+  }
+  
+  ##パラメータの格納とサンプリング結果の表示
+  if(rp%%keep==0){
+    mkeep <- rp/keep
+    
+    print(rp)
+    print(colSums(z))
+  }
+}
 
 
