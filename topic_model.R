@@ -2,8 +2,10 @@
 library(MASS)
 library(lda)
 library(RMeCab)
+detach("package:bayesm", unload=TRUE)
 library(gtools)
 library(reshape2)
+library(dplyr)
 library(plyr)
 library(ggplot2)
 
@@ -11,9 +13,9 @@ library(ggplot2)
 #set.seed(423943)
 #データの設定
 k <- 8   #トピック数
-d <- 2000   #文書数
-v <- 200   #語彙数
-w <- 300   #1文書あたりの単語数
+d <- 5000   #文書数
+v <- 300   #語彙数
+w <- 350   #1文書あたりの単語数
 
 #パラメータの設定
 alpha0 <- round(runif(k, 0.1, 1.25), 3)   #文書のディレクリ事前分布のパラメータ
@@ -68,6 +70,8 @@ for(i in 1:d){
 ID_v <- rep(1:v, d)   #語彙IDを格納
 ID_d <- rep(1:d, rep(w, d))   #文書IDを格納
 No <- 1:(v*d)   #整理番号
+word_freq <- as.numeric(table(wd))   #単語ごとの出現数
+word_m <- matrix(word_freq, nrow=length(word_freq), ncol=k)
 
 
 ##単語ごとに尤度と負担率を計算する関数
@@ -110,19 +114,17 @@ Br <- bfr$Br   #負担率
 r <- bfr$r   #混合率
 
 ##thetaの更新
-theta_r <- matrix(0, d, k)
-for(i in 1:d){
-  tsum <- apply(Br[doc_list[[i]], ], 2, sum)
-  theta_r[i, ] <- tsum / sum(tsum)
-}
+tsum <- (data.frame(id=ID_d, Br=Br) %>%
+           dplyr::group_by(id) %>%
+           dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+theta_r <- tsum / matrix(w, nrow=d, ncol=k, byrow=T)   #パラメータを計算
+
 
 ##phiの更新
-phi_rr <- matrix(0, k, v)
-for(i in 1:v){
-  vf <- colSums(Br[word_list[[i]], 1:k])
-  phi_rr[, i] <- vf
-}
-phi_r <- phi_rr / rowSums(phi_rr)
+vf <- (data.frame(id=wd, Br=Br) %>%
+         dplyr::group_by(id) %>%
+         dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+phi_r <- t(vf) / matrix(colSums(vf), nrow=k, ncol=v)
 
 #対数尤度の計算
 (LLS <- sum(log(rowSums(bfr$Bur))))
@@ -132,7 +134,7 @@ phi_r <- phi_rr / rowSums(phi_rr)
 #更新ステータス
 iter <- 1
 dl <- 100   #EMステップでの対数尤度の差の初期値
-tol <- 1  
+tol <- 1
 LLo <- LLS   #対数尤度の初期値
 LLw <- LLS
 
@@ -146,21 +148,18 @@ while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
   r <- bfr$r   #混合率
   
   ##thetaの更新
-  theta_r <- matrix(0, d, k)
-  for(i in 1:d){
-    tsum <- colSums(Br[doc_list[[i]], ])
-    theta_r[i, ] <- tsum / sum(tsum)
-  }
+  tsum <- (data.frame(id=ID_d, Br=Br) %>%
+    dplyr::group_by(id) %>%
+    dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+  theta_r <- tsum / matrix(w, nrow=d, ncol=k, byrow=T)   #パラメータを計算
+  
   
   ##phiの更新
-  phi_rr <- matrix(0, k, v)
-  for(i in 1:v){
-    vf <- colSums(Br[word_list[[i]], 1:k])
-    phi_rr[, i] <- vf
+  vf <- (data.frame(id=wd, Br=Br) %>%
+             dplyr::group_by(id) %>%
+             dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+  phi_r <- t(vf) / matrix(colSums(vf), nrow=k, ncol=v)
 
-  }
-  phi_r <- phi_rr / rowSums(phi_rr)
-  
   #対数尤度の計算
   LLS <- sum(log(rowSums(bfr$Bur)))
   
@@ -174,10 +173,9 @@ while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
 ####推定結果と統計量####
 plot(1:length(LLw), LLw, type="l", xlab="iter", ylab="LL", main="対数尤度の変化", lwd=2)
 
-(PHI <- data.frame(est=round(t(phi_r), 4), t=round(t(phi), 4)))   #phiの真の値と推定結果の比較
-(THETA <- data.frame(est=round(theta_r, 3), t=round(theta, 3)))   #thetaの真の値と推定結果の比較
+(PHI <- data.frame(round(t(phi_r), 4), t=round(t(phi), 4)))   #phiの真の値と推定結果の比較
+(THETA <- data.frame(round(theta_r, 3), t=round(theta, 3)))   #thetaの真の値と推定結果の比較
 r   #混合率の推定結果
-
 round(colSums(THETA[, 1:k]) / sum(THETA[, 1:k]), 3)   #推定された文書中の各トピックの比率
 round(colSums(THETA[, (k+1):(2*k)]) / sum(THETA[, (k+1):(2*k)]), 3)   #真の文書中の各トピックの比率
 
