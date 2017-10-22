@@ -135,6 +135,10 @@ oldcov <- res$parameters$variance$sigma
 
 ##パラメータの格納用配列
 Z <- matrix(0, nrow=R/keep, ncol=hh)
+Mu <- list()
+Cov <- list()
+storage.mode(Z) <- "integer"
+
 
 ####MCMCでパラメータをサンプリング
 for(rp in 1:R){
@@ -195,6 +199,9 @@ for(rp in 1:R){
   ##パラメータの格納とサンプリング結果の表示
   if(rp%%keep==0){
     mkeep <- rp/keep
+    Z[mkeep, ] <- z_vec
+    Mu[[i]] <- oldmean
+    Cov[[i]] <- oldcov
     
     print(rp)
     print(colSums(z))
