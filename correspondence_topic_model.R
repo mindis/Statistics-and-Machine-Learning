@@ -3,8 +3,9 @@ library(MASS)
 library(lda)
 library(RMeCab)
 library(matrixStats)
+detach("package:gtools", unload=TRUE)
 detach("package:bayesm", unload=TRUE)
-library(gtools)
+library(extraDistr)
 library(reshape2)
 library(dplyr)
 library(plyr)
@@ -200,15 +201,14 @@ for(rp in 1:R){
   wsum <- as.matrix(data.frame(id=ID1_d, Br=Zi1) %>%
                       dplyr::group_by(id) %>%
                       dplyr::summarize_each(funs(sum)))[, 2:(k+1)] + alpha01m
-  theta <- t(apply(wsum, 1, function(x) rdirichlet(1, x)))
-
+  system.time(theta <- t(apply(wsum, 1, function(x) rdirichlet(1, x))))
   
   #ディクレリ分布からphiをサンプリング
   vf <- as.matrix(data.frame(id=wd, Br=Zi1) %>%
                     dplyr::group_by(id) %>%
                     dplyr::summarize_each(funs(sum)))[, 2:(k+1)] + beta0m
   phi <- t(apply(t(vf), 1, function(x) rdirichlet(1, x)))
-
+  
   
   ##補助情報トピックをサンプリング
   #発生させた単語トピックからトピック抽出確率を計算
