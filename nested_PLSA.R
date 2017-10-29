@@ -13,8 +13,8 @@ library(ggplot2)
 ####データの発生####
 #set.seed(423943)
 #データを仮設定
-hh0 <- 500   #ユーザー数
-item0 <- 150   #アイテム数
+hh0 <- 1000   #ユーザー数
+item0 <- 100   #アイテム数
 
 ##IDとレビュー履歴を発生
 #IDを仮設定
@@ -24,7 +24,7 @@ i.id0 <- rep(1:item0, hh0)
 #レビュー履歴を発生
 hist <- rep(0, hh0*item0)
 for(i in 1:item0){
-  p <- runif(1, 0.25, 0.5)
+  p <- runif(1, 0.15, 0.4)
   hist[i.id0==i] <- rbinom(hh0, 1, p)
 }
 
@@ -237,19 +237,19 @@ y_rate <- bfr$y_rate
 #betaの更新
 usum <- (data.frame(id=ID_u, Br=y_rate*Br) %>%
            dplyr::group_by(id) %>%
-           dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+           dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
 beta_r <- usum / matrix(rowSums(usum), nrow=hh, ncol=k)   #パラメータを計算
 
 #gammaの更新
 isum <- (data.frame(id=ID_i, Br=(1-y_rate)*Br) %>%
            dplyr::group_by(id) %>%
-           dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+           dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
 gamma_r <- isum / matrix(rowSums(isum), nrow=item, ncol=k)   #パラメータを計算
 
 #phiの更新
 vf <- (data.frame(id=wd, Br=Br) %>%
          dplyr::group_by(id) %>%
-         dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+         dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
 phi_r <- t(vf) / matrix(colSums(vf), nrow=k, ncol=v)
 
 #対数尤度の計算
@@ -276,19 +276,19 @@ while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
   #betaの更新
   usum <- (data.frame(id=ID_u, Br=y_rate*Br) %>%
              dplyr::group_by(id) %>%
-             dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+             dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
   beta_r <- usum / matrix(rowSums(usum), nrow=hh, ncol=k)   #パラメータを計算
   
   #gammaの更新
   isum <- (data.frame(id=ID_i, Br=(1-y_rate)*Br) %>%
              dplyr::group_by(id) %>%
-             dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+             dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
   gamma_r <- isum / matrix(rowSums(isum), nrow=item, ncol=k)   #パラメータを計算
   
   #phiの更新
   vf <- (data.frame(id=wd, Br=Br) %>%
            dplyr::group_by(id) %>%
-           dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+           dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
   phi_r <- t(vf) / matrix(colSums(vf), nrow=k, ncol=v)
   
   #対数尤度の計算
