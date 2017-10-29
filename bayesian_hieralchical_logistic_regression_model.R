@@ -47,7 +47,7 @@ X <- data.frame(cont=X.cont, bin=X.bin)
 
 ##個体間モデルの説明変数の発生
 #連続変数
-cont.h <- 5
+cont.h <- 3
 Xh.cont <- matrix(runif(hh*cont.h, 0, 1), nrow=hh, ncol=cont.h) 
 
 #二値変数
@@ -59,7 +59,7 @@ for(i in 1:bin.h){
 }
 
 #多値変数
-multi.h <- 5
+multi.h <- 3
 ph.multi <- runif(multi.h)
 Xh.multi <- t(rmultinom(hh, 1, ph.multi))
 freq.min <- which.min(colSums(Xh.multi))
@@ -75,7 +75,7 @@ for(t in 1:1000){
   theta0 <- matrix(runif((ncol(X)+1), -1.5, 1.8), nrow=1, ncol=(ncol(X)+1))   
   thetac <- matrix(runif((ncol(X)+1)*cont.h, -1.5, 1.5), nrow=cont.h, ncol=(ncol(X)+1))
   thetab <- matrix(runif((ncol(X)+1)*bin.h, -1.3, 1.3), nrow=bin.h, ncol=(ncol(X)+1))
-  thetam <- matrix(runif((ncol(X)+1)*multi.h, -1.2, 1.4), nrow=(multi.h-1), ncol=(ncol(X)+1))
+  thetam <- matrix(runif((ncol(X)+1)*(multi.h-1), -1.2, 1.4), nrow=(multi.h-1), ncol=(ncol(X)+1))
   
   #個体間回帰係数の結合
   THETAt <- rbind(theta0, thetac, thetab, thetam)
@@ -86,7 +86,7 @@ for(t in 1:1000){
   sigma.M <- matrix(rnorm(hh*(ncol(X)+1), 0, 0.3), nrow=hh, ncol=ncol(X)+1)
   BETAt <- Xhh %*% THETAt + sigma.M
   mean(BETAt)
-
+  
   ##確率の発生
   P <- c()
   for(i in 1:hh){
@@ -113,7 +113,7 @@ table(Y)
 ####マルコフ連鎖モンテカルロ法で階層ベイズロジスティック回帰モデルを推定####
 ##ロジスティック回帰モデルの対数尤度を設定
 loglike <- function(beta, y, X){
-  logit <- beta[1] + as.matrix(X) %*% beta[-1]    #ロジットの計算
+  logit <- beta[1] + X %*% beta[-1]    #ロジットの計算
   p <- exp(logit)/(1+exp(logit))   #確率の計算
   
   #対数尤度の計算
@@ -124,7 +124,7 @@ loglike <- function(beta, y, X){
 
 ##対数尤度を最大化する
 b0 <- runif(ncol(X)+1, -1, 1)
-res <- optim(b0, loglike, y=Y, X=X, method="BFGS", hessian=TRUE, control=list(fnscale=-1))
+res <- optim(b0, loglike, y=Y, X=as.matrix(X), method="BFGS", hessian=TRUE, control=list(fnscale=-1))
 betaf <- res$par
 
 ##アルゴリズムの設定
@@ -133,6 +133,18 @@ sbeta <- 1.5
 keep <- 4
 X <- as.matrix(X)
 Z <- as.matrix(Xhh)
+
+##インデックスを作成
+index_user <- list()
+y_ind <- list()
+X_ind <- list() 
+
+for(i in 1:hh){
+  index_user[[i]] <- which(ID$id==i)
+  y_ind[[i]] <- Y[index_user[[i]]]
+  X_ind[[i]] <- X[index_user[[i]], ]
+}
+
 
 ##事前分布の設定
 Deltabar <- matrix(rep(0, ncol(Z)*(ncol(X)+1)), nrow=ncol(Z), ncol=ncol(X)+1)   #階層モデルの回帰係数の事前分布の分散
@@ -143,8 +155,14 @@ V <- nu * diag(rep(1, ncol(X)+1))   #逆ウィシャート分布のパラメータ
 ##サンプリング結果の保存用配列
 BETA <- array(0, dim=c(hh, ncol(X)+1, R/keep))
 THETA <- matrix(0, R/keep, nrow(THETAt)*ncol(THETAt))
-VAR <- array(0, dim=c(ncol(X)+1, ncol(X)+1, R/keep))
+VAR <- matrix(0, R/keep, ncol(X)+1)
 SIG <- list()
+
+##MCMCパラメータ用配列
+lognew <- rep(0, hh)
+logold <- rep(0, hh)
+logpnew <- rep(0, hh)
+logpold <- rep(0, hh)
 
 ##棄却率と対数尤度の保存用配列
 reject <- array(0, dim=c(R/keep))
@@ -153,7 +171,7 @@ llike <- array(0, dim=c(R/keep))
 ##初期値の設定
 tau <- matrix(rnorm(hh*(ncol(X)+1), 0, 0.5), nrow=hh, ncol=ncol(X)+1)
 oldbetas <- matrix(res$par, nrow=hh, ncol=ncol(X)+1, byrow=T) + tau
-oldVbetai <- diag(ncol(X)+1)
+Sig_inv <- diag(ncol(X)+1)
 oldDelta <- matrix(runif(ncol(Z)*(ncol(X)+1), -1.5, 1.5), nrow=ncol(Z), ncol=ncol(X)+1)
 betad <- array(0, dim=c(ncol(X)+1))
 betan <- array(0, dim=c(ncol(X)+1))
@@ -161,58 +179,54 @@ b <- oldbetas
 
 ##マルコフ連鎖モンテカルロ法で階層ベイズロジスティック回帰モデルを推定
 for(rp in 1:R){
-  rej <- 0
-  logl <- 0
-
-  ##MH法で個人別に回帰係数を推定
-  for(i in 1:hh){
-    rw <- rnorm(length(res$par), 0, 0.25)   #ランダムウォークの分散
-    betad <- oldbetas[i, ]   
-    betan <- betad + rw
-    
-    #対数尤度と対数事前分布の計算
-    lognew <- loglike(beta=betan, y=Y[ID$id==i], X=X[ID$id==i, ])
-    logold <- loglike(beta=betad, y=Y[ID$id==i], X=X[ID$id==i, ])
-    logpnew <- -0.5 * (t(betan) - Z[i, ] %*% oldDelta) %*% oldVbetai %*% (betan - t(Z[i, ] %*% oldDelta))
-    logpold <- -0.5 * (t(betad) - Z[i, ] %*% oldDelta) %*% oldVbetai %*% (betad - t(Z[i, ] %*% oldDelta))
-      
-    #MHサンプリング
-    alpha <- min(1, exp(lognew + logpnew - logold - logpold))
-    if(alpha == "NAN") alpha <- -1
   
-    #一様乱数を発生
-    u <- runif(1)
-    
-    #u < alphaなら新しいbetaを採択
-    if(u < alpha){
-      oldbetas[i, ] <- betan
-      logl <- logl + lognew
-      
-      #そうでないならbetaを更新しない
-      } else {
-      logl <- logl + logold
-      rej <- rej + 1
-      }
+  ##MH法で個人別に回帰係数を推定
+  #パラメータをサンプリング
+  rw <- matrix(rnorm(hh*length(res$par), 0, 0.15), nrow=hh, ncol=ncol(oldbetas))   #ランダムウォークの分散
+  betad <- oldbetas   
+  betan <- betad + rw
+  
+  #誤差を計算
+  mu <- Z %*% oldDelta
+  
+  for(i in 1:hh){
+    #対数尤度と対数事前分布の計算
+    lognew[i] <- loglike(beta=betan[i, ], y=y_ind[[i]], X=X_ind[[i]])
+    logold[i] <- loglike(beta=betad[i, ], y=y_ind[[i]], X=X_ind[[i]])
+    logpnew[i] <- -0.5 * (t(betan[i, ]) - mu[i, ]) %*% Sig_inv %*% (betan[i, ] - mu[i, ])
+    logpold[i] <- -0.5 * (t(betad[i, ]) - mu[i, ]) %*% Sig_inv %*% (betad[i, ] - mu[i, ])
   }
-
+  
+  #メトロポリスヘイスティング法でパラメータの採択を決定
+  rand <- runif(hh)   #一様分布から乱数を発生
+  LLind_diff <- exp(lognew + logpnew - logold - logpold)   #採択率を計算
+  alpha <- ifelse(LLind_diff > 1, 1, LLind_diff)
+  
+  #alphaの値に基づき新しいbetaを採択するかどうかを決定
+  flag <- matrix(ifelse(alpha > rand, 1, 0), nrow=hh, ncol=ncol(oldbetas))
+  oldbetas <- flag*betan + (1-flag)*betad   #alphaがrandを上回っていたら採択
+  
+  
   ##多変量回帰モデルによる階層モデルのギブスサンプリング
   out <- rmultireg(Y=oldbetas, X=Z, Bbar=Deltabar, A=ADelta, nu=nu, V=V)
   oldDelta <- out$B
-  sig <- out$Sigma
-  oldVbetai <- solve(sig)
+  sig <- diag(diag(out$Sigma))
+  Sig_inv <- solve(sig)
   
   ##サンプリング結果を保存
-  mkeep <- rp/keep
   if(rp%%keep==0){
+    mkeep <- rp/keep
     BETA[, , mkeep] <- oldbetas
     THETA[mkeep, ] <- as.vector(oldDelta)
-    VAR[, , mkeep] <- sig
+    VAR[mkeep, ] <- diag(sig)
+    logl <- sum(lognew)
     llike[mkeep] <- logl
-    reject[mkeep] <- rej/hh
-    print(round(c(rp, logl, res$value, alpha), 1))   #サンプリング経過の表示
+    print(rp)
+    print(round(c(logl, res$value), 1))   #サンプリング経過の表示
   }
 }
-plot(llike[1:ind], type="l")
+
+plot(1:(R/keep), llike, type="l", xlab="iter")
 
 ####サンプリング結果の確認と適合度の確認####
 #サンプリングされたパラメータをプロット
@@ -221,8 +235,11 @@ RS <- R/keep
 
 #サンプリングされたパラメータをプロット
 matplot(THETA[1:RS, 1:5], type="l", ylab="parameter")
-matplot(THETA[1:RS, 6:10], type="l", ylab="parameter")
-matplot(t(BETA[i, 1:3, 1:RS]), type="l", ylab="parameter")
+matplot(THETA[1:RS, 6:9], type="l", ylab="parameter")
+matplot(VAR[1:RS, 1:4], type="l", ylab="parameter")
+matplot(VAR[1:RS, 5:8], type="l", ylab="parameter")
+matplot(t(BETA[1, 1:5, 1:RS]), type="l", ylab="parameter")
+
 
 ##階層モデルの回帰係数のパラメータ
 round(matrix(colMeans(THETA[burnin:(R/keep), ]), nrow=ncol(Z), ncol=ncol(X)+1), 3)
@@ -249,5 +266,3 @@ summary(P.pre)   #事後予測分布の要約
 P[ID$id==i][1]   #真の確率
 round(quantile(P.pre, c(0.05, 0.95)), 3)
 hist(P.pre, col="grey", xlab="予測確率", main="個人別の事後予測分布", breaks=25)
-
-
