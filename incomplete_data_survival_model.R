@@ -52,7 +52,7 @@ for(i in 1:1000){
   #線形結合
   scale1 <- exp(XM[seg_id==1, ] %*% beta0[, 1])   
   scale2 <- exp(XM[seg_id==2, ] %*% beta0[, 2])
-  
+
   #応答変数を発生
   y01 <- rllogis(length(scale1), shape=alpha0[1], scale=scale1)   #対数ロジスティック分布
   y02 <- rweibull(length(scale2), shape=alpha0[2], scale=scale2)   #ワイブル乱数
@@ -99,7 +99,7 @@ obsll <- function(alpha, beta, y_upper, y_lower, X, z, r, hh){
   #ワイブルモデルの尤度
   Li2 <- rep(0, hh)
   Li2[z==1] <- pweibull(y_upper[z==1], alpha[2], lambda2[z==1]) - pweibull(y_lower[z==1], alpha[2], lambda2[z==1])   #区間打ち切りの尤度
-  Li2[z==0] <- 1 - pweibull(y_upper[z==0], alpha[2], lambda2[z==0]); Li22 <- ifelse(Li22==0, 10^-100, Li22)   #右側打ち切りの尤度
+  Li2[z==0] <- 1 - pweibull(y_upper[z==0], alpha[2], lambda2[z==0]); Li2 <- ifelse(Li2==0, 10^-100, Li2)   #右側打ち切りの尤度
   
   #尤度の結合
   Li <- cbind(Li1, Li2)
@@ -137,7 +137,7 @@ fr <- function(theta, y_upper, y_lower, z1, z, X, hh, index_alpha, index_beta1, 
   #ワイブルモデルの尤度
   Li2 <- rep(0, hh)
   Li2[z==1] <- pweibull(y_upper[z==1], alpha[2], lambda2[z==1]) - pweibull(y_lower[z==1], alpha[2], lambda2[z==1])   #区間打ち切りの尤度
-  Li2[z==0] <- 1 - pweibull(y_upper[z==0], alpha[2], lambda2[z==0]); Li22 <- ifelse(Li22==0, 10^-100, Li22)   #右側打ち切りの尤度
+  Li2[z==0] <- 1 - pweibull(y_upper[z==0], alpha[2], lambda2[z==0]); Li2 <- ifelse(Li2==0, 10^-100, Li2)   #右側打ち切りの尤度
   
   #重み付き対数尤度の和
   LLi <- log(cbind(Li1, Li2))
@@ -153,7 +153,7 @@ tol <- 1
 #インデックスの設定
 index_alpha <- 1:2
 index_beta1 <- 3:(2+ncol(X))
-index_beta2 <- (3+ncol(X)):length(theta)
+index_beta2 <- (3+ncol(X)):(ncol(X)*2+2)
 
 ##パラメータの初期値の設定
 r <- rep(0.5, 2)   #混合率の初期値
