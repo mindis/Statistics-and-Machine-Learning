@@ -36,3 +36,21 @@ round(theta2[, 1:15], 3)   #データを確認
 Z2 <- cbind(n[(N1+1):N], theta2)
 W2 <- t(apply(Z2, 1, function(x) rmultinom(1, x[1], x[-1])))
 W2[, 1:20]
+
+##発生させたデータの比率行列
+R1 <- t(apply(cbind(n[1:N1], W1), 1, function(x) x[-1]/x[1]))
+R2 <- t(apply(cbind(n[(N1+1):N], W2), 1, function(x) x[-1]/x[1]))
+round(R1[, 1:15], 3)
+round(R2[, 1:15], 3)
+
+#分布を視覚化
+hist(R1[, 1], breaks=20, col="#0000ff40", xlim=c(0, 0.15), ylim=c(0, 700), border = "#0000ff",
+     xlab="rate", main="ディクレリ多項分布")
+par(new=T)
+hist(R2[, 1], breaks=20, xlim=c(0, 0.15), ylim=c(0, 700), col="#ff00ff40", border = "#ff00ff",
+     xlab="rate", main="ディクレリ多項分布")
+
+
+####ディクレリ多項分布をMAP推定####
+round(rdirichlet(100, W1[1, ]+rep(2, col)-1), 3)
+
