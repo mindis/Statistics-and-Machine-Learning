@@ -4,133 +4,142 @@ library(bayesm)
 library(MCMCpack)
 library(nlme)
 library(reshape2)
+library(dplyr)
 library(plyr)
 library(ggplot2)
 library(lattice)
 
 ####データの発生####
 #set.seed(13294)
-#データの設定
-hh <- 300   #サンプル人数
-cnt <- 60   #ガチャ機会の最大値
+##データの設定
+hh <- 1000   #サンプル人数
+max_cnt <- 72   #ガチャ機会の最大値
+
 #1人あたりのガチャ回数
-for(br in 1:1000){
+for(rp in 1:1000){
   pt <- c()
   for(i in 1:hh){
-    p.cnt <- runif(1, 0.25, 0.9)
-    t <- rbinom(1, cnt, p.cnt)
-    pt <- c(pt, t)
+    p.cnt <- runif(1, 0.25, 0.8)
+    time <- rbinom(1, max_cnt, p.cnt)
+    pt <- c(pt, time)
   }
-  if(min(pt)>2) break
-  print(br)
+  if(min(pt) > 10) break
+  print(rp)
 }
-table(pt)
-hist(pt, col="grey")
+table(pt)   #ガチャ機会数の集計
+hist(pt, col="grey", breaks=20, main="ガチャ機会の分布")
 
 hhpt <- sum(pt)   #総サンプル数
-coefi <- 14   #個体内回帰係数の個数
-coefh <- 9   #個体間回帰係数の個数
+k1 <- 10   #個体内回帰係数の個数
+k2 <- 8   #個体間回帰係数の個数
 
-##データの発生
+
+####説明変数のデータの発生####
 ##個体間モデルの説明変数の発生
-#連続変数
-h.cont <- 5
-Xh.cont <- matrix(runif(hh*h.cont, 0, 1), nrow=hh, ncol=h.cont)
+#連続変数の発生
+h.cont <- 4
+Z.cont <- matrix(runif(hh*h.cont, 0, 1), nrow=hh, ncol=h.cont)
 
-#二値変数
+#二値変数の発生
 h.bin <- 4
-Xh.bin <- matrix(0, nrow=hh, ncol=h.bin)
+Z.bin <- matrix(0, nrow=hh, ncol=h.bin)
 for(i in 1:h.bin){
-  runi <- runif(1, 0.3, 0.7)
-  Xh.bin[, i] <- rbinom(hh, 1, runi)
+  par <- runif(1, 0.3, 0.7)
+  Z.bin[, i] <- rbinom(hh, 1, par)
 }
 
 #データの結合
-Xh <- data.frame(hc=Xh.cont, hb=Xh.bin)
+Z <- data.frame(bp=1, cont=Z.cont, bin=Z.bin)
+ZX <- as.matrix(Z)
 
 
 ##個体内モデルの説明変数の発生
-id <- rep(1:hh, rep(cnt, hh))
-t <- rep(1:cnt, hh)
-no. <- 1:hh*cnt
-ID <- data.frame(id, t, no.)
+#IDの設定
+id <- rep(1:hh, pt)
+time <- c()
+for(i in 1:hh){time <- c(time, 1:pt[i])}
+ID <- data.frame(no=1:length(id), id=id, time=time)
 
-#連続変数
-cont <- 3  
-x.cont <- matrix(runif(cnt*cont, 0, 1), nrow=cnt, cont) 
-X.cont <- matrix(x.cont, nrow=hh*cnt, ncol=cont, byrow=T)
+#連続変数の発生
+cont <- 2  
+x.cont <- matrix(runif(max_cnt*cont, 0, 1), nrow=max_cnt, ncol=cont) 
+X.cont <- matrix(x.cont, nrow=hh*max_cnt, ncol=cont, byrow=T)
 
 #二値変数
-bin <- 3
-x.bin <- matrix(0, nrow=cnt, ncol=bin)
+bin <- 2
+x.bin <- matrix(0, nrow=max_cnt, ncol=bin)
 for(i in 1:bin){
-  runi <- runif(1, 0.3, 0.7)
-  x.bin[, i] <- rbinom(cnt, 1, runi)
+  par <- runif(1, 0.3, 0.7)
+  x.bin[, i] <- rbinom(max_cnt, 1, par)
 }
-X.bin <- matrix(x.bin, nrow=hh*cnt, ncol=bin, byrow=T)
+X.bin <- matrix(x.bin, nrow=hh*max_cnt, ncol=bin, byrow=T)
 
 #多値変数(誰のガチャ回だったか？)
 m <- 9
 p <- rep(1/m, m)
-r <- 10000
+r <- 20000
+
 for(i in 1:r){
-  x.multi <- t(rmultinom(cnt, 2, p))
-  if(max(x.multi)==1 & min(colSums(x.multi))!=0) break
+  x.multi0 <- t(rmultinom(max_cnt, 2, p))
+  if(max(x.multi0)==1 & min(colSums(x.multi0))!=0) break
   print(i)
 }
-x.multiw <- x.multi[, -which.min(colSums(x.multi))]
-X.multi <- matrix(t(x.multiw), nrow=hh*cnt, ncol=(m-1), byrow=T)
+x.multi <- x.multi0[, -which.min(colSums(x.multi0))]
+X.multi <- matrix(t(x.multi), nrow=hh*max_cnt, ncol=m-1, byrow=T)
 
-#ガチャした回を特定して抽出
-X.k <- data.frame(c=X.cont, b=X.bin, m=X.multi)   #データの結合
+#データの結合
+X0 <- data.frame(bp=1, cont=X.cont, bin=X.bin, m=X.multi)  
 
+##ガチャした回を特定して抽出
+ID_full <- data.frame(no=1:(max_cnt*hh), id=rep(1:hh, rep(max_cnt, hh)), time=rep(1:max_cnt, hh))   #IDのフルデータ
+
+#インデックスを作成
 index <- c()
 for(i in 1:hh){
-  irand <- sort(sample(1:cnt, pt[i]))   #IDごとにガチャした回数分ランダムに全ガチャ機会より抽出
-  rt <- (i-1)*cnt+irand
-  index <- c(index, rt)
+  index <- c(index, which(ID_full$time[ID_full$id==i] %in% ID$time[ID$id==i]))
 }
 
-ID.d <- ID[index, -3]   #ガチャした回のみ抽出
-ID <- data.frame(ID.d, no=1:nrow(ID.d))   #IDを再構成
-rownames(ID) <- 1:nrow(ID)   #行番号を付け直す
+#条件に合うデータを抽出
+X <- X0[index, ]
+XM <- as.matrix(X)
+rownames(X) <- 1:nrow(X)
+rownames(XM) <- 1:nrow(XM)
 
-X <- X.k[index, ]   #個体内説明変数を再構成
-rownames(X) <- 1:nrow(X)   #行番号を付け直す
-
-Xc <- cbind(ID, X)   #IDと個体内説明変数を結合
 
 ##回帰係数と応答変数の発生
-#個体間回帰モデルの回帰係数
-for(rp in 1:1000){
-  thetah1 <- matrix(c(runif(7, 0.2, 0.3), runif(7*h.cont, -0.2, 0.3), runif(7*h.bin, -0.3, 0.25)),
-                    nrow=(1+coefh), ncol=7, byrow=T) 
-  thetah2 <- matrix(c(runif(8, -0.1, 0.65), runif(8*h.cont, -0.2, 0.25), runif(8*h.bin, -0.3, 0.3)),
-                    nrow=(1+coefh), ncol=8, byrow=T) 
-  THETA.h <- cbind(thetah1, thetah2)
-  round(THETA.h, 3)
+par1 <- ncol(ZX)
+par2 <- ncol(XM)
+
+for(rp in 1:10000){
+  
+  #個体間回帰モデルの回帰パラメータの設定
+  theta01 <- c(runif(par1, -0.2, 0.3), runif(par1*cont, -0.3, 0.3), runif(par1*bin, -0.3, 0.3), runif(par1*(m-1), -0.3, 0.4))
+  theta0 <- matrix(theta01, nrow=par1, ncol=par2)  
+  cov0 <- diag(runif(par2, 0.05, 0.175))   #変量効果のパラメータ
   
   #個体内回帰モデルの回帰係数
-  BETAt.h <- cbind(1, as.matrix(Xh)) %*% THETA.h + matrix(rnorm((coefi+1)*hh, 0, 0.1), hh, (coefi+1))
+  tau0 <- 0.3   #個体内標準偏差
+  beta0 <- ZX %*% theta0 + mvrnorm(hh, rep(0, par2), cov0)
   
   #応答変数(ガチャ回数)の発生
-  Y <- c()
+  y <- c()
   for(i in 1:hh){
-    y <- BETAt.h[i, 1] + as.matrix(X[ID$id==i, ]) %*% BETAt.h[i, -1] + rnorm(pt[i], 0, 0.1)
-    y <- round(exp(y), 1)
-    Y <- c(Y, y)
+    y_ind0 <- XM[ID$id==i, ] %*% beta0[i, ] + rnorm(pt[i], 0, tau0)
+    y_ind <- round(exp(y_ind0), 1)
+    y <- c(y, y_ind)
   }
-  if(max(Y) <= 200 & max(Y) >= 100) break
-  print(max(Y))
+  print(max(y))
+  if(max(y) <= 250 & max(y) >= 100 & sum(is.infinite(log(y)))==0 ) break
 }
+y_log <- log(y)   #応答変数を対数変換
+
 
 #応答変数の要約
-summary(Y)
-hist(Y, col="grey", breaks=30)   #結果をプロット
-data.frame(freq=names(table(Y)), y=as.numeric(table(Y)))
-
-round(BETAt.h, 2)   #個人別の回帰係数
-round(Xcomp <- cbind(ID, Y, Ylog=log(Y), X), 1)   #すべてのデータを結合
+summary(y)
+hist(y, col="grey", breaks=30)   #結果をプロット
+data.frame(freq=names(table(y)), y=as.numeric(table(y)))
+round(beta0, 3)   #個人別の回帰係数
+round(Xcomp <- cbind(ID, y, ylog=log(y), XM), 2)   #すべてのデータを結合
 
 
 ####マルコフ連鎖モンテカルロ法で階層回帰モデルを推定####
@@ -138,79 +147,105 @@ round(Xcomp <- cbind(ID, Y, Ylog=log(Y), X), 1)   #すべてのデータを結合
 R <- 20000
 sbeta <- 1.5
 keep <- 4
-Xi <- as.matrix(cbind(1, X))
-Zi <- as.matrix(cbind(1, Xh))
+iter <- 0
 
 #事前分布の設定
-sigmapr <- 0.01*diag(coefi+1)   #betaの標準偏差の事前分布
-nu <- 0.01  
-s0 <- 0.01
-thetapr <- matrix(rep(0, (coefh+1)*(coefi+1)), nrow=(coefh+1), ncol=(coefi+1))   #階層モデルの回帰係数の事前分布
-deltapr <- 0.01*diag(coefh+1)   #階層モデルの分散の事前分布
-df <- 15   #逆ウィシャート分布の自由度
-V <- df*diag(ncol(X)+1)   #逆ウィシャート分布のパラメータ
+sigma0 <- 0.01*diag(ncol(XM))   #betaの標準偏差の事前分布
+Deltabar <- matrix(rep(0, ncol(ZX)*(ncol(XM))), nrow=ncol(ZX), ncol=ncol(XM))   #階層モデルの回帰係数の事前分布の分散
+ADelta <- 0.01 * diag(rep(1, ncol(ZX)))   #階層モデルの回帰係数の事前分布の分散
+nu <- ncol(XM) + 3   #逆ウィシャート分布の自由度
+V <- nu * diag(rep(1, ncol(XM))) #逆ウィシャート分布のパラメータ
 
 #サンプリング結果の保存用
-oldbetas <- matrix(0, hh, (coefi+1))
-BETA <- array(0, dim=c(hh, (coefi+1), R/keep))
-SIGMA <- c()
-THETA <- matrix(0, R/keep, (ncol(X)+1)*ncol(Zi))
-VSIG <- list()
+BETA <- array(0, dim=c(hh, ncol(XM), R/keep))
+SIGMA <- matrix(0, nrow=R/keep, ncol=hh)
+THETA <- matrix(0, nrow=R/keep, ncol(ZX)*ncol(XM))
+COV <- array(0, dim=c(ncol(XM), ncol(XM), R/keep))
 
 #初期値の設定
-thetapr <- matrix(runif((coefh+1)*(coefi+1), -0.3, 0.5), nrow=(coefh+1), ncol=(coefi+1)) 
-betapr <- Zi %*% thetapr   #betaの事前推定量
-oldsigma <- rep(0.1, hh)
+oldtheta <- matrix(runif(ncol(XM)*ncol(ZX), -0.3, 0.3), nrow=ncol(ZX), ncol=ncol(XM)) 
+beta_mu <- oldbeta <- ZX %*% oldtheta   #betaの事前推定量
+oldcov <- diag(rep(0.1, ncol(XM)))
+cov_inv <- solve(oldcov)
+oldsigma <- rep(0, hh)
+
+##パラメータ推定用変数の作成
+#インデックスの作成
+index_id <- list()
+for(i in 1:hh){index_id[[i]] <- which(ID$id==i)}
+
+#パラメータ推定用の定数を計算
+#個体内回帰モデルの定数
+XX <- list()
+XX_inv <- list()
+beta_ind <- list()
+XX_beta <- list()
+v0 <- c()
+s0 <- c()
+
+for(i in 1:hh){
+  #回帰係数の定数
+  XX[[i]] <- t(XM[index_id[[i]], ]) %*% XM[index_id[[i]], ]
+  XX_inv[[i]] <- ginv(XX[[i]])
+  beta_ind[[i]] <- XX_inv[[i]] %*% t(XM[index_id[[i]], ]) %*% y_log[index_id[[i]]]
+  XX_beta[[i]] <- XX[[i]] %*% beta_ind[[i]]
+  
+  #標準偏差の定数
+  er <- y_log[index_id[[i]]] - XM[index_id[[i]], ] %*% beta_ind[[i]]
+  y_log[index_id[[i]]]
+  XM[index_id[[i]], ]
+
+  s0 <- c(s0, 0.01 + t(er) %*% er) 
+  v0 <- c(v0, 0.01 + nrow(XM[index_id[[i]], ]))
+}
 
 
 ####ギブスサンプリングで階層回帰モデルで推定値をサンプリング####
-##個体内回帰係数と標準偏差をサンプリング
 for(rp in 1:R){
-  sigmasq.s <- c()
+  
+  ##個体内回帰モデルの回帰係数と標準偏差をギブスサンプリング
   for(i in 1:hh){
-    #1人分のサンプルと回帰係数を取得
-    Xind <- Xi[ID$id==i, ]
-    yind <- log(Y[ID$id==i])
-    betapr_h <- betapr[i, ]
     
-    #回帰係数の事後分布のサンプリング
-    sigma_m <- solve(oldsigma[i] * t(Xind) %*% Xind + solve(sigmapr))
-    beta_m <- sigma_m %*% (oldsigma[i] * t(Xind) %*% yind + solve(sigmapr) %*% betapr_h)
-    sigma_diag <- diag(diag(sigma_m))   #分散共分散行列を対角化
-    betan <- mvrnorm(n=1, beta_m, sigma_diag)   #多変量正規乱数からbetaをサンプリング
+    ##ギブスサンプリングで個体内回帰係数をユーザーごとにサンプリング
+    #回帰係数の事後分布のパラメータ
+    XXV <- solve(XX[[i]] + cov_inv)
+    XXb <- XX[[i]] %*% beta_ind[[i]] + beta_mu[i, ]
+    beta_mean <- XXV %*% XXb 
     
-    #分散の事後分布のサンプリング
-    nu1 <- nu+length(yind)
-    s1 <- s0 + t(yind - Xind %*% betan) %*% (yind - Xind %*% betan)
-    sigma_sq <- 1/(rgamma(1, nu1/2, s1/2))   #逆ガンマ分布からsigma^2をサンプリング
+    #多変量正規分布からbetaをサンプリング
+    oldbeta[i, ] <- mvrnorm(1, beta_mean, XXV)
     
-    oldbetas[i, ] <- betan
-    sigmasq.s <- c(sigmasq.s, sigma_sq)
+    ##分散の事後分布のサンプリング
+    oldsigma[i] <- 1/(rgamma(1, v0[i]/2, s0[i]/2))   #逆ガンマ分布からsigma^2をサンプリング
   }
-  oldsigma <- c()
-  oldsigma <- sigmasq.s
   
   ##多変量回帰モデルによる階層モデルのギブスサンプリング
-  out <- rmultireg(Y=oldbetas, X=Zi, Bbar=thetapr, A=deltapr, nu=df, V=V)
-  thetapr <- out$B
-  sigmapr <- out$Sigma
-  sigmapri <- solve(sigmapr)
-  betapr <- Zi %*% thetapr
-  print(rp)
+  out <- rmultireg(Y=oldbeta, X=ZX, Bbar=Deltabar, A=ADelta, nu=nu, V=V)
+  oldtheta <- out$B
+  oldcov <- out$Sigma
+  cov_inv <- solve(oldcov)
+  
+  #階層モデルの回帰係数の平均構造を更新
+  beta_mu <- ZX %*% oldtheta
   
   ##サンプリング結果を保存
-  mkeep <- rp/keep
   if(rp%%keep==0){
-    THETA[mkeep, ] <- as.vector(thetapr)
-    VSIG[[mkeep]] <- sigmapr
-    BETA[, , mkeep] <- oldbetas
-    VSIG[[mkeep]] <- sigmasq.s
-    #print(round(THETA[mkeep, 1:20], 2))
+    #サンプリング結果の格納
+    mkeep <- rp/keep
+    BETA[, , mkeep] <- oldbeta
+    SIGMA[mkeep, ] <- oldsigma
+    THETA[mkeep, ] <- as.numeric(oldtheta)
+    COV[, , mkeep] <- oldcov
+    
+    #サンプリング結果の表示
+    print(rp)
+    print(round(rbind(oldtheta, theta0), 3))
   }
 }
 
+
 ####サンプリング結果の確認と適合度の確認####
-burnin <- 2000   #バーンイン期間(8000サンプルまで)
+burnin <- 500   #バーンイン期間(8000サンプルまで)
 RS <- R/keep 
 
 #サンプリングされたパラメータをプロット
@@ -220,7 +255,7 @@ matplot(t(BETA[1, 1:3, 1:RS]), type="l", ylab="parameter")
 ##個人別のパラメータ
 i <- 155; sum(ID$id==i)   #個人idを抽出
 round(rowMeans(BETA[i, , burnin:RS]), 3)   #個人別のパラメータ推定値の事後平均
-round(BETAt.h[i, ], 3)   #個人別の真のパラメータの値
+round(beta0[i, ], 3)   #個人別の真のパラメータの値
 apply(BETA[i, , burnin:RS], 1, summary)   #個人別のパラメータ推定値の要約統計
 apply(BETA[i, , burnin:RS], 1, function(x) quantile(x, c(0.05, 0.95)))   #個人別のパラメータ推定値の事後信用区間
 
@@ -229,12 +264,12 @@ hist(BETA[, 10, 5000], col="grey", xlab="beta", main="betaの個人別の事後分布", b
 
 ##階層モデルのパラメータ
 round(colMeans(THETA[burnin:RS, ]), 2)   #階層モデルのパラメータ推定値   
-round(as.vector(THETA.h), 2)   #階層モデルの真のパラメータの値
+round(as.vector(theta0), 2)   #階層モデルの真のパラメータの値
 
 ##事後予測分布でガチャ回数を予測
-Y.pre <- exp(BETA[i, 1, burnin:RS] + t(as.matrix(X[ID$id==i, ]) %*% BETA[i, 2:dim(BETA)[2], burnin:RS]))
-index.c <- as.numeric(colnames(Y.pre)[1])
-summary(Y.pre)
-apply(Y.pre, 2, function(x) round(quantile(x, c(0.05, 0.95)), 3))
-hist(Y.pre[, 1], col="grey", xlab="予測値", main="個人別の事後予測分布", breaks=25)
-Y[index.c]   #真のガチャ回数
+y.pre <- exp(XM[ID$id==i, ] %*% BETA[i, , burnin:RS])
+index.c <- as.numeric(colnames(y.pre)[1])
+summary(y.pre)
+apply(y.pre, 2, function(x) round(quantile(x, c(0.05, 0.95)), 3))
+hist(y.pre[, 1], col="grey", xlab="予測値", main="個人別の事後予測分布", breaks=25)
+y[index.c] #真のガチャ回数
