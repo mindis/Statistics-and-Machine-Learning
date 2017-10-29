@@ -17,9 +17,9 @@ set.seed(8079)
 #set.seed(423943)
 #文書データの設定
 k <- 8   #トピック数
-d <- 2000   #文書数
+d <- 5000   #文書数
 v <- 300   #語彙数
-w <- rpois(d, 250)   #1文書あたりの単語数
+w <- rpois(d, 200)   #1文書あたりの単語数
 a <- 25   #補助変数数
 x0 <- rpois(d, 10)
 x <- ifelse(x0 < 1, 1, x0)
@@ -168,8 +168,8 @@ omega <- rdirichlet(k, omega.ini)   #補助情報トピックのパラメータの初期値
 THETA <- array(0, dim=c(d, k, R/keep))
 PHI <- array(0, dim=c(k, v, R/keep))
 OMEGA <- array(0, dim=c(k, a, R/keep))
-W_SEG <- matrix(0, nrow=R/(keep*5), ncol=sum(w))
-A_SEG <- matrix(0, nrow=R/(keep*5), ncol=sum(x))
+W_SEG <- matrix(0, nrow=R/(keep*10), ncol=sum(w))
+A_SEG <- matrix(0, nrow=R/(keep*10), ncol=sum(x))
 storage.mode(W_SEG) <- "integer"
 storage.mode(A_SEG) <- "integer"
 gc(); gc()
@@ -200,13 +200,13 @@ for(rp in 1:R){
   #ディクレリ分布からthetaをサンプリング
   wsum <- as.matrix(data.frame(id=ID1_d, Br=Zi1) %>%
                       dplyr::group_by(id) %>%
-                      dplyr::summarize_each(funs(sum)))[, 2:(k+1)] + alpha01m
-  system.time(theta <- t(apply(wsum, 1, function(x) rdirichlet(1, x))))
-  
+                      dplyr::summarize_all(funs(sum)))[, 2:(k+1)] + alpha01m
+  theta <- t(apply(wsum, 1, function(x) rdirichlet(1, x)))
+
   #ディクレリ分布からphiをサンプリング
   vf <- as.matrix(data.frame(id=wd, Br=Zi1) %>%
                     dplyr::group_by(id) %>%
-                    dplyr::summarize_each(funs(sum)))[, 2:(k+1)] + beta0m
+                    dplyr::summarize_all(funs(sum)))[, 2:(k+1)] + beta0m
   phi <- t(apply(t(vf), 1, function(x) rdirichlet(1, x)))
   
   
@@ -233,7 +233,7 @@ for(rp in 1:R){
   ##補助情報トピックのパラメータを更新
   af <- as.matrix(data.frame(id=ad, Br=Zi2) %>%
                     dplyr::group_by(id) %>%
-                    dplyr::summarize_each(funs(sum)))[, 2:(k+1)] + gamma0m
+                    dplyr::summarize_all(funs(sum)))[, 2:(k+1)] + gamma0m
   omega <- t(apply(t(af), 1, function(x) rdirichlet(1, x)))
   
   ##パラメータの格納とサンプリング結果の表示
@@ -243,7 +243,7 @@ for(rp in 1:R){
     THETA[, , mkeep1] <- theta
     PHI[, , mkeep1] <- phi
     OMEGA[, , mkeep1] <- omega
-    if(rp%%(keep*5)==0){
+    if(rp%%(keep*10)==0){
       mkeep2 <- rp/(keep*5)
       W_SEG[mkeep2, ] <- word_z
       A_SEG[mkeep2, ] <- aux_z
