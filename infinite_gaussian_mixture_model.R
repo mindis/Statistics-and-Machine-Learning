@@ -94,14 +94,14 @@ plot(Data[, 3:4], col=seg_id[seg_id %in% 1:5], pch=20, xlab="データ3の値", ylab=
 ####マルコフ連鎖モンテカルロ法で無限混合ガウス分布モデルを推定####
 ##アルゴリズムの設定
 R <- 10000
-keep <- 4
+keep <- 2
 sbeta <- 1.5
 iter <- 0
 
 ##多変量正規分布の尤度関数
 dmv <- function(x, mean.vec, S, S_det, S_inv){
   LLo <- (2*pi)^(-nrow(S)/2) * S_det^(-1/2) *
-                exp(-1/2 * (x - mean.vec) %*% S_inv %*% (x - mean.vec))
+    exp(-1/2 * (x - mean.vec) %*% S_inv %*% (x - mean.vec))
   return(LLo)
 }
 
@@ -134,15 +134,16 @@ oldmean <- t(res$parameters$mean)
 oldcov <- res$parameters$variance$sigma
 
 ##パラメータの格納用配列
-Z <- matrix(0, nrow=R/keep, ncol=hh)
-Mu <- list()
+max_seg <- 15
+Z <- matrix(0, nrow=R/keep, ncol=max_seg)
+Mu <- array(0, dim=c(max_seg, k, R/keep))
 Cov <- list()
 storage.mode(Z) <- "integer"
 
 
 ####MCMCでパラメータをサンプリング
 for(rp in 1:R){
-
+  
   ##潜在変数zをサンプリング
   z_len <- length(unique(z_vec))
   LLi <- matrix(0, nrow=hh, ncol=z_len+1)
@@ -153,11 +154,9 @@ for(rp in 1:R){
   }
   #新しい潜在変数の尤度
   LLi[, z_len+1] <- dmvnorm(Data, mean_z, sigma_z)
-
+  
   #CRPを計算
   gamma0 <- cbind(matrix(colSums(z), nrow=hh, ncol=z_len, byrow=T) - z, alpha)
-  matrix(colSums(z), nrow=hh, ncol=z_len, byrow=T)
-  
   gamma1 <- LLi * gamma0/(hh-1-alpha)
   
   #多項分布より潜在変数zをサンプリング
@@ -166,14 +165,15 @@ for(rp in 1:R){
   z_vec <- z %*% 1:ncol(z)
   
   ##多変量正規分布のパラメータをサンプリング
+  #生成されなかったzは消去しておく
   z_cnt <- length(colSums(z) > 0)
   if(z_cnt > nrow(oldmean)){
     oldmean <- rbind(oldmean, 0)
   }
   oldmean <- oldmean[1:z_cnt, ]
   oldcov <- array(0, dim=c(k, k, z_cnt))
-
   
+  #多変量正規分布の平均および分散共分散行列をギブスサンプリング
   for(j in 1:z_cnt){
     
     #インデックスを作成
@@ -183,7 +183,7 @@ for(rp in 1:R){
     Vn <- nu + length(index)
     er <- Data[index, ] - matrix(oldmean[j, ], nrow=length(index), ncol=ncol(Data), byrow=T)
     R_par <- solve(V) + t(er) %*% er
-  
+    
     oldcov[, , j] <- rwishart(Vn, solve(R_par))$IW   #逆ウィシャート分布から分散共分散行列をサンプリング
     
     #平均をサンプリング
@@ -199,11 +199,47 @@ for(rp in 1:R){
   ##パラメータの格納とサンプリング結果の表示
   if(rp%%keep==0){
     mkeep <- rp/keep
-    Z[mkeep, ] <- z_vec
-    Mu[[i]] <- oldmean
-    Cov[[i]] <- oldcov
+    Mu[1:nrow(oldmean), , mkeep] <- oldmean
+    Cov[[mkeep]] <- oldcov
+    if(rp >= R/2){Z[, 1:ncol(z)] <- Z[, 1:ncol(z)] + z}   #繰り返し数が最大反復数の半分を超えたらパラメータを格納
     
     print(rp)
     print(colSums(z))
   }
 }
+
+####サンプリング結果の要約と可視化####
+#バーンイン期間
+burnin1 <- R/(keep+2)   
+burnin2 <- 1000
+
+##サンプリング結果をプロット
+matplot(t(Mu[1, , burnin2:(R/keep)]), type="l", ylab="パラメータ")
+matplot(t(Mu[2, , burnin2:(R/keep)]), type="l", ylab="パラメータ")
+matplot(t(Mu[3, , burnin2:(R/keep)]), type="l", ylab="パラメータ")
+matplot(t(Mu[4, , burnin2:(R/keep)]), type="l", ylab="パラメータ")
+matplot(t(Mu[5, , burnin2:(R/keep)]), type="l", ylab="パラメータ")
+
+##サンプリング結果の事後平均
+mcmc_seg <- sum(colSums(Z) > 10000)   #推定されたセグメント数
+
+#潜在変数zの推定量
+round(Z_mu <- (Z/rowSums(Z))[, colSums(Z) > 0], 3)   #潜在変数の割当確率
+colnames(Z_mu) <- 1:ncol(Z_mu)
+round(colMeans(Z_mu), 3)   #混合率
+
+#平均の推定量
+mean_mu <- matrix(0, nrow=mcmc_seg, ncol=k)
+for(i in 1:mcmc_seg){
+  mean_mu[i, ] <- colMeans(t(Mu[i, , burnin1:(R/keep)]))
+}
+round(rbind(mean_mu, mu0), 3)   #真のパラメータと比較
+
+#分散共分散行列の推定量
+cov_mu0 <- Cov[[burnin1]]
+for(i in (burnin1+1):(R/keep)){
+  cov_mu0 <- cov_mu0 + Cov[[i]][, , 1:mcmc_seg]
+}
+round(Cov_mu <- cov_mu0/length(burnin1:(R/keep)), 3)   #分散共分散行列の事後平均
+lapply(Cov0, function(x) round(x, 3))   #真の分散共分散行列
+
