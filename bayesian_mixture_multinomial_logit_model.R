@@ -15,12 +15,11 @@ library(lattice)
 
 ####データの発生####
 #データの設定
-select <- 11
-n <- 2000   #セグメントあたりのサンプル数
-seg <- 5   #セグメント数
+select <- 8
+n <- 3000   #セグメントあたりのサンプル数
+seg <- 4   #セグメント数
 N <- n*seg   #総サンプル数
-k <- 15   #変数数
-w <- rpois(N, rgamma(N, 30, 0.6))   #サンプルあたりの頻度
+w <- rpois(N, rgamma(N, 20, 0.6))   #サンプルあたりの頻度
 
 #セグメントの設定
 seg_id <- rep(1:seg, rep(n, seg))
@@ -28,6 +27,7 @@ seg_id <- rep(1:seg, rep(n, seg))
 
 ####説明変数の発生####
 ##セグメントごとにパラメータの設定
+k <- 7   #変数数
 par <- rep(0.8, k)
 p1 <- extraDistr::rdirichlet(seg, par)
 
@@ -39,15 +39,20 @@ for(i in 1:seg){
   Data[index, ] <- t(apply(cbind(w[index], p_matrix), 1, function(x) rmultinom(1, x[1], x[-1])))
 }
 
-#付加情報を追加
-a <- rpois(N, rgamma(N, 30, 0.8))   #サンプルあたりの頻度
-freq <- a + w
-p2 <- extraDistr::rdirichlet(N, rep(1.2, k))
+##条件付き変数を設定
+cont <- matrix(runif(N, 0, 1), nrow=n, ncol=select)
+bin1 <- matrix(rbinom(N, 1, 0.4), nrow=n, ncol=select)
+bin2 <- matrix(rbinom(N, 1, 0.5), nrow=n, ncol=select)
 
+#付加情報を追加
+a <- rpois(N, rgamma(N, 15, 0.8))   #サンプルあたりの頻度
+freq <- a + w 
+p2 <- extraDistr::rdirichlet(N, rep(1.2, k))
 aux <- t(apply(cbind(a, p2), 1, function(x) rmultinom(1, x[1], x[-1])))
 
-Data0 <- Data + aux
-Data1 <- (Data0 / matrix(rowSums(Data0), nrow=N, ncol=ncol(Data)))[, -ncol(Data0)]
+Data0 <- Data + aux + 1
+Data1 <- scale((Data0 / matrix(rowSums(Data0), nrow=N, ncol=ncol(Data)))[, -ncol(Data0)])
+
 colnames(Data) <- 1:k
 storage.mode(Data) <- "integer"
 
@@ -58,7 +63,7 @@ item <- rep(1:select, N)
 ID <- data.frame(no=1:length(id), id, item)
 
 #切片をベクトル変換
-X_vec <- matrix(diag(1, select), nrow=N*select, ncol=select, byrow=T)[, -select]
+X <- matrix(diag(1, select), nrow=N*select, ncol=select, byrow=T)[, -select]
 
 #比率データをベクトル変換
 x <- matrix(0, nrow=N*select, ncol=select-1)
@@ -67,15 +72,24 @@ for(j in 1:ncol(Data1)){
   for(i in 1:N){
     x[ID$id==i, ] <- diag(Data1[i, j], select)[, -select]
   }
-  X_vec <- cbind(X_vec, x)
+  X <- cbind(X, x)
 }
+
+##条件付き説明変数のベクトル変換
+cont_vec <- as.numeric(t(cont))
+bin1_vec <- as.numeric(t(bin1))
+bin2_vec <- as.numeric(t(bin2))
+
+##データを結合
+X_vec <- cbind(X, cont=cont_vec, bin1=bin1_vec, bin2=bin2_vec)
+
 
 ####応答変数の発生####
 ##パラメータの設定
 b00 <- matrix(runif((select-1)*seg, -0.8, 0.8), nrow=select-1, ncol=seg)
-b01 <- matrix(rnorm((k-1)*(select-1)*seg, 1.25, 4.25), nrow=(k-1)*(select-1), ncol=seg)
-b11 <- b01 * matrix(rbinom(length(b01), 1, 0.4), nrow=nrow(b01), ncol=ncol(b01))
-b0 <- rbind(b00, b11)
+b11 <- matrix(rnorm((k-1)*(select-1)*seg, 0.4, 1.0), nrow=(k-1)*(select-1), ncol=seg)
+b22 <- matrix(runif(3*seg, -0.8, 0.9), nrow=3, ncol=seg) + matrix(rnorm(3*seg, 0, 0.4), nrow=3, ncol=seg)
+b0 <- rbind(b00, b11, b22)
 
 ##セグメント別のロジットと確率の計算
 logit <- array(0, dim=c(N, select, seg))
@@ -83,6 +97,7 @@ Pr0 <- array(0, dim=c(N, select, seg))
 Pr <- matrix(0, nrow=N, ncol=select)
 y <- matrix(0, nrow=N, ncol=select)
 logit_vec <- X_vec %*% b0
+
 
 for(j in 1:seg){
   #ロジットと確率
@@ -135,10 +150,12 @@ oldpar <- oldpar0 / matrix(rowSums(oldpar0), nrow=seg, ncol=k)
 
 #初期セグメントを設定
 #尤度計算
+freq <- rowSums(Data0)
 gamma0 <- matrix(0, nrow=N, ncol=seg)
 for(j in 1:seg){
   gamma0[, j] <- dmnom(Data0, freq, oldpar[j, ])
 }
+
 z_rate <- gamma0 / rowSums(gamma0)   #所属率を計算
 z <- rmnom(N, 1, z_rate)   #多項分布より潜在変数zを発生
 r <- rep(1/seg, seg)   #混合率
@@ -146,17 +163,16 @@ r <- rep(1/seg, seg)   #混合率
 ##パラメータの格納用配列
 Z <- array(0, dim=c(N, seg, R/keep))
 P <- array(0, dim=c(seg, k, R/keep))
-BETA <- array(0, dim=c(seg, ncol(X_vec), R/keep))
+BETA <- array(0, dim=c(ncol(X_vec), seg, R/keep))
 storage.mode(Z) <- "integer"
 gc(); gc()
 
 ##インデックスの作成
 logl <- rep(0, seg)
-index_colums <- matrix(1:ncol(X_vec), nrow=k, ncol=select-1, byrow=T)
 
 
 ##学習用データと検証用データに分割
-index <- sort(sample(1:N, 2000))
+index <- sort(sample(1:N, 1000))
 index_vec <- which(ID$id %in% index)
 ID1 <- ID[-index_vec, ]
 ID2 <- ID[index_vec, ]
@@ -203,12 +219,11 @@ for(rp in 1:R){
     
     #セグメントごとにデータを割り当てる
     z_flag <- matrix(z[, j], nrow=nrow(z), ncol=select)
-    #Z_flag <- matrix(as.numeric(t(z_flag)), nrow=nrow(X_vec), ncol=ncol(X_vec))
     y_seg <- y1 * z_flag[-index, ]
     
     #新しいパラメータをサンプリング
     betad <- oldbeta[, j]
-    betan <- betad + rnorm(length(betad), 0, 0.05)
+    betan <- betad + rnorm(length(betad), 0, 0.01)
     
     #対数尤度と対数事前分布を計算
     lognew <- loglike(betan, lambda, y_seg, X_vec1, nrow(y_seg), select)
@@ -233,28 +248,38 @@ for(rp in 1:R){
   ##パラメータの格納とサンプリング結果の表示
   if(rp%%keep==0){
     mkeep <- rp/keep
+    Z[, , mkeep] <- z
+    P[, , mkeep] <- oldpar
+    BETA[, , mkeep] <- oldbeta
     print(rp)
     print(sum(logl))
     print(alpha)
     print(round(r, 3))
-    print(round(oldbeta[, 1], 3))
+    print(round(cbind(oldbeta[1:20, ], b0[1:20, ]), 3))
     #print(round(rbind(oldpar, p), 3))
   }
 }
 
-
-####サンプリング結果の可視化と要約####
+ ####サンプリング結果の可視化と要約####
 #バーンイン期間
 burnin1 <- R/(keep+2)   
 burnin2 <- 1000
 
 ##サンプリング結果をプロット
-matplot(t(P[1, , 1:(R/keep)]), type="l", ylab="パラメータ")
-matplot(t(P[2, , 1:(R/keep)]), type="l", ylab="パラメータ")
-matplot(t(P[3, , 1:(R/keep)]), type="l", ylab="パラメータ")
-matplot(t(P[4, , 1:(R/keep)]), type="l", ylab="パラメータ")
-matplot(t(P[5, , 1:(R/keep)]), type="l", ylab="パラメータ")
-matplot(t(P[6, , 1:(R/keep)]), type="l", ylab="パラメータ")
+#多項ロジットモデルの回帰パラメータ
+matplot(t(BETA[2, , ]), type="l", ylab="パラメータ")
+matplot(t(BETA[10, , ]), type="l", ylab="パラメータ")
+matplot(t(BETA[20, , ]), type="l", ylab="パラメータ")
+matplot(t(BETA[30, , ]), type="l", ylab="パラメータ")
+matplot(t(BETA[50, , ]), type="l", ylab="パラメータ")
+matplot(t(BETA[51, , ]), type="l", ylab="パラメータ")
+matplot(t(BETA[52, , ]), type="l", ylab="パラメータ")
+
+#多項分布のパラメータのサンプリング結果
+matplot(t(P[1, , ]), type="l", ylab="パラメータ")
+matplot(t(P[2, , ]), type="l", ylab="パラメータ")
+matplot(t(P[3, , ]), type="l", ylab="パラメータ")
+matplot(t(P[4, , ]), type="l", ylab="パラメータ")
 
 ##サンプリング結果の事後平均
 mcmc_seg <- sum(colSums(Z) > 10000)   #推定されたセグメント数
