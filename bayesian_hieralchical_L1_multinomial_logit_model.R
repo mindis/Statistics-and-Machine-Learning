@@ -19,7 +19,7 @@ library(lattice)
 ####データの発生####
 ##データの設定
 hh <- 2000
-pt0 <- rpois(hh, 3.8)
+pt0 <- rpois(hh, 4.4)
 pt <- ifelse(pt0==0, 1, pt0)
 hhpt <- sum(pt)
 select <- 8
@@ -42,14 +42,12 @@ ID_v <- data.frame(no=1:length(id_v), id=id_v, time=time_v)
 k <- 100   #特徴量数
 cont <- 70   #連続変数数
 bin <- 30   #二値変数数
-Data <- array(0, dim=c(hh, k+1, select-1))
 
-for(i in 1:(select-1)){
-  p <- runif(1, 0.4, 0.6)
-  x.cont <- matrix(rnorm(hh*cont, 0, 1), nrow=hh, ncol=cont)
-  x.bin <- matrix(rbinom(hh*bin, 1, p), nrow=hh, ncol=bin)
-  Data[, , i] <- cbind(1, x.cont, x.bin)
-}
+p <- runif(1, 0.4, 0.6)
+x.cont <- matrix(rnorm(hh*cont, 0, 1), nrow=hh, ncol=cont)
+x.bin <- matrix(rbinom(hh*bin, 1, p), nrow=hh, ncol=bin)
+Data <- cbind(1, x.cont, x.bin)
+
 
 ####応答変数の発生#### 
 ##切片をベクトル変換
@@ -77,7 +75,7 @@ for(i in 1:1000){
   #ロジットの定義
   for(j in 1:(select-1)){
     tau0[, j] <- rnorm(hh, 0, cov0)
-    logit[, j] <- (Data[, , j] %*% b0[, j] + tau0[, j])[ID$id, ]
+    logit[, j] <- (Data %*% b0[, j] + tau0[, j])[ID$id, ]
   }
   
   #多項分布から応答変数を発生
@@ -93,17 +91,17 @@ rownames(b0) <- NULL
 
 ####マルコフ連鎖モンテカルロ法で階層ベイズ正則化多項ロジットモデルを推定####
 ##多項ロジットモデルの対数尤度関数を設定
-fr <- function(y, X, beta, select, n){
+fr <- function(y, X, beta, select, hhpt){
   
   #ロジットと確率の計算
-  logit <- matrix(X %*% beta, nrow=n, ncol=select, byrow=T)
-  Pr <- exp(logit) / matrix(rowSums(exp(logit)), nrow=n, ncol=select)
+  logit <- matrix(rowSums(X * beta), nrow=hhpt, ncol=select, byrow=T)
+  Pr <- exp(logit) / matrix(rowSums(exp(logit)), nrow=hhpt, ncol=select)
   
   #対数尤度を定義
   LLi <- rowSums(y * log(Pr))
-  LL <- sum(LLi)
-  return(LL)
+  return(LLi)
 }
+
 
 ##アルゴリズムの設定
 R <- 20000
@@ -138,6 +136,12 @@ lambda <- rep(1, select-1)
 er_new <- matrix(0, nrow=hh, select-1)
 er_old <- matrix(0, nrow=hh, select-1)
 
+#IDの設定
+id_vec <- c()
+for(i in 1:hh){
+  id_vec <- c(id_vec, rep(i, sum(ID$id==i)*select))
+}
+
 
 ####マルコフ連鎖モンテカルロ法でパラメータをサンプリング####
 for(rp in 1:R){
@@ -148,20 +152,21 @@ for(rp in 1:R){
   betan <- betad + mvrnorm(hh, rep(0, select-1), diag(0.025 ,select-1))
   
   #誤差を設定
-  for(j in 1:(select-1)){
-    mu <- Data[, , j] %*% oldtheta[, j]
-    er_new[, j] <- betan[, j] - mu
-    er_old[, j] <- betad[, j] - mu
-  }
+  mu <- Data %*% oldtheta
+  er_new <- betan - mu
+  er_old <- betad - mu
   
   #階層モデルの分散共分散行列を推定
   oldcov <- var(er_old)
   inv_cov <- solve(oldcov)
   
   #対数尤度と対数事前分布を計算
+  lognew0 <- fr(y, X, betan[id_vec, ], select, hhpt)
+  logold0 <- fr(y, X, betad[id_vec, ], select, hhpt)
+  
   for(i in 1:hh){
-    lognew[i] <- fr(y[index_y[[i]], ], X[index_id[[i]], ], betan[i, ], select, length(index_y[[i]]))
-    logold[i] <- fr(y[index_y[[i]], ], X[index_id[[i]], ], betad[i, ], select, length(index_y[[i]]))
+    lognew[i] <- sum(lognew0[index_y[[i]]])
+    logold[i] <- sum(logold0[index_y[[i]]])
     logpnew[i] <- -0.5 * er_new[i, ] %*% inv_cov %*% er_new[i, ]
     logpold[i] <- -0.5 * er_old[i, ] %*% inv_cov %*% er_old[i, ]
   }
@@ -179,7 +184,7 @@ for(rp in 1:R){
   
   ##ベイジアンlassoで階層モデルの回帰パラメータをサンプリング
   for(j in 1:(select-1)){
-    res <- blasso(X=Data[, -1, j], y=oldbeta[, j], beta=oldtheta[-1, j], lambda2=lambda[j], s2=diag(oldcov)[j], T=2)
+    res <- blasso(X=Data[, -1], y=oldbeta[, j], beta=oldtheta[-1, j], lambda2=lambda[j], s2=diag(oldcov)[j], T=2)
     oldtheta[, j] <- c(res$mu[2], res$beta[2, ])
     lambda[j] <- res$lambda2[2]
   }
@@ -192,6 +197,7 @@ for(rp in 1:R){
     TAU[, , mkeep] <- oldcov
     print(rp)
     print(sum(lognew))
+    print(round(lambda, 3))
     print(round(t(cbind(oldtheta, b0)[1:20, ]), 3))
   }
 }
