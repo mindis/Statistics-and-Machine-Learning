@@ -13,9 +13,9 @@ library(ggplot2)
 library(lattice)
 
 ####データの発生####
-hh <- 4000
-select <- 6
-k <- 100   #説明変数数
+hh <- 8000
+select <- 10
+k <- 40   #説明変数数
 
 ##説明変数の発生
 freq <- rpois(hh, 150)   #ポアソン分布から頻度を発生
@@ -53,7 +53,7 @@ for(i in 1:1000){
   
   #パラメータの設定
   b00 <- runif(select-1, -1.0, 1.0)
-  b01 <- matrix(runif((select-1)*k, -1, 1), nrow=k, ncol=select-1) * matrix(rbinom(k*(select-1), 1, 0.25), nrow=k, ncol=select-1)
+  b01 <- matrix(runif((select-1)*k, -1, 1.25), nrow=k, ncol=select-1) * matrix(rbinom(k*(select-1), 1, 0.35), nrow=k, ncol=select-1)
   b0 <- rbind(b00, b01)
 
   #ロジットと確率の計算
@@ -62,7 +62,7 @@ for(i in 1:1000){
   
   #多項分布から応答変数を発生
   y <- t(apply(Pr, 1, function(x) rmultinom(1, 1, x)))
-  if(min(colMeans(y)) > 0.05 & max(colMeans(y)) < 0.4) break
+  if(min(colMeans(y)) > 0.025 & max(colMeans(y)) < 0.45) break
 }
 rownames(b0) <- NULL
 
