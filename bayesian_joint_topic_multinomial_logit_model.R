@@ -7,6 +7,7 @@ detach("package:gtools", unload=TRUE)
 detach("package:bayesm", unload=TRUE)
 library(extraDistr)
 library(monomvn)
+library(glmnet)
 library(reshape2)
 library(dplyr)
 library(plyr)
@@ -315,10 +316,9 @@ for(rp in 1:R){
   ##多項ロジットモデルのパラメータをサンプリング
   #新しいパラメータをサンプリング
   betad <- oldbeta
-  betan <- betad + mvrnorm(n1, rep(0, select-1), diag(0.025, select-1))
+  betan <- betad + mvrnorm(n1, rep(0, select-1), diag(0.25, select-1))
   
   #誤差を設定
-  mu <- Data1 %*% oldtheta
   er_new <- betan - mu
   er_old <- betad - mu
 
@@ -335,7 +335,7 @@ for(rp in 1:R){
   
   #alphaの値に基づき新しいbetaを採択するかどうかを決定
   flag <- matrix(((alpha >= rand)*1 + (alpha < rand)*0), nrow=n1, ncol=select-1)
-  oldbeta <- flag*betan + (1-flag)*betad #alphaがrandを上回っていたら採択
+  oldbeta <- flag*betan + (1-flag)*betad   #alphaがrandを上回っていたら採択
   
   ##lassoで階層モデルの回帰パラメータをサンプリング
   for(j in 1:(select-1)){
@@ -380,8 +380,13 @@ for(rp in 1:R){
     #print(round(cbind(omega[, 1:10], omegat[, 1:10]), 3))
     
     #予測分布を計算
-    logit <- Data2 %*% oldtheta
+    logit <- Data2 %*% cbind(oldtheta, 0)
     Pr <- exp(logit) / rowSums(exp(logit))
-    print(mean(y_vec==apply(Pr, 1, which.max)))
+    print(mean(y[index_test, ] %*% 1:select==apply(Pr, 1, which.max)))
   }
 }
+
+
+round(cbind(oldtheta, b0), 3)
+round(Pr, 3)
+round(cbind(Pr, y[index_test, ]), 3)
