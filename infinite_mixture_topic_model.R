@@ -78,7 +78,7 @@ burden_fr <- function(theta, phi, wd, w, k){
   Bur <-  matrix(0, nrow=length(wd), ncol=k)   #負担係数の格納用
   for(kk in 1:k){
     #負担係数を計算
-    Bi <- rep(theta[, kk], w) * phi[kk, c(wd)]   #尤度
+    Bi <- rep(theta[, kk], w) * (phi[kk, c(wd)])   #尤度
     Bur[, kk] <- Bi   
   }
   Br <- Bur / rowSums(Bur)   #負担率の計算
@@ -87,49 +87,88 @@ burden_fr <- function(theta, phi, wd, w, k){
 }
 
 
-
 ##アルゴリズムの設定
 R <- 10000
 keep <- 4
 rbeta <- 1.5
 iter <- 0
+k0 <- 2   #初期トピック数
 
 ##事前分布の設定
 #ハイパーパラメータの事前分布
-alpha01 <- rep(1.0, k)
+alpha01 <- rep(1.0, k0)
 beta0 <- rep(0.5, v)
-alpha01m <- matrix(alpha01, nrow=d, ncol=k, byrow=T)
-beta0m <- matrix(beta0, nrow=v, ncol=k)
+alpha01m <- matrix(alpha01, nrow=d, ncol=k0, byrow=T)
+beta0m <- matrix(beta0, nrow=v, ncol=k0)
+
+#集中度パラメータ
+tau1 <- 1
+tau2 <- 2
 
 ##パラメータの初期値
-theta.ini <- runif(k, 0.5, 2)
+theta.ini <- runif(k0, 0.5, 2)
 phi.ini <- runif(v, 0.5, 1)
 theta <- rdirichlet(d, theta.ini)   #文書トピックのパラメータの初期値
-phi <- rdirichlet(k, phi.ini)   #単語トピックのパラメータの初期値
+phi <- rdirichlet(k0, phi.ini)   #単語トピックのパラメータの初期値
+
+#単語ごとにトピックの出現率を計算
+word_rate <- burden_fr(theta, phi, wd, w, k0)$Br   #既存トピックの出現率
+
+#多項分布から単語トピックをサンプリング
+vec <- 1/(1:k0)
+word_cumsums <- rowCumsums(word_rate)
+rand <- matrix(runif(nrow(word_rate)), nrow=nrow(word_rate), ncol=k0)   #一様乱数
+Zi1 <- ((k0+1) - (word_cumsums > rand) %*% rep(1, k0)) %*% vec   #トピックをサンプリング
+Zi1[Zi1!=1] <- 0
+
+#テーブル数を更新
+Zi1[, 1]
+
+
+##混合数の更新
+r0 <- c(colSums(Zi1), tau2)
+pi0 <- extraDistr::rdirichlet(1, r0)
+
+##文書トピックのパラメータを更新
+#ディクレリ分布からthetaをサンプリング
+for(i in 1:d){
+  wsum0[i, ] <- colSums(Zi1[doc_list[[i]], ]) 
+}
+theta_prior <- alpha01m * matrix(pi0[, 1:k0], nrow=d, ncol=k0, byrow=T)
+wsum <- cbind(wsum0 + theta_prior, tau1 * pi0[, k0+1])   #ディクレリ分布のパラメータ
+theta_tau <- extraDistr::rdirichlet(d, wsum)[, k0+1]   #ディクレリ分布からthetaをサンプリング
+theta_tau
+
 
 ##パラメータの格納用配列
-THETA <- array(0, dim=c(d, k, R/keep))
-PHI <- array(0, dim=c(k, v, R/keep))
-W_SEG <- matrix(0, nrow=sum(w), ncol=20)
+max_k <- 20
+THETA <- array(0, dim=c(d, max_k, R/keep))
+PHI <- array(0, dim=c(max_k, v, R/keep))
+W_SEG <- matrix(0, nrow=sum(w), ncol=max_k)
 storage.mode(W_SEG) <- "integer"
 gc(); gc()
 
 ##MCMC推定用配列
-wsum0 <- matrix(0, nrow=d, ncol=k)
-vf0 <- matrix(0, nrow=v, ncol=k)
-vec <- 1/1:k
+wsum0 <- matrix(0, nrow=d, ncol=k0)
+vf0 <- matrix(0, nrow=v, ncol=k0)
+vec <- 1/1:k0
 
 ####ギブスサンプリングでトピックモデルのパラメータをサンプリング####
 for(rp in 1:R){
+  #トピックするを更新
+  k0 <- ncol(theta) 
+  k1 <- k0 + 1
   
   ##単語トピックをサンプリング
   #単語ごとにトピックの出現率を計算
-  word_rate <- burden_fr(theta, phi, wd, w, k)$Br
+  word_rate_old <- burden_fr(theta, phi, wd, w, k0)$Bur   #既存トピックの出現率
+  word_rate_new <- pi0 * theta_tau[ID_d]   #新規トピックの出現率
+  word_rate <- cbind(word_rate_old, word_rate_new)
   
   #多項分布から単語トピックをサンプリング
   word_cumsums <- rowCumsums(word_rate)
-  rand <- matrix(runif(nrow(word_rate)), nrow=nrow(word_rate), ncol=k)   #一様乱数
-  Zi1 <- ((k+1) - (word_cumsums > rand) %*% rep(1, k)) %*% vec   #トピックをサンプリング
+  rand <- matrix(runif(nrow(word_rate)), nrow=nrow(word_rate), ncol=k1)   #一様乱数
+  Zi1 <- ((k1+1) - (word_cumsums > rand) %*% rep(1, k1)) %*% vec   #トピックをサンプリング
   Zi1[Zi1!=1] <- 0
   
   #Zi1 <- rmnom(nrow(word_rate), 1, word_rate)
