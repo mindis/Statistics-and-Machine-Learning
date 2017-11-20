@@ -3,6 +3,7 @@ library(MASS)
 library(lda)
 library(RMeCab)
 detach("package:bayesm", unload=TRUE)
+library(extraDistr)
 library(gtools)
 library(reshape2)
 library(dplyr)
@@ -18,7 +19,7 @@ v <- 300   #語彙数
 w <- rpois(d, 250)   #1文書あたりの単語数
 
 #パラメータの設定
-alpha0 <- round(runif(k, 0.1, 1.25), 3)   #文書のディレクリ事前分布のパラメータ
+alpha0 <- rep(0.3, k)   #文書のディレクリ事前分布のパラメータ
 alpha1 <- rep(0.25, v)   #単語のディレクリ事前分布のパラメータ
 
 #ディレクリ乱数の発生
@@ -28,16 +29,18 @@ phi <- rdirichlet(k, alpha1)   #単語のトピック分布をディレクリ乱数から発生
 #多項分布の乱数からデータを発生
 WX <- matrix(0, nrow=d, ncol=v)
 Z <- list()
+vec <- 1:k
+
 for(i in 1:d){
-  z <- t(rmultinom(w[i], 1, theta[i, ]))   #文書のトピック分布を発生
-  zn <- z %*% c(1:k)   #0,1を数値に置き換える
-  zdn <- cbind(zn, z)   #apply関数で使えるように行列にしておく
-  wn <- t(apply(zdn, 1, function(x) rmultinom(1, 1, phi[x[1], ])))   #文書のトピックから単語を生成
-  wdn <- colSums(wn)   #単語ごとに合計して1行にまとめる
-  WX[i, ] <- wdn  
-  Z[[i]] <- zdn[, 1]
+  z <- rmnom(w[i], 1, theta[i, ])   #文書のトピック分布を発生
+  z_vec <- z %*% vec   #0,1を数値に置き換える 
+  p <- phi[z_vec, ]
+  word <- rmnom(w[i], 1, p)   #文書のトピックから単語を生成
+  WX[i, ] <- colSums(word)   #単語ごとに合計して1行にまとめる
+  Z[[i]] <- z_vec
   print(i)
 }
+
 
 ####EMアルゴリズムでトピックモデルを推定####
 ####トピックモデルのためのデータと関数の準備####
@@ -103,13 +106,13 @@ r <- bfr$r   #混合率
 ##thetaの更新
 tsum <- (data.frame(id=ID_d, Br=Br) %>%
            dplyr::group_by(id) %>%
-           dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+           dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
 theta_r <- tsum / matrix(w, nrow=d, ncol=k)   #パラメータを計算
 
 ##phiの更新
 vf <- (data.frame(id=wd, Br=Br) %>%
          dplyr::group_by(id) %>%
-         dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+         dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
 phi_r <- t(vf) / matrix(colSums(vf), nrow=k, ncol=v)
 
 #対数尤度の計算
@@ -120,7 +123,7 @@ phi_r <- t(vf) / matrix(colSums(vf), nrow=k, ncol=v)
 #更新ステータス
 iter <- 1
 dl <- 100   #EMステップでの対数尤度の差の初期値
-tol <- 0.1
+tol <- 0.5
 LLo <- LLS   #対数尤度の初期値
 LLw <- LLS
 
@@ -136,13 +139,13 @@ while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
   ##thetaの更新
   tsum <- (data.frame(id=ID_d, Br=Br) %>%
              dplyr::group_by(id) %>%
-             dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+             dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
   theta_r <- tsum / matrix(w, nrow=d, ncol=k)   #パラメータを計算
-
+  
   ##phiの更新
   vf <- (data.frame(id=wd, Br=Br) %>%
            dplyr::group_by(id) %>%
-           dplyr::summarize_each(funs(sum)))[, 2:(k+1)]
+           dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
   phi_r <- t(vf) / matrix(colSums(vf), nrow=k, ncol=v)
   
   #対数尤度の計算
