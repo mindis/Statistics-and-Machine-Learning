@@ -307,7 +307,6 @@ for(rp in 1:R){
   #サンプリングされたパラメータを格納
   if(rp%%keep==0){
     mkeep <- rp/keep
-    mkeep <- 1
     THETA[, , mkeep] <- theta
     PHI1[, , mkeep] <- phi1
     PHI2[, , mkeep] <- phi2
@@ -325,4 +324,18 @@ for(rp in 1:R){
     print(round(cbind(phi1[, 1:10], phit1[, 1:10]), 3))
   }
 }
+
+####サンプリング結果の推定値と要約####
+##バーンイン期間の設定
+burnin <- 1000/keep
+z_range <- length(burnin:(R/keep))
+
+##サンプリング結果の可視化
+matplot(t(THETA[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(t(THETA[100, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(t(THETA[1000, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(t(PHI1[1, 1:5, ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(t(PHI2[2, 10:15, ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(t(PHI3[3, 20:25, ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+
 
