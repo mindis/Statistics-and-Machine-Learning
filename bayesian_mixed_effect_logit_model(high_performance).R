@@ -14,7 +14,7 @@ library(lattice)
 ####データの発生####
 #set.seed(8437)
 ##データの設定
-hh <- 4000   #サンプル数
+hh <- 2000   #サンプル数
 pt <- rpois(hh, 20); pt <- ifelse(pt==0, 1, pt)   #購買機会(購買機会数が0なら1に置き換え)
 hhpt <- sum(pt)
 choise <- 5   #選択可能数
@@ -112,7 +112,7 @@ round(cbind(y %*% 1:choise, Pr), 3)   #選択結果と選択確率
 ####マルコフ連鎖モンテカルロ法で変量効果ロジスティック回帰モデルを推定####
 ##多項ロジットモデルの固定効果の分散を決定
 Loglike <- function(y, X, beta, hhpt, choise){
-
+  
   #ロジットと確率の計算
   logit <- matrix(X %*% beta, nrow=hhpt, ncol=choise, byrow=T)
   Pr <- exp(logit) / matrix(rowSums(exp(logit)), nrow=hhpt, ncol=choise)
@@ -230,7 +230,7 @@ for(rp in 1:R){
   #新しいパラメータをサンプリング
   thetad <- oldtheta 
   thetan <- thetad + cbind(mvrnorm(hh, rep(0, choise-1), diag(0.025, choise-1)), 0)
-
+  
   #事前分布の誤差を計算
   er_new <- thetan - 0
   er_old <- thetad - 0
@@ -246,7 +246,7 @@ for(rp in 1:R){
     lognew2[i] <- sum(lognew0[id_list[[i]]])
     logold2[i] <- sum(logold0[id_list[[i]]])
   }
-
+  
   #MHサンプリング
   rand <- runif(hh)   #一様分布から乱数を発生
   LLind_diff <- exp(lognew2 + logpnew2 - logold2 - logpold2)   #採択率を計算
@@ -256,7 +256,7 @@ for(rp in 1:R){
   flag <- matrix(((alpha2 >= rand)*1 + (alpha2 < rand)*0), nrow=hh, ncol=choise)
   oldtheta <- flag*thetan + (1-flag)*thetad   #alphaがrandを上回っていたら採択
   mu <- matrix(colMeans(oldtheta), nrow=hh, ncol=choise, byrow=T)
-
+  
   ##逆ウィシャート分布から分散共分散行列をサンプリング
   #逆ウィシャート分布のパラメータ
   V_par <- V + t(oldtheta[, -choise]) %*% oldtheta[, -choise]
@@ -265,7 +265,7 @@ for(rp in 1:R){
   #逆ウィシャート分布から分散共分散行列を発生
   oldcov <- diag(diag(rwishart(Sn, solve(V_par))$IW))   
   inv_cov <- solve(oldcov)
-
+  
   
   if(rp%%keep==0){
     mkeep <- rp/keep
@@ -285,16 +285,23 @@ for(rp in 1:R){
 burnin <- 2500
 i <- 6
 
-matplot(BETA[, 1:4], type="l")
-matplot(BETA[, 5:8], type="l")
-matplot(SIGMA[, c(1, 7, 13)], type="l")
-matplot(SIGMA[, c(19, 25)], type="l")
-matplot(t(THETA[10, 1:4, ]), type="l")
-matplot(t(B.random[i, 3:4, ]), type="l")
-plot(1:5000, t(B.random[i, 5, ]), type="l")
+##サンプリング結果をプロット
+matplot(BETA[, 1:4], type="l", ylab="パラメータ", xlab="サンプリング回数")
+matplot(BETA[, 5:8], type="l", ylab="パラメータ", xlab="サンプリング回数")
+matplot(SIGMA, type="l", ylab="パラメータ", xlab="サンプリング回数")
+matplot(t(THETA[i, , ]), type="l", ylab="パラメータ", xlab="サンプリング回数")
 
-#変量効果の分散の事後平均
-colMeans(SIGMA[burnin:nrow(SIGMA), c(1, 7, 13, 19, 25)]) 
-colMeans(t(B.random[i, , burnin:nrow(SIGMA)])) 
-c(b0.random[i, ]-b0, beta1.random[i, ]-beta1)
+##パラメータの事後平均を計算
+round(rbind(beta=colMeans(BETA[burnin:nrow(BETA), ]), betaml=res$par, betat), 3)   #固定効果の事後平均
+round(rbind(colMeans(SIGMA[burnin:nrow(SIGMA), ]), diag(cov0)), 3)   #変量効果の分散の事後平均
+
+##変量効果のサンプリング結果の要約
+y_sums <- matrix(0, nrow=hh, ncol=choise)
+for(j in 1:choise){
+  y_sums[, j] <- tapply(y[, j], ID$id, sum)
+}
+
+#変量効果の事後平均と真値および選択結果
+round(cbind(y_sums, apply(THETA[, , burnin:(R/keep)], c(1, 2), mean), b0.random), 3)   
+
 
