@@ -13,13 +13,13 @@ library(ggplot2)
 ####データの発生####
 #set.seed(423943)
 #データの設定
-k <- 8   #トピック数
+k <- 10   #トピック数
 d <- 5000   #文書数
 v <- 300   #語彙数
 w <- rpois(d, 250)   #1文書あたりの単語数
 
 #パラメータの設定
-alpha0 <- rep(0.3, k)   #文書のディレクリ事前分布のパラメータ
+alpha0 <- rep(0.25, k)   #文書のディレクリ事前分布のパラメータ
 alpha1 <- rep(0.25, v)   #単語のディレクリ事前分布のパラメータ
 
 #ディレクリ乱数の発生
@@ -53,12 +53,13 @@ wd_list <- list()
 for(i in 1:nrow(WX)){
   print(i)
   ID_list[[i]] <- rep(i, w[i])
-  num1 <- (WX[i, ] > 0) * c(1:v) 
-  num2 <- subset(num1, num1 > 0)
+  num1 <- (WX[i, ] > 0) * 1:v 
+  num2 <- num1[num1 > 0]
   W1 <- WX[i, (WX[i, ] > 0)]
   number <- rep(num2, W1)
   wd_list[[i]] <- number
 }
+
 
 #リストをベクトルに変換
 ID_d <- unlist(ID_list)
@@ -67,18 +68,20 @@ wd <- unlist(wd_list)
 ##インデックスを作成
 doc_list <- list()
 word_list <- list()
-for(i in 1:length(unique(ID_d))) {doc_list[[i]] <- subset(1:length(ID_d), ID_d==i)}
-for(i in 1:length(unique(wd))) {word_list[[i]] <- subset(1:length(wd), wd==i)}
+u1 <- length(unique(ID_d))
+u2 <- length(unique(wd))
+for(i in 1:u1) {doc_list[[i]] <- which(ID_d==i)}
+for(i in 1:u2) {word_list[[i]] <- which(wd==i)}
 gc(); gc()
 
 
 ##単語ごとに尤度と負担率を計算する関数
 burden_fr <- function(theta, phi, wd, w, k){
   Bur <-  matrix(0, nrow=length(wd), ncol=k)   #負担係数の格納用
-  for(kk in 1:k){
+  for(j in 1:k){
     #負担係数を計算
-    Bi <- rep(theta[, kk], w) * phi[kk, c(wd)]   #尤度
-    Bur[, kk] <- Bi   
+    Bi <- rep(theta[, j], w) * phi[j, wd]   #尤度
+    Bur[, j] <- Bi   
   }
   Br <- Bur / rowSums(Bur)   #負担率の計算
   r <- colSums(Br) / sum(Br)   #混合率の計算
@@ -104,15 +107,18 @@ Br <- bfr$Br   #負担率
 r <- bfr$r   #混合率
 
 ##thetaの更新
-tsum <- (data.frame(id=ID_d, Br=Br) %>%
-           dplyr::group_by(id) %>%
-           dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
-theta_r <- tsum / matrix(w, nrow=d, ncol=k)   #パラメータを計算
+W <- matrix(w, nrow=d, ncol=k)   
+tsum <- matrix(0, nrow=d, ncol=k)
+for(i in 1:d){
+  tsum[i, ] <- colSums(Br[doc_list[[i]], ])
+}
+theta_r <- tsum / W   #パラメータを計算
 
 ##phiの更新
-vf <- (data.frame(id=wd, Br=Br) %>%
-         dplyr::group_by(id) %>%
-         dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
+vf <- matrix(0, nrow=v, ncol=k)
+for(i in 1:v){
+  vf[i, ] <- colSums(Br[word_list[[i]], ])
+}
 phi_r <- t(vf) / matrix(colSums(vf), nrow=k, ncol=v)
 
 #対数尤度の計算
@@ -129,23 +135,25 @@ LLw <- LLS
 
 out <- cbind(ID_d, wd, round(bfr$Br, 3))
 
-###パラメータの更新
-##負担率の計算
+##パラメータを更新
 while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
+  #負担率の更新
   bfr <- burden_fr(theta=theta_r, phi=phi_r, wd=wd, w=w, k=k)
   Br <- bfr$Br   #負担率
   r <- bfr$r   #混合率
   
-  ##thetaの更新
-  tsum <- (data.frame(id=ID_d, Br=Br) %>%
-             dplyr::group_by(id) %>%
-             dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
-  theta_r <- tsum / matrix(w, nrow=d, ncol=k)   #パラメータを計算
+  #thetaの更新
+  tsum <- matrix(0, nrow=d, ncol=k)
+  for(i in 1:d){
+    tsum[i, ] <- colSums(Br[doc_list[[i]], ])
+  }
+  theta_r <- tsum / W   #パラメータを計算
   
-  ##phiの更新
-  vf <- (data.frame(id=wd, Br=Br) %>%
-           dplyr::group_by(id) %>%
-           dplyr::summarize_all(funs(sum)))[, 2:(k+1)]
+  #phiの更新
+  vf <- matrix(0, nrow=v, ncol=k)
+  for(i in 1:v){
+    vf[i, ] <- colSums(Br[word_list[[i]], ])
+  }
   phi_r <- t(vf) / matrix(colSums(vf), nrow=k, ncol=v)
   
   #対数尤度の計算
@@ -162,7 +170,7 @@ while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
 plot(1:length(LLw), LLw, type="l", xlab="iter", ylab="LL", main="対数尤度の変化", lwd=2)
 
 (PHI <- data.frame(round(t(phi_r), 3), t=round(t(phi), 3)))   #phiの真の値と推定結果の比較
-(THETA <- data.frame(w, round(theta_r, 3), t=round(theta, 3)))   #thetaの真の値と推定結果の比較
+(THETA <- data.frame(w, em=round(theta_r, 3), t=round(theta, 3)))   #thetaの真の値と推定結果の比較
 r   #混合率の推定結果
 
 round(colSums(THETA[, 1:k]) / sum(THETA[, 1:k]), 3)   #推定された文書中の各トピックの比率
