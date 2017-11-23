@@ -87,9 +87,6 @@ for(i in 1:r){
 x.multi <- x.multi0[, -which.min(colSums(x.multi0))]
 X.multi <- matrix(t(x.multi), nrow=hh*max_cnt, ncol=m-1, byrow=T)
 
-#データの結合
-X0 <- data.frame(bp=1, cont=X.cont, bin=X.bin, m=X.multi)  
-
 ##ガチャした回を特定して抽出
 ID_full <- data.frame(no=1:(max_cnt*hh), id=rep(1:hh, rep(max_cnt, hh)), time=rep(1:max_cnt, hh))   #IDのフルデータ
 
@@ -115,31 +112,31 @@ for(rp in 1:10000){
   #個体間回帰モデルの回帰パラメータの設定
   theta01 <- c(runif(par1, -0.2, 0.3), runif(par1*cont, -0.3, 0.3), runif(par1*bin, -0.3, 0.3), runif(par1*(m-1), -0.3, 0.4))
   theta0 <- matrix(theta01, nrow=par1, ncol=par2)  
-  cov0 <- diag(runif(par2, 0.05, 0.175))   #変量効果のパラメータ
+  cov0 <- diag(runif(par2, 0.05, 0.1))   #変量効果のパラメータ
   
   #個体内回帰モデルの回帰係数
   tau0 <- 0.3   #個体内標準偏差
   beta0 <- ZX %*% theta0 + mvrnorm(hh, rep(0, par2), cov0)
   
   #応答変数(ガチャ回数)の発生
-  y <- c()
+  mu <- c()
   for(i in 1:hh){
-    y_ind0 <- XM[ID$id==i, ] %*% beta0[i, ] + rnorm(pt[i], 0, tau0)
-    y_ind <- round(exp(y_ind0), 1)
-    y <- c(y, y_ind)
+    mu0 <- XM[ID$id==i, ] %*% beta0[i, ] 
+    mu <- c(mu, mu0)
   }
-  print(max(y))
-  if(max(y) <= 250 & max(y) >= 100 & sum(is.infinite(log(y)))==0 ) break
+  y <- mu + rnorm(hhpt, 0, tau0)   #誤差を加える
+  
+  print(max(exp(y)))
+  if(max(exp(y)) <= 250 & max(exp(y)) >= 100 & sum(is.infinite(y))==0) break
 }
-y_log <- log(y)   #応答変数を対数変換
+y_log <- y   #応答変数を対数変換
 
 
 #応答変数の要約
-summary(y)
+summary(exp(y))
 hist(y, col="grey", breaks=30)   #結果をプロット
 data.frame(freq=names(table(y)), y=as.numeric(table(y)))
 round(beta0, 3)   #個人別の回帰係数
-round(Xcomp <- cbind(ID, y, ylog=log(y), XM), 2)   #すべてのデータを結合
 
 
 ####マルコフ連鎖モンテカルロ法で階層回帰モデルを推定####
@@ -155,6 +152,8 @@ Deltabar <- matrix(rep(0, ncol(ZX)*(ncol(XM))), nrow=ncol(ZX), ncol=ncol(XM))   
 ADelta <- 0.01 * diag(rep(1, ncol(ZX)))   #階層モデルの回帰係数の事前分布の分散
 nu <- ncol(XM) + 3   #逆ウィシャート分布の自由度
 V <- nu * diag(rep(1, ncol(XM))) #逆ウィシャート分布のパラメータ
+s0 <- 0.01
+v0 <- 0.01
 
 #サンプリング結果の保存用
 BETA <- array(0, dim=c(hh, ncol(XM), R/keep))
@@ -167,7 +166,8 @@ oldtheta <- matrix(runif(ncol(XM)*ncol(ZX), -0.3, 0.3), nrow=ncol(ZX), ncol=ncol
 beta_mu <- oldbeta <- ZX %*% oldtheta   #betaの事前推定量
 oldcov <- diag(rep(0.1, ncol(XM)))
 cov_inv <- solve(oldcov)
-oldsigma <- rep(0, hh)
+oldsigma <- as.numeric(var(y_log - XM %*% (solve(t(XM) %*% XM) %*% t(XM) %*% y_log)))
+
 
 ##パラメータ推定用変数の作成
 #インデックスの作成
@@ -178,25 +178,13 @@ for(i in 1:hh){index_id[[i]] <- which(ID$id==i)}
 #個体内回帰モデルの定数
 XX <- list()
 XX_inv <- list()
-beta_ind <- list()
-XX_beta <- list()
-v0 <- c()
-s0 <- c()
+Xy <- list()
 
 for(i in 1:hh){
   #回帰係数の定数
   XX[[i]] <- t(XM[index_id[[i]], ]) %*% XM[index_id[[i]], ]
   XX_inv[[i]] <- ginv(XX[[i]])
-  beta_ind[[i]] <- XX_inv[[i]] %*% t(XM[index_id[[i]], ]) %*% y_log[index_id[[i]]]
-  XX_beta[[i]] <- XX[[i]] %*% beta_ind[[i]]
-  
-  #標準偏差の定数
-  er <- y_log[index_id[[i]]] - XM[index_id[[i]], ] %*% beta_ind[[i]]
-  y_log[index_id[[i]]]
-  XM[index_id[[i]], ]
-
-  s0 <- c(s0, 0.01 + t(er) %*% er) 
-  v0 <- c(v0, 0.01 + nrow(XM[index_id[[i]], ]))
+  Xy[[i]] <- t(XM[index_id[[i]], ]) %*% y_log[index_id[[i]]]
 }
 
 
@@ -209,15 +197,18 @@ for(rp in 1:R){
     ##ギブスサンプリングで個体内回帰係数をユーザーごとにサンプリング
     #回帰係数の事後分布のパラメータ
     XXV <- solve(XX[[i]] + cov_inv)
-    XXb <- XX[[i]] %*% beta_ind[[i]] + beta_mu[i, ]
-    beta_mean <- XXV %*% XXb 
+    XXb <- Xy[[i]]
+    beta_mean <- XXV %*% (XXb + cov_inv %*% beta_mu[i, ])
     
     #多変量正規分布からbetaをサンプリング
-    oldbeta[i, ] <- mvrnorm(1, beta_mean, XXV)
-    
-    ##分散の事後分布のサンプリング
-    oldsigma[i] <- 1/(rgamma(1, v0[i]/2, s0[i]/2))   #逆ガンマ分布からsigma^2をサンプリング
+    oldbeta[i, ] <- mvrnorm(1, beta_mean, oldsigma*XXV)
   }
+
+  ##分散の事後分布のサンプリング
+  er <- y_log - rowSums(XM * oldbeta[ID$id, ])
+  s <- s0 + t(er) %*% er
+  v <- v0 + hhpt
+  oldsigma <- 1/(rgamma(1, v/2, s/2))   #逆ガンマ分布からsigma^2をサンプリング
   
   ##多変量回帰モデルによる階層モデルのギブスサンプリング
   out <- rmultireg(Y=oldbeta, X=ZX, Bbar=Deltabar, A=ADelta, nu=nu, V=V)
@@ -227,7 +218,7 @@ for(rp in 1:R){
   
   #階層モデルの回帰係数の平均構造を更新
   beta_mu <- ZX %*% oldtheta
-  
+
   ##サンプリング結果を保存
   if(rp%%keep==0){
     #サンプリング結果の格納
@@ -239,10 +230,11 @@ for(rp in 1:R){
     
     #サンプリング結果の表示
     print(rp)
+    print(c(sqrt(oldsigma), tau0))
+    print(round(rbind(diag(oldcov), diag(cov0)), 3))
     print(round(rbind(oldtheta, theta0), 3))
   }
 }
-
 
 ####サンプリング結果の確認と適合度の確認####
 burnin <- 500   #バーンイン期間(8000サンプルまで)
