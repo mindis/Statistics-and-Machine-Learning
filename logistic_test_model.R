@@ -13,7 +13,7 @@ library(ggplot2)
 
 ####データの発生####
 ##データの設定
-hh <- 2000   #被験者数
+hh <- 3000   #被験者数
 k <- 50   #項目数
 
 ##パラメータの設定
@@ -103,13 +103,6 @@ mloglike <- function(x, Data, hh, k, index, weight, point, qu_n){
     Pr[i] <- prod(pr)
   }
   LL <- sum(log(Pr))
-  
-  #pr <- colSums(weight * (c1 + (1-c1) / (1+exp(-alpha1*(point-beta1)))))
-  #Pr1 <- matrix(log(pr), nrow=hh, ncol=k, byrow=T)
-  #Pr0 <- matrix(log(1-pr), nrow=hh, ncol=k, byrow=T)
-  #LLi <- Data*Pr1 + (1-Data)*Pr0
-  #LL <- sum(LLi)
-  
   return(LL)
 }
 
@@ -131,14 +124,16 @@ x2 <- rand[r]
 x3 <- rep(0.2, k)
 x <- c(x1, x2, x3)
 
-#準ニュートン法で項目母数を推定
-res <- optim(x, mloglike, gr=NULL, Data, hh, k, index, weight, point, qu_n, method="Nelder-Mead", hessian=FALSE, 
-             control=list(fnscale=-1, trace=TRUE, maxit=1000))
+#Nelder-Mead法で項目母数を推定
+res <- optim(res$par, mloglike, gr=NULL, Data, hh, k, index, weight, point, qu_n, method="Nelder-Mead", hessian=FALSE, 
+             control=list(fnscale=-1, trace=TRUE, maxit=3000))
+
+#パラメータの推定結果
 alpha <- res$par[index[, 1]]
 beta <- res$par[index[, 2]]
 gamma <- res$par[index[, 3]]
 round(cbind(c(alpha, beta, gamma), c(alpha0, beta0, c0)), 3)   #真値との比較
-res$value
+res$value   #最大化された対数尤度
 
 ##関数で推定
 ipl31 <- tpm(Data)
