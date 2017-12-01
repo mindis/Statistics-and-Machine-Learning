@@ -16,8 +16,8 @@ library(lattice)
 
 ####データの発生####
 #データの設定
-hh <- 3000   #ユーザー数
-category <- 150   #カテゴリー数
+hh <- 5000   #ユーザー数
+category <- 200   #カテゴリー数
 k <- 10   #潜在変数数
 
 ##非負値行列因子分解の仮定に従いデータを生成
@@ -35,6 +35,8 @@ for(j in 1:category){
 }
 colSums(Data)
 rowSums(Data)
+LL <- sum(dpois(Data, W0 %*% H0, log=TRUE))
+
 
 ####マルコフ連鎖モンテカルロ法でNMFを推定####
 ##アルゴリズムの設定
@@ -56,26 +58,24 @@ H_array <- array(0, dim=c(k, category, R/keep))
 lambda <- array(0, dim=c(hh, category, k))
 
 
+
 ####マルコフ連鎖モンテカルロ法でパラメータをサンプリング####
 for(rp in 1:R){
   
   ##補助変数lambdaを更新
-  LL_ind <- array(0, dim=c(hh, category, k))
-  LL_sums <- matrix(0, nrow=hh, ncol=category)
+  lambda <- array(0, dim=c(hh, category, k))
+  WH <- W %*% H
   for(j in 1:k){
-    LL_ind[, , j] <- dpois(Data, W[, j] %*% t(H[, j]))
-    LL_sums <-  LL_sums + LL_ind[, , j]
+    lambda[, , j] <- W[, j] %*% t(H[j, ]) / WH
   }
   
   ##ガンマ分布よりWをサンプリング
   for(j in 1:k){
-    lambda[, , j] <- LL_ind[, , j] / LL_sums   #補助変数
     w1 <- alpha1 + rowSums(lambda[, , j] * Data)
     w2 <- beta1 + sum(H[j, ])
     W[, j] <- rgamma(hh, w1, w2)   
   }
 
-  
   ##ガンマ分布よりHをサンプリング
   for(j in 1:k){
     h1 <- alpha2 + colSums(lambda[, , j] * Data)
@@ -83,15 +83,17 @@ for(rp in 1:R){
     H[j, ] <- rgamma(category, h1, h2)  
   }
 
+
   ##サンプリング結果の保存と表示
   if(rp%%keep==0){
     mkeep <- rp/keep
     W_array[, , mkeep] <- W
     H_array[, , mkeep ] <- H
     print(rp)
-    print(sum(dpois(Data, W %*% H, log=T)))
+    print(c(sum(dpois(Data, W %*% H, log=T)), LL))
     print(round(cbind(W[1:10, 1:7], W0[1:10, 1:7]), 3))
     print(round(cbind(H[, 1:7], H0[, 1:7]), 3))
+    
   }
 }
 
