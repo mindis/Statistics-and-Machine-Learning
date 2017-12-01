@@ -75,6 +75,13 @@ for(rp in 1:R){
     w2 <- beta1 + sum(H[j, ])
     W[, j] <- rgamma(hh, w1, w2)   
   }
+  
+  ##補助変数lambdaを更新
+  lambda <- array(0, dim=c(hh, category, k))
+  WH <- W %*% H
+  for(j in 1:k){
+    lambda[, , j] <- W[, j] %*% t(H[j, ]) / WH
+  }
 
   ##ガンマ分布よりHをサンプリング
   for(j in 1:k){
@@ -82,7 +89,6 @@ for(rp in 1:R){
     h2 <- beta2 + sum(W[, j])
     H[j, ] <- rgamma(category, h1, h2)  
   }
-
 
   ##サンプリング結果の保存と表示
   if(rp%%keep==0){
@@ -97,5 +103,7 @@ for(rp in 1:R){
   }
 }
 
-
+matplot(t(W_array[1:10, 1, ]), type="l")
+matplot(t(W_array[1:10, 2, ]), type="l")
+matplot(t(W_array[1:10, 3, ]), type="l")
       
