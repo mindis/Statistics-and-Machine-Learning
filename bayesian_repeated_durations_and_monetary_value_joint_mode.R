@@ -284,7 +284,6 @@ loglike <- function(theta, alpha, y, X, z, m){
 }
 
 
-
 ##継続時間と購買金額の同時分布の観測データの対数尤度
 obzll <- function(alpha, beta1, beta2, gamma, sigma, y1, y2, X1, X2, z, r, seg, m, hh){
   
@@ -319,7 +318,7 @@ obzll <- function(alpha, beta1, beta2, gamma, sigma, y1, y2, X1, X2, z, r, seg, 
   #ユーザー別に尤度の積を取る
   Z <- as.matrix(data.frame(lhood=LLi, id=ID$id) %>%
                    dplyr::group_by(id) %>%
-                   dplyr::summarize_each(funs(prod)))[, 2:(seg+1)]
+                   dplyr::summarize_all(funs(prod)))[, 2:(seg+1)]
   
   #潜在変数zを出力
   Z0 <- Z * matrix(r, nrow=hh, ncol=seg, byrow=T)
@@ -471,10 +470,11 @@ for(rp in 1:R){
     oldbeta1[k, ] <- oldbetas[1:ncol(X1_seg)]
     oldbeta2[k, ] <- oldbetas[(ncol(X1_seg)+1):length(oldbetas)]
     
+    
     ##MHサンプリングでワイブル競合リスクモデルで形状パラメータをサンプリング
     #パラメータをサンプリング
     alphad <- oldalphas
-    alphan <- alphad + 3*mvrnorm(1, rep(0, length(alpha)), rw_alpha)
+    alphan <- alphad + mvrnorm(1, rep(0, length(alpha)), rw_alpha)
     
     #対数尤度と対数事前分布を計算
     lognew2 <- loglike(oldbetas, alphan, y1_seg, X1_seg, z_seg, m)
@@ -504,7 +504,7 @@ for(rp in 1:R){
     
     ##線形回帰モデルの回帰係数のパラメータをサンプリング
     #打ち切ったサンプルは推定対象としない
-    index_censored <- subset(1:nrow(z_seg), rowSums(z_seg)==1)
+    index_censored <- which(rowSums(z_seg)==1)
     X21 <- X2_seg[index_censored, ]
     y21 <- y2_seg[index_censored]
     
@@ -535,13 +535,12 @@ for(rp in 1:R){
   Z <- t(apply(oll, 1, function(x) rmultinom(1, 1, x)))
   r <- colSums(Z)/hh
   
-  
   #インデックスを更新
   index_z <- list()
   index_id <- list()
   for(j in 1:seg){
-    index_z[[j]] <- subset(1:nrow(Z), Z[, j]==1)
-    index_id[[j]] <- subset(1:nrow(ID), ID$id %in% index_z[[j]])
+    index_z[[j]] <- which(Z[, j]==1)
+    index_id[[j]] <- which(ID$id %in% index_z[[j]])
   }
   
   ##サンプリング結果を保存
@@ -563,4 +562,32 @@ for(rp in 1:R){
     print(round(rbind(oldsigma, sigma0), 2))
   }
 }
+
+####サンプリング結果の要約と可視化
+burnin <- 2000/keep
+RS <- R/keep
+
+##サンプリング結果のプロット
+matplot(ALPHA, type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(BETA1[, 1:5], type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(BETA1[, 11:15], type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(BETA2[, 1:5], type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(BETA2[, 11:15], type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(GAMMA[, 1:5], type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(GAMMA[, 12:16], type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(SIGMA, type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+
+##サンプリング結果の要約
+round(cbind(matrix(colMeans(ALPHA[keep:RS, ]), nrow=k, ncol=2), alpha0), 3)
+round(rbind(matrix(colMeans(BETA1[keep:RS, ]), nrow=k, ncol=ncol(oldbeta1)), beta01), 3)
+round(rbind(matrix(colMeans(BETA2[keep:RS, ]), nrow=k, ncol=ncol(oldbeta2)), beta02), 3)
+round(rbind(matrix(colMeans(GAMMA[keep:RS, ]), nrow=k, ncol=ncol(oldgamma)), gamma0), 3)
+round(cbind(colMeans(SIGMA[keep:RS, ]), sigma0), 3)
+
+##割り当てられたセグメント
+table_list <- t(apply(rbind(Seg[burnin:RS, ], matrix(1:seg, nrow=seg, ncol=hh)), 2, table)) - 1
+round(seg_rate <- data.frame(pr=table_list / length(burnin:RS), seg=seg_id), 3)
+
+
+
 
