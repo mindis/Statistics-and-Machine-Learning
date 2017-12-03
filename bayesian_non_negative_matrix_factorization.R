@@ -13,10 +13,10 @@ library(ggplot2)
 library(lattice)
 
 #set.seed(78594)
-
+ 
 ####データの発生####
 #データの設定
-hh <- 5000   #ユーザー数
+hh <- 3000   #ユーザー数
 category <- 200   #カテゴリー数
 k <- 10   #潜在変数数
 
@@ -36,6 +36,7 @@ for(j in 1:category){
 colSums(Data)
 rowSums(Data)
 LL <- sum(dpois(Data, W0 %*% H0, log=TRUE))
+sparse_data <- as(Data, "CsparseMatrix")   #スパース行列の作成
 
 
 ####マルコフ連鎖モンテカルロ法でNMFを推定####
@@ -58,7 +59,6 @@ H_array <- array(0, dim=c(k, category, R/keep))
 lambda <- array(0, dim=c(hh, category, k))
 
 
-
 ####マルコフ連鎖モンテカルロ法でパラメータをサンプリング####
 for(rp in 1:R){
   
@@ -75,6 +75,7 @@ for(rp in 1:R){
     w2 <- beta1 + sum(H[j, ])
     W[, j] <- rgamma(hh, w1, w2)   
   }
+  W <- W / matrix(colSums(W), nrow=hh, ncol=k, byrow=T) * hh/5   #各列ベクトルを正規化
   
   ##補助変数lambdaを更新
   lambda <- array(0, dim=c(hh, category, k))
@@ -93,17 +94,59 @@ for(rp in 1:R){
   ##サンプリング結果の保存と表示
   if(rp%%keep==0){
     mkeep <- rp/keep
-    W_array[, , mkeep] <- W
-    H_array[, , mkeep ] <- H
+    W_array[, , mkeep] <- W[, 1:k]
+    H_array[, , mkeep ] <- H[1:k, ]
     print(rp)
     print(c(sum(dpois(Data, W %*% H, log=T)), LL))
-    print(round(cbind(W[1:10, 1:7], W0[1:10, 1:7]), 3))
-    print(round(cbind(H[, 1:7], H0[, 1:7]), 3))
-    
+    print(round(cbind(W[1:10, 1:k], W0[1:10, 1:k]), 3))
+    print(round(cbind(H[1:k, 1:7], H0[, 1:7]), 3))
   }
 }
 
-matplot(t(W_array[1:10, 1, ]), type="l")
-matplot(t(W_array[1:10, 2, ]), type="l")
-matplot(t(W_array[1:10, 3, ]), type="l")
-      
+####サンプリング結果の要約と可視化####
+burnin <- 2000/keep
+RS <- R/keep
+
+##サンプリング結果の可視化
+#基底ベクトルWのパラメータの可視化
+matplot(t(W_array[1:10, 1, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(W_array[1:10, 2, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(W_array[1:10, 3, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(W_array[1:10, 4, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(W_array[1:10, 5, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(W_array[11:20, 6, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(W_array[11:20, 7, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(W_array[11:20, 8, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(W_array[11:20, 9, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(W_array[11:20, 10, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+
+#結合係数Hのパラメータの可視化
+matplot(t(H_array[1, 1:10, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(H_array[2, 1:10, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(H_array[3, 1:10, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(H_array[4, 1:10, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(H_array[5, 1:10, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(H_array[6, 11:20, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(H_array[7, 11:20, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(H_array[8, 11:20, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(H_array[9, 11:20, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(H_array[10, 11:20, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+
+
+##サンプリング結果の要約
+round(cbind(apply(W_array[, , burnin:RS], c(1, 2), mean), W0), 3)
+round(apply(W_array[, , burnin:RS], c(1, 2), sd), 3)
+round(cbind(t(apply(H_array[, , burnin:RS], c(1, 2), mean)), t(H0)), 3)
+round(t(apply(H_array[, , burnin:RS], c(1, 2), sd)), 3)
+
+##事後平均から予測値を出力
+W_mu <- apply(W_array[, , burnin:RS], c(1, 2), mean)
+H_mu <- apply(H_array[, , burnin:RS], c(1, 2), mean)
+WH_mu <- W_mu %*% H_mu
+
+#予測結果とデータを比較
+Predict <- matrix(0, nrow=hh, ncol=category*2)
+index <- rep(0:1, category)
+Predict[, index==0] <- round(WH_mu, 3)
+Predict[, index==1] <- Data
+
