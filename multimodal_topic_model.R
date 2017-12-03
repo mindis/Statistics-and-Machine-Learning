@@ -70,11 +70,11 @@ for(i in 1:d){
   
   
   #文書2のトピック分布を発生
-  z1 <- t(rmultinom(w2[i], 1, theta[i, ]))   #文書のトピック分布を発生
+  z2 <- t(rmultinom(w2[i], 1, theta[i, ]))   #文書のトピック分布を発生
   
   #文書2のトピック分布から単語を発生
-  zn <- z1 %*% c(1:k)   #0,1を数値に置き換える
-  zdn <- cbind(zn, z1)   #apply関数で使えるように行列にしておく
+  zn <- z2 %*% c(1:k)   #0,1を数値に置き換える
+  zdn <- cbind(zn, z2)   #apply関数で使えるように行列にしておく
   wn <- t(apply(zdn, 1, function(x) rmultinom(1, 1, phi2[x[1], ])))   #文書のトピックから単語を生成
   wdn <- colSums(wn)   #単語ごとに合計して1行にまとめる
   WX2[i, ] <- wdn 
@@ -82,11 +82,11 @@ for(i in 1:d){
   
   
   #文書3のトピック分布を発生
-  z1 <- t(rmultinom(w3[i], 1, theta[i, ]))   #文書のトピック分布を発生
+  z3 <- t(rmultinom(w3[i], 1, theta[i, ]))   #文書のトピック分布を発生
   
   #文書3のトピック分布から単語を発生
-  zn <- z1 %*% c(1:k)   #0,1を数値に置き換える
-  zdn <- cbind(zn, z1)   #apply関数で使えるように行列にしておく
+  zn <- z3 %*% c(1:k)   #0,1を数値に置き換える
+  zdn <- cbind(zn, z3)   #apply関数で使えるように行列にしておく
   wn <- t(apply(zdn, 1, function(x) rmultinom(1, 1, phi3[x[1], ])))   #文書のトピックから単語を生成
   wdn <- colSums(wn)   #単語ごとに合計して1行にまとめる
   WX3[i, ] <- wdn 
@@ -328,14 +328,31 @@ for(rp in 1:R){
 ####サンプリング結果の推定値と要約####
 ##バーンイン期間の設定
 burnin <- 1000/keep
+RS <- R/keep
 z_range <- length(burnin:(R/keep))
 
 ##サンプリング結果の可視化
 matplot(t(THETA[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
 matplot(t(THETA[100, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
 matplot(t(THETA[1000, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+matplot(t(THETA[2000, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
 matplot(t(PHI1[1, 1:5, ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
 matplot(t(PHI2[2, 10:15, ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
 matplot(t(PHI3[3, 20:25, ]), type="l", xlab="サンプリング回数", ylab="パラメータ推定値")
+
+##サンプリング結果の要約
+#文書中の単語ごとのトピック割当確率
+round(W1_SEG / rowSums(W1_SEG), 3)
+round(W2_SEG / rowSums(W2_SEG), 3)
+round(W3_SEG / rowSums(W3_SEG), 3)
+
+#文書のトピック割当確率
+round(cbind(apply(THETA[, , burnin:RS], c(1, 2), mean), thetat), 3)
+
+#単語のトピック割当確率
+round(cbind(t(apply(PHI1[, , burnin:RS], c(1, 2), mean)), t(phit1)), 3)
+round(cbind(t(apply(PHI2[, , burnin:RS], c(1, 2), mean)), t(phit2)), 3)
+round(cbind(t(apply(PHI3[, , burnin:RS], c(1, 2), mean)), t(phit3)), 3)
+
 
 
