@@ -34,7 +34,7 @@ mix1 <- colMeans(z01)   #混合率の真値
 
 #アイテムセグメントの発生
 alpha02 <- rep(100, seg_i)
-pi02 <- rdirichlet(1, alpha02)
+pi02 <- extraDistr::rdirichlet(1, alpha02)
 z02 <- t(rmultinom(K, 1, pi02))
 z02_vec <- as.numeric(z02 %*% 1:seg_i)
 z2_cnt <- as.numeric(table(z02_vec))
@@ -59,9 +59,14 @@ for(i in 1:seg_u){
     Data[z01_vec==i, z02_vec==j] <- matrix(rbinom(n, 1, theta0[i, j]), nrow=z1_cnt[i], ncol=z2_cnt[j])
   }
 }
+
 Data_T <- t(Data)
 storage.mode(Data) <- "integer"
 storage.mode(Data_T) <- "integer"
+sparse_data0 <- as(1-Data, "CsparseMatrix")   
+sparse_data1 <- as(Data, "CsparseMatrix")  
+sparse_data_T0 <- as(1-Data_T, "CsparseMatrix")   
+sparse_data_T1 <- as(Data_T, "CsparseMatrix")   
 gc(); gc()
 
 
@@ -103,7 +108,7 @@ for(i in 1:(length(index_u)-1)){
     #アイテムのクラス割当のインデックスを設定
     index2 <- sortlist2[index_i[j]:index_i[j+1]]
     z2[index2] <- j
-
+    
     #セグメントごとのパラメータを決定
     x <- Data[index1, index2]
     oldtheta[i, j] <- sum(x) / length(x)
@@ -131,10 +136,10 @@ for(rp in 1:R){
   ##ユーザーのセグメント割当を生成
   #パラメータを対数変換
   log_theta1 <- log(oldtheta)
-  log_theta2 <- log(1-oldtheta)
+  log_theta0 <- log(1-oldtheta)
   
   #セグメントごとの二項分布の対数尤度を計算
-  LLi1 <- Data %*% t(log_theta1[, z2]) + (1-Data) %*% t(log_theta2[, z2])
+  LLi1 <- sparse_data1 %*% t(log_theta1[, z2]) + sparse_data0 %*% t(log_theta0[, z2])
   
   #logsumexpの尤度を計算
   LLi_max <- matrix(apply(LLi1, 1, max), nrow=N, ncol=seg_u)
@@ -154,15 +159,15 @@ for(rp in 1:R){
   z_sums <- colSums(Z1) + 1
   r1 <- z_sums / sum(z_sums)
   
- 
+  
   ##アイテムのセグメント割当を生成
   #セグメントごとの二項分布の対数尤度を計算
-  LLi2 <- Data_T %*% log_theta1[z1, ] + (1-Data_T) %*% log_theta2[z1, ]
+  LLi2 <- sparse_data_T1 %*% log_theta1[z1, ] + sparse_data_T0 %*% log_theta0[z1, ]
   
   #logsumexpの尤度を計算
   LLi_max <- matrix(apply(LLi2, 1, max), nrow=K, ncol=seg_i)
   r_matrix <- matrix(r2, nrow=K, ncol=seg_i, byrow=T)
-
+  
   #割当確率のパラメータを設定
   expl <- r_matrix * exp(LLi2 - LLi_max)
   expl_log <- log(expl)
