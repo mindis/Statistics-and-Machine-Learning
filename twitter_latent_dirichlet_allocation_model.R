@@ -18,11 +18,12 @@ library(ggplot2)
 ####データの発生####
 ##文書データの設定
 hh <- 1000
-tweet <- rpois(hh, rgamma(hh, 150.0, 1.0))
+tweet <- rpois(hh, rgamma(hh, 140.0, 1.0))
 d <- sum(tweet)
-w <- rpois(d, 11.5)
+w <- rpois(d, 9.5)
+f <- sum(w)
 v1 <- 150   #評価対象の語彙数
-v2 <- 150   #一般語の語彙数
+v2 <- 100   #一般語の語彙数
 v <- v1+v2   #総語彙数
 k <- 10   #トピック数
 
@@ -45,8 +46,11 @@ beta0 <- c(4.5, 3.5)   #一般語かどうかのベータ分布のパラメータ
 
 #ディクレリ分布からパラメータを生成
 thetat <- theta <- extraDistr::rdirichlet(hh, alpha0)   #ユーザートピックの生成
-phit <- phi <- extraDistr::rdirichlet(k, alpha1)   #評価対象語の出現率の生成
-lambdat <- lambda <- extraDistr::rdirichlet(1, alpha2)   #一般語の出現率の生成
+phi0 <- cbind(extraDistr::rdirichlet(k, alpha1), matrix(runif(v2*k, 10^-15, 10^-10), nrow=k, ncol=v2)) 
+phit <- phi <- phi0 / rowSums(phi0)   #評価対象語の出現率の生成
+lambda0 <- c(runif(v1, 10^-15, 10^-10), extraDistr::rdirichlet(1, alpha2))
+lambdat <- lambda <- lambda0 / sum(lambda0)
+
 
 ##多項分布からトピックおよび単語データを生成
 WX <- matrix(0, nrow=d, ncol=v)
@@ -57,7 +61,6 @@ index_word2 <- (v1+1):v
 
 #tweetごとに1つのトピックを割り当て単語を生成
 for(i in 1:hh){
-  print(i)
   
   #tweetごとにトピックを生成
   z <- rmnom(tweet[i], 1, theta[i, ])
@@ -73,17 +76,21 @@ for(i in 1:hh){
     y <- rbinom(word, 1, par)
     
     #潜在変数に基づいてtweetの単語を生成
-    WX[index_hh[j], index_word1] <- rmnom(1, sum(y), phi[z_vec[j, ], ])   #評価対象語の生成
-    WX[index_hh[j], index_word2] <- rmnom(1, sum(1-y), lambda)   #一般語の生成
+    WX[index_hh[j], ] <- rmnom(1, sum(y), phi[z_vec[j, ], ])   #評価対象語の生成
+    WX[index_hh[j], ] <- WX[index_hh[j], ] + rmnom(1, sum(1-y), lambda)   #一般語の生成
     y0[[index_hh[j]]] <- y
   }
   Z0[[i]] <- as.numeric(z_vec)
 }
+sum(WX)
+sum(w)
+
 
 #データ形式を変換
 y_vec <- unlist(y0)
 z_vec <- unlist(Z0)
 storage.mode(WX) <- "integer"
+WX_sparse <- as(WX, "CsparseMatrix")
 gc(); gc()
 
 
@@ -95,7 +102,6 @@ wd_list <- list()
 
 #IDごとにtweet_idおよび単語idを作成
 for(i in 1:hh){
-  print(i)
   
   #ユーザーIDを記録
   index_hh <- index_id[[i]]
@@ -133,20 +139,29 @@ for(i in 1:length(w)){
 
 ####マルコフ連鎖モンテカルロ法で対応トピックモデルを推定####
 ##単語ごとに尤度と負担率を計算する関数
-burden_fr <- function(theta, phi, wd, w, k){
-  Bur <-  matrix(0, nrow=length(wd), ncol=k)   #負担係数の格納用
-  for(j in 1:k){
-    #負担係数を計算
-    Bi <- rep(theta[, j], w) * phi[j, c(wd)]   #尤度
-    Bur[, j] <- Bi   
-  }
-  
-  Br <- Bur / rowSums(Bur)   #負担率の計算
-  r <- colSums(Br) / sum(Br)   #混合率の計算
+burden_fr <- function(theta, phi, Data, id){
+  #尤度を計算
+  Bur <- theta[id, ] * exp(Data %*% t(log(phi)))
+ 
+  #負担率を計算
+  Br <- Bur / rowSums(Bur)
+  r <- colSums(Br) / sum(Br)
   bval <- list(Br=Br, Bur=Bur, r=r)
   return(bval)
 }
 
+wd[-index_zeros]
+
+ID_d[index_zeros]
+wd[index_zeros]
+(count(c(ID_d[index_zeros], 1:hh))-1)
+
+
+wd[index_zeros]
+i <- c(1, 1, 1, 2, 2)
+j <- c(1, 3, 5, 4, 2)
+x <- c(1, 1, 1, 1, 1)
+sparseMatrix(i, j, k, dim=c(5, 5))
 
 
 ##アルゴリズムの設定
@@ -157,14 +172,15 @@ burnin <- 1000/keep
 
 ##事前分布の設定
 #ハイパーパラメータの事前分布
-alpha01 <- rep(0.3, k)   
-beta01 <- rep(0.4, v1)   
-gamma01 <- rep(1, v2)   
+alpha01 <- 1  
+beta01 <- 0.05  
+gamma01 <- 0.1 
 
 ##パラメータの初期値
 theta <- extraDistr::rdirichlet(hh, rep(1, k))   #ユーザートピックの初期値
 phi <- extraDistr::rdirichlet(k, rep(0.5, v))   #評価対象語の出現確率の初期値
 lambda <- extraDistr::rdirichlet(k, rep(10, v))   #一般語の出現確率の初期値
+y <- rbinom(f, 1, 0.5)
 r <- c(0.5, 0.5)   #評価対象語と一般語の割当率の混合率
 
 ##パラメータの格納用配列
@@ -173,9 +189,88 @@ PHI <- array(0, dim=c(k, v, R/keep))
 LAMBDA <- array(0, dim=c(k, v, R/keep))
 Zi <- matrix(0, nrow=d, ncol=k)
 storage.mode(Zi) <- "integer"
+WX[, 151:ncol(WX)] <- 0
 
 
 ####ギブスサンプリングでパラメータをサンプリング####
-phi
+for(rp in 1:R){
+  
+  ##tweetトピックをサンプリング
+  #tweetごとにトピックの出現確率を計算
+  Br <- burden_fr(theta, phi, WX, u_id)
+  
+  #多項分布から単語トピックをサンプリング
+  tweet_rate <- Br$Br
+  Z <- rmnom(d, 1, tweet_rate)
+  z <- Z %*% 1:k
+  
+  ##単語がトピックと関係あるかどうかをサンプリング
+  #潜在変数のパラメータ
+  LH0 <- lambda[wd]
+  
+  Zi <- matrix(0, nrow=f, ncol=k)
+  LH1 <- rep(0, f)
+  zw <- rep(z, w)
+  pf <- t(phi)[wd, ]
+  
+  for(j in 1:k){
+    index <- which(zw==j)
+    Zi[index, j] <- 1
+    LH1[index] <- pf[index, j]
+  }
+  LH <- cbind(r[1]*LH1, r[2]*LH0)
+  
+  #潜在変数の割当確率から潜在変数を生成
+  y_rate <- LH[, 1] / rowSums(LH)
+  y <- rbinom(length(y_rate), 1, y_rate)
+  cbind(y_rate, wd)
+  
+  
+  #混合率を更新
+  r0 <- mean(y)
+  r <- c(r0, 1-r0)
+  
+  ##ディクレリ分布からトピック分布をサンプリング
+  wsum0 <- matrix(0, nrow=hh, ncol=k)
+  for(i in 1:hh){
+    wsum0[i, ] <- colSums(Z[index_id[[i]], ])
+  }
+  wsum <- wsum0 + alpha01   #ディクレリ分布のパラメータ
+  theta <- extraDistr::rdirichlet(hh, wsum)
+  
+  ##評価対象単語の出現率をサンプリング
+  vf <- matrix(0, nrow=k, ncol=v)
 
+  for(j in 1:k){
+    index_z <- which(zw==j)
+    x0 <- wd[index_z]
+    vf[j, ] <- count(c(x0[y[index_z]==1], 1:v))[, 2] - 1 + beta01
+  }
+  phi <- extraDistr::rdirichlet(k, vf)   #ディクレリ分布からphiをサンプリング
+  
+  ##一般語の出現率をサンプリング
+  lf <- count(c(wd[y==0], 1:v))[, 2] - 1 + gamma01
+  lambda <- extraDistr::rdirichlet(1, lf)   #ディクレリ分布からphiをサンプリング
+
+  ##パラメータの格納とサンプリング結果の表示
+  #サンプリングされたパラメータを格納
+  if(rp%%keep==0){
+    
+    #サンプリング結果を確認
+    print(rp)
+    print(round(cbind(theta[1:10, ], thetat[1:10, ]), 2)) 
+    print(round(rbind(lambda[141:160], lambdat[141:160]), 3))
+    print(round(cbind(phi[, 146:154], phit[, 146:154]), 3))
+  }
+}
+
+cbind(wd, y_rate, y)
+
+round(cbind(t(phi), t(phit)), 3)
+
+round(phi[, 140:160], 3)
+colMeans(phi)
+
+lambda
+lambdat
 
