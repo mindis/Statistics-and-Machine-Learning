@@ -204,3 +204,21 @@ for(rp in 1:R){
   }
 }
 
+####サンプリング結果の可視化と要約####
+burnin <- 1000/keep
+RS <- R/keep
+
+##サンプリング結果の可視化
+matplot(t(THETA[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA[100, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA[500, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA[1000, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI[, 1, ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI[, 100, ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI[, 300, ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+
+##サンプリング結果の要約統計量
+round(cbind(apply(THETA[, , burnin:RS], c(1, 2), mean), thetat), 3)
+round(cbind(t(apply(PHI[, , burnin:RS], c(1, 2), mean)), t(phi)), 3)
+cbind(round(SEG / sum(SEG[1, ]), 3), Z)
+
