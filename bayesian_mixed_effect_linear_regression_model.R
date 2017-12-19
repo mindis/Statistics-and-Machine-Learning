@@ -37,14 +37,7 @@ Data <- cbind(inter=1, region)
 ##応答変数の発生
 #変量効果の設定
 tau0 <- 10   #変量効果の標準偏差
-rw0 <- rnorm(uc, 0, tau0)
-
-#地域効果が逆転するように変量効果を並び替える
-sortlist <- order(rw0, decreasing=T)
-index_row <- sample(sortlist[40:uc], sum(region0==0))
-rw <- rep(0, uc)
-rw[region0==0] <- rw0[index_row]
-rw[region0==1] <- rw0[-index_row]
+rw <- rnorm(uc, 0, tau0)
 
 #パラメータの設定
 beta00 <- 75
@@ -92,19 +85,21 @@ sigma0_inv <- solve(sigma0)
 
 
 ####ギブスサンプリングでパラメータをサンプリング####
+####ギブスサンプリングでパラメータをサンプリング####
 for(rp in 1:R){
   
   ##回帰パラメータの事後分布をサンプリング
   u <- oldgamma[u_id]
   er1 <- y - u   #誤差を計算
-
+  
   #回帰係数の事後分布のパラメータ
   XXV <- solve(XX + sigma0)
   Xy <- t(Data) %*% er1
   beta_mu <- XXV %*% Xy
-
+  
   #多変量正規分布からbetaをサンプリング
   oldbeta <- mvrnorm(1, beta_mu, XXV*oldsigma^2)
+  
   
   ##個体内標準偏差の事後分布をサンプリング
   er2 <- y - Data %*% oldbeta - u
@@ -123,7 +118,7 @@ for(rp in 1:R){
   weights <- oldtau^2 / (oldsigma^2/n + oldtau^2)
   mu_par <- weights * mu
   oldgamma <- rnorm(uc, mu_par, weights*oldsigma^2/n)
-
+  
   ##階層モデルの標準偏差の事後分布をサンプリング
   s <- s0 + sum(oldgamma^2)
   v <- v0 + uc
@@ -148,8 +143,39 @@ for(rp in 1:R){
   }
 }
 
-matplot(BETA, type="l")
-colMeans(BETA[burnin:RS, ])
-solve(t(Data) %*% Data) %*% t(Data) %*% (y-rw[u_id])
-solve(t(Data) %*% Data) %*% t(Data) %*% y
+####サンプリング結果の可視化と要約####
+burnin <- 1000/keep
+RS <- R/keep
+
+##サンプリング結果のトレースプロット
+matplot(BETA, type="l", xlab="サンプリング回数", ylab="パラメータ")
+plot(1:length(SIGMA), SIGMA, type="l", xlab="サンプリング回数", ylab="パラメータ")
+plot(1:length(TAU), TAU, type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(GAMMA[, 1:5], type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(GAMMA[, 10:15], type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(GAMMA[, 20:25], type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(GAMMA[, 30:35], type="l", xlab="サンプリング回数", ylab="パラメータ")
+
+##事後分布の要約
+round(rbind(beta=colMeans(BETA[burnin:RS, ]), beta0), 3)
+c(mean(SIGMA[burnin:RS]), cov0)
+c(mean(TAU[burnin:RS]), tau0)
+round(cbind(colMeans(GAMMA[burnin:RS, ]), rw), 3)
+
+
+##最尤法での線形混合モデルとの比較
+X <- data.frame(y, Data, uc=as.factor(u_id))
+
+#lmer関数で線形混合モデル
+res1 <- lmer(y ~ region + (1 | uc), data=X)
+summary(res1)
+
+#lme関数で線形混合モデル
+res2 <- lme(y ~ region, data=X, random= ~ 1 | uc)
+summary(res2)
+
+
+#変量効果の比較
+round(random_effect <- data.frame(rw, mcmc=colMeans(GAMMA[burnin:RS, ]), lmer=res1@u, 
+                                  lme=as.numeric(res2$coefficients$random$uc)), 3)
 
