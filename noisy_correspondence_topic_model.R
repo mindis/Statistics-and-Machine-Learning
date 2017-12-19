@@ -72,9 +72,9 @@ for(i in 1:d){
   #•¶‘‚ÌƒgƒsƒbƒN•ª•z‚©‚ç•â••Ï”‚ğ”­¶
   #•¶‘‚Å”­¶‚³‚¹‚½ƒgƒsƒbƒN‚Ì‚İ‚ğ•â•î•ñ‚ÌƒgƒsƒbƒN•ª•z‚Æ‚·‚é
   rate <- rep(0, k)
-  z_table <- count(zd)
+  z_table <- plyr::count(zd)
   lambda[i, z_table$x] <-  z_table$freq / sum(z_table$freq)   #•â•î•ñ‚ÌƒgƒsƒbƒN•ª•z
-
+  
   #ƒxƒ‹ƒk[ƒC•ª•z‚©‚çƒgƒsƒbƒN‚ÉŠÖŒW‚ª‚ ‚é‚©‚Ç‚¤‚©‚ğ”­¶
   index <- which(aux_id==i) 
   z0[index] <- rbinom(length(index), 1, beta0[index])
@@ -119,7 +119,7 @@ for(i in 1:nrow(WX)){
   W1 <- WX[i, (WX[i, ] > 0)]
   number <- rep(num2, W1)
   wd_list[[i]] <- number
-
+  
   #•â•î•ñ‚ÌIDƒxƒNƒgƒ‹‚ğì¬
   ID2_list[[i]] <- rep(i, x[i])
   num1 <- (AX[i, ] > 0) * (1:a)
@@ -247,7 +247,7 @@ for(rp in 1:R){
   tau01 <- r[1] * rowSums(theta_aux[ID2_d, ]*t(omega[, ad]))
   tau02 <- r[2] * gamma[, ad]
   tau <- tau01 / (tau01 + tau02)
-
+  
   #ƒxƒ‹ƒk[ƒC•ª•z‚æ‚èöİ•Ï”‚ğ”­¶
   z <- rbinom(e, 1, tau)
   r <- c(mean(z), 1-mean(z))   #¬‡—¦
@@ -272,7 +272,7 @@ for(rp in 1:R){
   gamma0 <- delta0m
   par <- tapply(c(Zi2[-index_z, k+1], rep(1, a)), c(ad[-index_z], 1:a), sum) - 1 + gamma0
   gamma <- rdirichlet(1, par)   #ƒfƒBƒNƒŒƒŠ•ª•z‚æ‚èƒpƒ‰ƒ[ƒ^‚ğƒTƒ“ƒvƒŠƒ“ƒO
-
+  
   
   ##ƒpƒ‰ƒ[ƒ^‚ÌŠi”[‚ÆƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚Ì•\¦
   #ƒTƒ“ƒvƒŠƒ“ƒO‚³‚ê‚½ƒpƒ‰ƒ[ƒ^‚ğŠi”[
@@ -290,7 +290,7 @@ for(rp in 1:R){
       W_SEG <- W_SEG + Zi1
       A_SEG <- A_SEG + Zi2
     }
-
+    
     #ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚ğŠm”F
     print(rp)
     print(round(c(r, r0), 3))
@@ -348,5 +348,4 @@ tag_mu1 <- apply(OMEGA[, , burnin:(R/keep)], c(1, 2), mean)   #ƒ^ƒO‚ÌoŒ»—¦‚Ì–Œ
 round(rbind(tag_mu1, omegat), 3)
 
 #ƒgƒsƒbƒN‚Æ–³ŠÖŒW‚Ìƒ^ƒO‚Ì–Œã„’è—Ê
-round(rbind(colMeans(GAMMA[burnin:(R/keep), ]), gammat), 3)   #–³ŠÖŒWƒ^ƒO‚Ì–Œã•½‹Ï
-
+round(rbind(colMeans(GAMMA[burnin:(R/keep), ]), gammat), 3) #–³ŠÖŒWƒ^ƒO‚Ì–Œã•½‹Ï
