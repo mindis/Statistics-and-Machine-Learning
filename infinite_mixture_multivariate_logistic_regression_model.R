@@ -1,7 +1,5 @@
 #####ディクレリ過程混合多変量ロジスティック回帰モデル#####
 library(MASS)
-library(lda)
-library(RMeCab)
 library(bayesm)
 library(flexmix)
 library(MCMCpack)
