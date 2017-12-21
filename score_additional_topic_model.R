@@ -15,8 +15,10 @@ library(ggplot2)
 ####データの発生####
 #set.seed(423943)
 #データの設定
-k <- 6   #教師数
-d <- 3000   #文書数
+s <- 5   #教師数
+k1 <- 3   #教師ごとのトピック数
+k2 <- 10   #文書集合全体のトピック数
+d <- 2500   #文書数
 v1 <- 300   #教師に関係のある語彙数
 v2 <- 100   #教師に関係のない語彙数
 v <- v1 + v2   #語彙数
@@ -31,22 +33,30 @@ for(i in 1:d){
 }
 
 #教師データを生成
-pr <- runif(k, 1, 5)
+pr <- runif(s, 1, 5)
 Y <- rmnom(d, 1, pr)
-y <- as.numeric(Y %*% 1:k)
+y <- as.numeric(Y %*% 1:s)
 y_vec <- as.numeric(y)[id_vec] 
+index_y <- list()
+for(j in 1:s) {index_y[[j]] <- which(y==j)}
+y_freq <- as.numeric(table(y))
 
 
-#パラメータの設定
-alpha0 <- alpha0 <- diag(1.5, k) + 0.15   #文書のディレクリ事前分布のパラメータ
-alpha1 <- c(rep(0.4, v1), rep(0.005, v2))   #評点に関係のある単語のディレクリ事前分布のパラメータ
-alpha2 <- c(rep(0.05, v1), rep(5, v2))   #教師に関係のない単語のディレクリ事前分布のパラメータ
+##パラメータの設定
+#教師ごとのトピックを生成
+alpha0 <- rep(0.3, k1)   #教師データの文書のディレクリ事前分布のパラメータ
+alpha1 <- list()
+for(j in 1:s){
+  alpha1[[j]] <- c(rep(0.4, v1), rep(0.005, v2))   #教師に関係のある単語のディレクリ事前分布のパラメータ
+}
+alpha2 <- c(rep(0.1, v1), rep(5, v2))   #教師に関係のない単語のディレクリ事前分布のパラメータ
 
 #ディレクリ乱数の発生
-thetat <- theta <- rdirichlet(d, alpha0[y, ])   #文書のトピック分布をディレクリ乱数から発生
-phit <- phi <- rdirichlet(k, alpha1)   #評点に関係のある単語分布をディレクリ乱数から発生
+thetat <- theta <- rdirichlet(d, alpha0)   #文書のトピック分布をディレクリ乱数から発生
+phit <- phi <- list()
+for(j in 1:s) {phit[[j]] <- phi[[j]] <- rdirichlet(k1, alpha1[[j]])}   #評点に関係のある単語分布をディレクリ乱数から発生
 gammat <- gamma <- rdirichlet(1, alpha2)   #評点に関係のない単語分布をディレクリ乱数から発生
-betat <- beta <- rbeta(sum(f), 15, 15)   #単語が評点と関連するかどうかのパラメータ
+betat <- beta <- rbeta(sum(f), 15, 15)   #単語が教師と関連するかどうかのパラメータ
 
 
 ##多項分布の乱数からデータを発生
@@ -58,15 +68,18 @@ index_v1 <- 1:v1
 index_v2 <- (v1+1):v
 
 for(i in 1:d){
+  
   #文書のトピックを生成
   z <- rmnom(w[i], 1, theta[i, ])   #文書のトピック分布を発生
-  z_vec <- z %*% c(1:k)   #トピック割当をベクトル化
+  z_vec <- z %*% c(1:k1)   #トピック割当をベクトル化
   
   #一般語かどうかを生成
   x_list[[i]] <- rbinom(w[i], 1, beta[index_hh[[i]]])
   
+  phi[[y[i]]][z_vec[x_list[[i]]==1], ]
+  phi
   #生成したトピックから単語を生成
-  wn <- rmnom(sum(x_list[[i]]), 1, phi[z_vec[x_list[[i]]==1], ])   #文書のトピックから単語を生成
+  wn <- rmnom(sum(x_list[[i]]), 1, phi[[y[i]]][z_vec[x_list[[i]]==1], ])   #文書のトピックから単語を生成
   an <- rmnom(sum(1-x_list[[i]]), 1, gammat)
   wdn <- colSums(wn) + colSums(an)   #単語ごとに合計して1行にまとめる
   WX[i, ] <- wdn
@@ -81,7 +94,7 @@ for(i in 1:d){
 ID_list <- list()
 wd_list <- list()
 
-#求人ごとに求人IDおよび単語IDを作成
+#文書ごとに文書IDおよび単語IDを作成
 for(i in 1:nrow(WX)){
   print(i)
   
@@ -101,9 +114,39 @@ wd <- unlist(wd_list)
 ##インデックスを作成
 doc_list <- list()
 word_list <- list()
+y_list <- list()
+index_s <- list()
+words_list <- list()
+docs_list <- list()
+docs_vec <- list()
+wd0 <- list()
+w0 <- list()
+
 for(i in 1:length(unique(ID_d))) {doc_list[[i]] <- which(ID_d==i)}
 for(i in 1:length(unique(wd))) {word_list[[i]] <- which(wd==i)}
-gc(); gc()
+for(j in 1:s) {y_list[[j]] <- which(y==j)}
+for(j in 1:s) {index_s[[j]] <- which(y_vec==j)}
+
+for(i in 1:s){
+  words_list[[i]] <- list()
+  wds <- wd[index_s[[i]]]
+  
+  for(j in 1:length(unique(wd))){
+    words_list[[i]][[j]] <- which(wds==j)
+  }
+}
+
+for(j in 1:s){
+  wd0[[j]] <- wd[index_s[[j]]]
+  w0[[j]] <- w[index_y[[j]]]
+  docs_list[[j]] <- list()
+  dcs <- ID_d[index_s[[j]]]
+  vec <- unique(dcs)
+  for(i in 1:length(vec)){
+    docs_list[[j]][[i]] <- which(dcs==vec[i])
+    docs_vec[[j]] <- vec
+  }
+}
 
 
 ####マルコフ連鎖モンテカルロ法で対応トピックモデルを推定####
@@ -121,7 +164,7 @@ burden_fr <- function(theta, phi, wd, w, k){
   bval <- list(Br=Br, Bur=Bur, r=r)
   return(bval)
 }
-  
+
 ##アルゴリズムの設定
 R <- 10000   #サンプリング回数
 keep <- 2   #2回に1回の割合でサンプリング結果を格納
@@ -136,87 +179,119 @@ alpha02 <- 0.5
 
 ##パラメータの初期値
 #トピック分布の初期値
-theta <- extraDistr::rdirichlet(d, (diag(1.0, k) + 0.25)[y, ])   #文書トピックのパラメータの初期値
+theta <- extraDistr::rdirichlet(d, rep(1, k1))   #文書トピックのパラメータの初期値
+
 
 #一般語の単語分布の初期値
 inv_idf <- colSums(WX > 0)/d
 gamma <- inv_idf / sum(inv_idf)
 
 #教師関連単語分布の初期値
-phi <- matrix(0, nrow=k, ncol=v)
-for(j in 1:k) {
+phi <- list()
+for(j in 1:s) {
   M <- colSums(WX[y==j, ])
-  phi[j, ] <- M*log(1/inv_idf) / sum(M*log(1/inv_idf))
+  phi[[j]] <- extraDistr::rdirichlet(k1, (M+1)*log(1/inv_idf))
 }
 
 
+#混合率の初期値
+rd <- matrix(0, nrow=f, ncol=2)
+rd[, 1] <- 0.5
+rd[, 2] <- 0.5
+
+
 ##パラメータの格納用配列
-THETA <- array(0, dim=c(d, k, R/keep))
-PHI <- array(0, dim=c(k, v, R/keep))
+THETA <- array(0, dim=c(d, k1, R/keep))
+PHI1 <- PHI2 <- PHI3 <- PHI4 <- PHI5 <- array(0, dim=c(k1, v, R/keep))
 GAMMA <- matrix(0, nrow=R/keep, ncol=v)
-SEG1 <- matrix(0, nrow=f, ncol=k)
+SEG1 <- matrix(0, nrow=f, ncol=k1)
 SEG2 <- rep(0, nrow=f)
 storage.mode(SEG1) <- "integer"
 gc(); gc()
 
 ##MCMC推定用配列
-wsum0 <- matrix(0, nrow=d, ncol=k)
-vf0 <- matrix(0, nrow=k, ncol=v)
+wsum0 <- matrix(0, nrow=d, ncol=k1)
+vf0 <- matrix(0, nrow=k1, ncol=v)
+zf0 <- rep(0, v)
+switching_rate <- rep(0, f)
+Zi1_full <- matrix(0, nrow=f, ncol=k1)
+Zi2_zeros <- rep(0, f)
+vec1 <- 1/1:k1
 
-
-##単語ごとに尤度と負担率を計算する関数
-burden_fr <- function(theta, phi, wd, w, k){
-  Bur <-  matrix(0, nrow=length(wd), ncol=k)   #負担係数の格納用
-  for(j in 1:k){
-    #負担係数を計算
-    Bi <- rep(theta[, j], w) * phi[j, wd]   #尤度
-    Bur[, j] <- Bi   
-  }
-  
-  Br <- Bur / rowSums(Bur)   #負担率の計算
-  r <- colSums(Br) / sum(Br)   #混合率の計算
-  bval <- list(Br=Br, Bur=Bur, r=r)
-  return(bval)
-}
-
-rep(theta[, j], w) 
-phi[y_vec, ]
-
-
-y_vec
-M <- matrix(0, nrow=f, ncol=k+1)
-for(j in 1:k){
-  M[, j] <- phit[j, wd]
-}
-M[, k+1] <- gammat[wd] 
-
-round(cbind(y_vec, wd, M/rowSums(M)), 3)
 
 ####ギブスサンプリングでパラメータをサンプリング####
 for(rp in 1:R){
   
-  ##単語トピックをサンプリング
-  #単語ごとにトピックの出現率を計算
-  word_rate <- burden_fr(theta, phi, wd, w, k)$Br
+  #パラメータの格納用配列を更新
+  Brs <- list()
+  Zi1 <- list()
+  Zi2 <- list()
   
-  #多項分布から単語トピックをサンプリング
-  Zi <- rmnom(f, 1, word_rate)   
-  z_vec <- Zi %*% 1:k
-  
-  ##単語トピックのパラメータを更新
-  #ディクレリ分布からthetaをサンプリング
-  for(i in 1:d){
-    wsum0[i, ] <- colSums(Zi[doc_list[[i]], ])
+  for(j in 1:s){
+    ##教師単位でのトピック分布をサンプリング
+    #単語ごとにトピック分布のパラメータを推定
+    theta0 <- theta[index_y[[j]], ]
+    Brs[[j]] <- burden_fr(theta0, phi[[j]], wd0[[j]], w0[[j]], k1)
+    word_rate <- Brs[[j]]$Br
+    
+    #多項分布よりトピックをサンプリング
+    n <- nrow(word_rate)
+    rand1 <- matrix(runif(n), nrow=n, ncol=k1)
+    user_cumsums <- rowCumsums(word_rate)
+    Zi1[[j]] <- ((k1+1) - (user_cumsums > rand1) %*% rep(1, k1)) %*% vec1   #トピックをサンプリング
+    Zi1[[j]][Zi1[[j]]!=1] <- 0
+    Zi1_full[index_s[[j]], ] <- Zi1[[j]]
+    
+    
+    ##単語ごとに教師トピックと関係があるかどうかをサンプリング
+    #二項分布のパラメータを推定
+    LLz1 <- rd[index_s[[j]], 1] * rowSums(Brs[[j]]$Bur)
+    LLz2 <- rd[index_s[[j]], 2] * gamma[wd0[[j]]]
+    switching_rate[index_s[[j]]] <- LLz1 / (LLz1+LLz2)
+    
+    #二項分布から関係有無を生成
+    Zi2[[j]] <- rbinom(length(index_s[[j]]), 1, switching_rate[index_s[[j]]])
   }
-  wsum <- wsum0 + alpha01m 
+  
+  ##教師ごとにパラメータをサンプリング
+  for(j in 1:s){
+    #文書のトピックのパラメータを推定
+    zi <- Zi1[[j]] * matrix(Zi2[[j]], nrow=length(index_s[[j]]), ncol=k1)
+    Zi2_zeros[index_s[[j]]] <- 1-Zi2[[j]]
+    
+    for(i in 1:y_freq[j]){
+      wsum0[index_y[[j]][i], ] <- colSums(zi[docs_list[[j]][[i]], ])
+    }
+    
+    #単語分布のパラメータを推定
+    for(l in 1:v){
+      vf0[, l] <- colSums(zi[words_list[[j]][[l]], ,drop=FALSE])
+    }
+    #ディクレリ分布から単語分布をサンプリング
+    vf <- vf0 + alpha02
+    phi[[j]] <- extraDistr::rdirichlet(k1, vf)
+  }
+  
+  #ディクレリ分布からトピック分布をサンプリング
+  wsum <- wsum0 + alpha01
   theta <- extraDistr::rdirichlet(d, wsum)
   
-  #ディクレリ分布からphiをサンプリング
+  
+  ##一般語のパラメータをサンプリング
+  #一般語パラメータgammaをサンプリング
   for(j in 1:v){
-    vf0[, j] <- colSums(Zi[word_list[[j]], ])
+    zf0[j] <- sum(Zi2_zeros[word_list[[j]]])
   }
-  vf <- vf0 + beta0m
-  phi <- extraDistr::rdirichlet(k, vf)
+  zf <- zf0 + alpha02
+  gamma <- extraDistr::rdirichlet(1, zf)
+  
+  #混合率をサンプリング
+  Zi2_ones <- 1-Zi2_zeros
+  for(i in 1:d){
+    rd[i, 1] <- mean(Zi2_ones[doc_list[[i]]])
+  }
+  rd[, 2] <- 1-rd[, 1]
+  
   
   ##パラメータの格納とサンプリング結果の表示
   #サンプリングされたパラメータを格納
@@ -224,19 +299,30 @@ for(rp in 1:R){
     #サンプリング結果の格納
     mkeep <- rp/keep
     THETA[, , mkeep] <- theta
-    PHI[, , mkeep] <- phi
+    PHI1[, , mkeep] <- phi[[1]]
+    PHI1[, , mkeep] <- phi[[2]]
+    PHI1[, , mkeep] <- phi[[3]]
+    PHI1[, , mkeep] <- phi[[4]]
+    PHI1[, , mkeep] <- phi[[5]]
+    GAMMA[mkeep, ] <- gamma
     
     #トピック割当はバーンイン期間を超えたら格納する
     if(rp%%keep==0 & rp >= burnin){
-      SEG <- SEG + Zi
+      SEG1 <- SEG1 + Zi1_full      
+      SEG2 <- SEG2 + Zi2_ones
     }
     
     #サンプリング結果を確認
     print(rp)
-    print(round(cbind(theta[1:10, ], thetat[1:10, ]), 3))
-    print(round(cbind(phi[, 1:10], phit[, 1:10]), 3))
+    print(round(cbind(theta[y==1, ][1:7, ], thetat[y==1, ][1:7, ], theta[y==2, ][1:7, ], thetat[y==2, ][1:7, ],
+                      theta[y==3, ][1:7, ], thetat[y==3, ][1:7, ]), 3))
+    print(round(cbind(phi[[1]][, 296:305], phit[[1]][, 296:305]), 3))
+    print(round(cbind(phi[[2]][, 296:305], phit[[2]][, 296:305]), 3))
+    print(round(cbind(phi[[3]][, 296:305], phit[[3]][, 296:305]), 3))
+    print(round(rbind(gamma[290:309], gammat[290:309]), 3))
   }
 }
+
 
 
 ####サンプリング結果の可視化と要約####
