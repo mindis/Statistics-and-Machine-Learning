@@ -7,8 +7,8 @@ library(Matrix)
 library(bayesm)
 library(extraDistr)
 library(reshape2)
-library(dplyr)
 library(plyr)
+library(dplyr)
 library(ggplot2)
 
 
@@ -125,7 +125,7 @@ burnin <- 1000/keep
 alpha01 <- 1.0
 beta01 <- 0.5
 beta02 <- 0.5
-beta03 <- c(1, 1)
+beta03 <- c(f/50, f/50)
 
 
 ##パラメータの初期値
@@ -137,7 +137,7 @@ idf2 <- log(nrow(WX)/colSums(WX==0))
 theta <- extraDistr::rdirichlet(d, rep(1, k))   #文書トピックのパラメータの初期値
 phi <- extraDistr::rdirichlet(k, idf1*10)   #単語トピックのパラメータの初期値
 gamma <- extraDistr::rdirichlet(1, idf2*100)   #一般語のパラメータの初期値
-r <- mean(y)   #混合率の初期値
+r <- 0.5   #混合率の初期値
 
 ##パラメータの格納用配列
 THETA <- array(0, dim=c(d, k, R/keep))
@@ -177,7 +177,7 @@ for(rp in 1:R){
   #ベータ分布から混合率を更新
   par <- sum(y)
   r <- rbeta(1, par+beta03[1], f-par+beta03[2])
-    
+  
   ##多項分布から単語トピックをサンプリング
   Zi <- rmnom(f, 1, word_rate)   
   Zi[-index_y, ] <- 0
