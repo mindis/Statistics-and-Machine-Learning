@@ -59,8 +59,8 @@ alpha02 <- matrix(0.3, nrow=k1, ncol=k1)
 diag(alpha02) <- 1.5
 alpha03 <- rep(0.2, k2)
 alpha04 <- rep(0.2, k3)
-alpha11 <- c(rep(0.1, v1), rep(0.0005, v2))
-alpha12 <- c(rep(0.0005, v1), rep(0.1, v2))
+alpha11 <- c(rep(0.1, v1), rep(0.00025, v2))
+alpha12 <- c(rep(0.00025, v1), rep(0.1, v2))
 
 for(l in 1:100){
   print(l)
@@ -212,6 +212,30 @@ burden_fr <- function(theta, phi, wd, w, k){
   return(bval)
 }
 
+##観測データの対数尤度と潜在変数zを計算するための関数
+LLobz <- function(Data, phi, r, const, hh, k){
+  
+  #多項分布の対数尤度
+  log_phi <- log(t(phi))
+  LLi <- const + Data %*% log_phi
+  
+  #logsumexpの尤度
+  LLi_max <- matrix(apply(LLi, 1, max), nrow=hh, ncol=k)
+  r_matrix <- matrix(r, nrow=hh, ncol=k, byrow=T)
+  
+  #割当確率のパラメータを設定
+  expl <- r_matrix * exp(LLi - LLi_max)
+  expl_log <- log(expl)
+  expl_max <- matrix(log(max(expl[1, ])), nrow=hh, ncol=k)
+  z <- exp(expl_log - (log(rowSums(exp(expl_log - expl_max))) + expl_max))   #セグメント割当確率
+  
+  #観測データの対数尤度
+  r_log <- matrix(log(r), nrow=hh, ncol=k, byrow=T)
+  LLosum <- sum(log(rowSums(exp(r_log + LLi))))   #観測データの対数尤度
+  rval <- list(LLob=LLosum, z=z, LL=LLi)
+  return(rval)
+}
+
 
 ####MHMMトピックモデルのMCMCアルゴリズムの設定####
 ##アルゴリズムの設定
@@ -229,21 +253,76 @@ theta4 <- thetat4
 gamma <- gammat
 phi <- phit
 omega <- omegat
+r <- mean(omegat)
 z2_vec <- Z2
 
-##LDAからHTMモデルの初期値を設定
-theta1
-theta2
-theta3
-theta4
-gamma
-phi
-omega
+
+##MHMTモデルの初期値を設定
+##混合多項分布でセグメント割当を初期化
+const <- lfactorial(w) - rowSums(lfactorial(WX))   #多項分布の密度関数の対数尤度の定数
+
+#パラメータの初期値
+#phiの初期値
+alpha0 <- colSums(WX) / sum(WX) + 0.001
+phi <- extraDistr::rdirichlet(k1, alpha0*v)
+
+#混合率の初期値
+r <- rep(1/k1, k1)
+
+#観測データの対数尤度の初期化
+L <- LLobz(WX, phi, r, const, a, k1)
+LL1 <- L$LLob
+z <- L$z
+
+#更新ステータス
+dl <- 100   #EMステップでの対数尤度の差の初期値
+tol <- 1
+iter <- 0 
+
+##EMアルゴリズムで対数尤度を最大化
+while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
+  #Eステップの計算
+  z <- L$z   #潜在変数zの出力
+  
+  #Mステップの計算と最適化
+  #phiの推定
+  df0 <- matrix(0, nrow=k1, ncol=v)
+  for(j in 1:k1){
+    #完全データの対数尤度からphiの推定量を計算
+    phi[j, ] <- colSums(matrix(z[, j], nrow=a, ncol=v) * WX) / sum(z[, j] * w)   #重み付き多項分布の最尤推定
+  }
+  
+  #混合率を推定
+  r <- apply(z, 2, sum) / a
+  
+  #観測データの対数尤度を計算
+  phi[phi==0] <- min(phi[phi > 0])
+  L <- LLobz(WX, phi, r, const, a, k1)
+  LL <- L$LLob   #観測データの対数尤度
+  iter <- iter+1   
+  dl <- LL-LL1
+  LL1 <- LL
+  print(LL)
+}
+
+#初期値を設定
+theta1 <- extraDistr::rdirichlet(1, rep(1, k1))
+alpha <- matrix(0.3, nrow=k1, ncol=k1)
+diag(alpha) <- 1.5
+theta2 <- extraDistr::rdirichlet(k1, alpha)
+theta3 <- extraDistr::rdirichlet(k1, rep(0.4, k2))
+theta4 <- extraDistr::rdirichlet(d, rep(0.4, k3))
+r <- 0.5
+gamma <- extraDistr::rdirichlet(k2, c(rep(0.3, v1), rep(0.05, v2)))
+phi <- extraDistr::rdirichlet(k3, c(rep(0.05, v1), rep(0.3, v2)))
+z2_vec <- as.numeric(rmnom(a, 1, z) %*% 1:k1)
+
 
 ##事前分布の設定
 #ハイパーパラメータの事前分布
-alpha01 <- 0.1
-alpha02 <- 0.1
+alpha01 <- 0.01
+alpha02 <- 0.01
+alpha03 <- 0.01
 beta01 <- 1
 beta02 <- 1
 beta03 <- 1
@@ -274,10 +353,13 @@ max_word <- max(words)
 index_t11 <- which(t_id==1)
 index_t21 <- list()
 index_t22 <- list()
-for(j in 2:max_word){
+for(j in 2:max_time){
   index_t21[[j]] <- which(t_id==j)-1
   index_t22[[j]] <- which(t_id==j)
 }
+
+#基準対数尤度を設定
+LLst <- sum(sparse_data %*% log(colSums(WX)/sum(WX)))
 
 
 ####ギブスサンプリングでHTMモデルのパラメータをサンプリング####
@@ -288,10 +370,15 @@ for(rp in 1:R){
   z2_indicate <- z2_vec[nd_d]
   index_zeros <- which(z2_indicate==0)
   word_par1 <- matrix(0, nrow=f, ncol=k2)
-  for(j in 1:k2){
-    word_par1[-index_zeros, j] <- theta3[z2_indicate[-index_zeros], j] * gamma[j, wd[-index_zeros]]
+  if(length(index_zeros) > 0){
+    for(j in 1:k2){
+      word_par1[-index_zeros, j] <- theta3[z2_indicate[-index_zeros], j] * gamma[j, wd[-index_zeros]]
+    }
+  } else {
+    for(j in 1:k2){
+      word_par1[, j] <- theta3[z2_indicate, j] * gamma[j, wd]
+    }
   }
-  r <- omega[ID_d]
   Li1 <- (1-r) * rowSums(word_par1)
   
   #単語ごとに文書固有のトピック尤度を計算
@@ -303,7 +390,10 @@ for(rp in 1:R){
   Zi1 <- rbinom(f, 1, z_rate1)
   index_z1 <- which(Zi1==1)
   
+  #ベータ分布から混合率の更新
+  r <- rbeta(1, sum(Zi1)+beta01, sum(1-Zi1)+beta01)
 
+  
   ##多項分布から単語トピックを生成
   #文書共通のトピックを生成
   Zi3 <- matrix(0, nrow=f, ncol=k2)
@@ -363,10 +453,10 @@ for(rp in 1:R){
       rf02 <- rf02 + t(Zi2[index_t21[[j]], , drop=FALSE]) %*% Zi2[index, , drop=FALSE]   #マルコフ推移
     }
   }
-  
+
   ##パラメータをサンプリング
   #ディクレリ分布からHMMの混合率をサンプリング
-  rf11 <- colSums(Zi1[index_t11, ]) + beta01
+  rf11 <- colSums(Zi2[index_t11, ]) + beta01
   rf12 <- rf02 + alpha01
   theta1 <- extraDistr::rdirichlet(1, rf11)
   theta2 <- extraDistr::rdirichlet(k1, rf12)
@@ -374,11 +464,12 @@ for(rp in 1:R){
   #文書共通のトピック分布のパラメータをサンプリング
   wf0 <- matrix(0, nrow=k1, ncol=k2)
   for(j in 1:k1){
-    wf0[j, ] <- colSums(HMM_data * Zi2[, j])
+    wf0[j, ] <- colSums(Zi2[nd_d, j] * Zi3)
   }
   wf <- wf0 + beta01
   theta3 <- extraDistr::rdirichlet(k1, wf)
-
+  
+  
   #文書固有のトピック分布のパラメータをサンプリング
   wsum0 <- matrix(0, nrow=d, ncol=k3)
   for(i in 1:d){
@@ -386,7 +477,6 @@ for(rp in 1:R){
   }
   wsum <- wsum0 + beta01
   theta4 <- extraDistr::rdirichlet(d, wsum)
-  
   
   #単語分布gammaをサンプリング
   gf0 <- matrix(0, nrow=k2, ncol=v)
@@ -410,23 +500,33 @@ for(rp in 1:R){
   if(rp%%keep==0){
     #サンプリング結果の格納
     mkeep <- rp/keep
-    THETA[, , mkeep] <- theta
+    THETA1[mkeep, ] <- theta1
+    THETA2[, , mkeep] <- theta2
+    THETA3[, , mkeep] <- theta3
+    THETA4[, , mkeep] <- theta4
+    GAMMA[, , mkeep] <- gamma
     PHI[, , mkeep] <- phi
-    BETA[mkeep, ] <- c(beta0, beta1)
+    #OMEGA[mkeep] <- r
     
     #トピック割当はバーンイン期間を超えたら格納する
     if(mkeep >= burnin & rp%%keep==0){
       SEG1 <- SEG1 + Zi1
       SEG2 <- SEG2 + Zi2
+      SEG3 <- SEG3 + Zi3
+      SEG4 <- SEG4 + Zi4
     }
     
     #サンプリング結果を確認
     if(rp%%disp==0){
+      gamma[gamma==0] <- min(gamma[gamma!=0])
+      phi[phi==0] <- min(phi[phi!=0])
+      LL <- sum(sparse_data %*% t(log(gamma)) * (1-Zi1) * Zi3) + sum(sparse_data %*% t(log(phi)) * Zi1 * Zi4)
       print(rp)
-      print(c(sum(log(rowSums(word_par$Bur))), LLst))
-      print(round(cbind(theta[1:6, ], thetat[1:6, ]), 3))
-      print(round(cbind(phi[, 1:10], phit[, 1:10]), 3))
-      round(print(c(beta0, beta1, r)), 3)
+      print(c(LL, LLst))
+      print(round(c(mean(r), mean(omegat)), 3))
+      print(round(cbind(theta2, thetat2), 3))
+      print(round(cbind(theta3, thetat3), 3))
+      print(round(cbind(phi[, 296:305], phit[, 296:305]), 3))
     }
   }
 }
@@ -438,10 +538,19 @@ RS <- R/keep
 
 ##サンプリング結果の可視化
 #文書のトピック分布のサンプリング結果
-matplot(t(THETA[1, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
-matplot(t(THETA[100, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
-matplot(t(THETA[1000, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
-matplot(t(THETA[2000, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(THETA1, type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA2[1, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA2[3, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA2[5, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA2[7, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA3[1, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA3[3, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA3[5, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA3[7, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA4[1, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA4[100, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA4[1000, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA4[2000, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
 
 #単語の出現確率のサンプリング結果
 matplot(t(PHI[, 1, ]), type="l", ylab="パラメータ", main="トピック1の単語の出現率のサンプリング結果")
