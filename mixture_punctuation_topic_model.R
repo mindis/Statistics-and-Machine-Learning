@@ -14,6 +14,7 @@ library(ggplot2)
 
 #set.seed(2578)
 
+
 ####データの発生####
 ##データの設定
 k1 <- 10   #単語ごとのトピック数
@@ -155,7 +156,7 @@ burden_fr <- function(theta, phi, wd, w, k){
 
 
 ##アルゴリズムの設定
-R <- 10000
+R <- 5000
 keep <- 2  
 iter <- 0
 burnin <- 1000/keep
