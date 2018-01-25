@@ -57,8 +57,9 @@ for(i in 1:k){
 AB <- A0 %*% B0
 
 #グループ特徴行列およびカテゴリー特徴行列を生成
-C0 <- t(V) %*% A0 
-D0 <- t(W) %*% t(B0)
+C0 <- t(t(W) %*% t(B0))
+D0 <- t(V) %*% A0 
+
 
 
 ##カルバックライブラーダイバージェンス距離に基づき応答変数を生成
@@ -83,6 +84,9 @@ for(j in 1:group){
   Z[j, ] <- colSums(X[V[, j]==1, ])
 }
 
+#真のパラメータでの対数尤度
+LL <- sum(dpois(X, A0 %*% B0, log=TRUE))
+
 
 ####マルコフ連鎖モンテカルロ法でMMNFを推定####
 ##アルゴリズムの設定
@@ -96,17 +100,126 @@ alpha1 <- 0.01; beta1 <- 0.01
 alpha2 <- 0.01; beta2 <- 0.01
 
 ##初期値の設定
-A <- matrix(rgamma(hh*k, 0.1, 0.1), nrow=hh, ncol=k)
-B <- matrix(rgamma(category*k, 0.1, 0.1), nrow=k, ncol=category)
+A <- matrix(rgamma(hh*k, 0.25, 0.5), nrow=hh, ncol=k)
+B <- matrix(rgamma(item*k, 0.25, 0.5), nrow=k, ncol=item)
+C <- matrix(rgamma(category*k, 0.25, 0.5), nrow=k, ncol=category)
+D <- matrix(rgamma(group*k, 0.25, 0.5), nrow=group, ncol=k)
+
 
 ##サンプリング結果の保存用配列
-W_array <- array(0, dim=c(hh, k, R/keep))
-H_array <- array(0, dim=c(k, category, R/keep))
-lambda <- array(0, dim=c(hh, category, k))
+A_array <- array(0, dim=c(hh, k, R/keep))
+B_array <- array(0, dim=c(k, item, R/keep))
+C_array <- array(0, dim=c(k, category, R/keep))
+D_array <- array(0, dim=c(group, k, R/keep))
 
 
+####マルコフ連鎖モンテカルロ法でパラメータをサンプリング####
+for(rp in 1:R){
+  
+  ##補助変数lambdaを更新
+  lambda1 <- array(0, dim=c(hh, item, k))
+  lambda2 <- array(0, dim=c(hh, category, k))
+  AB <- A %*% B
+  AC <- A %*% C
+  for(j in 1:k){
+    lambda1[, , j] <- A[, j] %*% t(B[j, ]) / AB
+    lambda2[, , j] <- A[, j] %*% t(C[j, ]) / AC
+  }
+  
+  ##ガンマ分布よりAをサンプリング
+  for(j in 1:k){
+    a1 <- alpha1 + (rowSums(lambda1[, , j] * X) + rowSums(lambda2[, , j] * Y))/2
+    a2 <- sum(B[j, ])
+    A[, j] <- rgamma(hh, a1, a2)   
+  }
+  A <- A / matrix(colSums(A), nrow=hh, ncol=k, byrow=T) * hh/5   #各列ベクトルを正規化
+  
+  ##補助変数lambdaを更新
+  lambda1 <- array(0, dim=c(hh, item, k))
+  lambda2 <- array(0, dim=c(group, item, k))
+  AB <- A %*% B
+  BD <- D %*% B
+  for(j in 1:k){
+    lambda1[, , j] <- A[, j] %*% t(B[j, ]) / AB
+    lambda2[, , j] <- D[, j] %*% t(B[j, ]) / BD
+  }
+  
+  ##ガンマ分布よりBをサンプリング
+  for(j in 1:k){
+    b1 <- alpha2 + (colSums(lambda1[, , j] * X) + colSums(lambda2[, , j] * Z))/2
+    b2 <- beta2 + sum(A[, j])
+    B[j, ] <- rgamma(item, b1, b2)  
+  }
+  
+  
+  ##線形制約をつけたCおよびDを更新
+  C <- t(t(W) %*% t(B))   #カテゴリー特徴行列の更新
+  D <- t(V) %*% A   #グループ特徴行列の更新
 
+  
+  ##サンプリング結果の保存と表示
+  if(rp%%keep==0){
+    mkeep <- rp/keep
+    A_array[, , mkeep] <- A
+    B_array[, , mkeep ] <- B
+    C_array[, , mkeep] <- C
+    D_array[, , mkeep ] <- D
+    if(rp%%disp==0){
+      print(c(sum(dpois(X, A %*% B, log=T)), LL))
+      print(rp)
+    }
+  }
+}
 
+####サンプリング結果の要約と可視化####
+burnin <- 2000/keep
+RS <- R/keep
 
-mean(rgamma(1000000, 0.5, 8))
-mean(rgamma(1000000, 1, 16))
+##サンプリング結果の可視化
+#基底ベクトルAのパラメータの可視化
+matplot(t(A_array[1:10, 1, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(A_array[1:10, 2, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(A_array[1:10, 3, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(A_array[1:10, 4, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(A_array[1:10, 5, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(A_array[11:20, 6, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(A_array[11:20, 7, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(A_array[11:20, 8, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(A_array[11:20, 9, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+matplot(t(A_array[11:20, 10, ]), type="l", xlab="サンプリング回数", ylab="基底ベクトルのパラメータ")
+
+#結合係数Bのパラメータの可視化
+matplot(t(B_array[1, 1:10, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(B_array[2, 1:10, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(B_array[3, 1:10, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(B_array[4, 1:10, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(B_array[5, 1:10, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(B_array[6, 11:20, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(B_array[7, 11:20, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(B_array[8, 11:20, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(B_array[9, 11:20, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(B_array[10, 11:20, ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+
+#結合係数Bのパラメータの可視化
+matplot(t(C_array[1, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(C_array[2, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(C_array[3, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(C_array[4, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(C_array[5, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(C_array[6, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(C_array[7, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(C_array[8, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(C_array[9, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(C_array[10, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+
+#結合係数Bのパラメータの可視化
+matplot(t(D_array[1, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(D_array[2, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(D_array[3, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(D_array[4, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(D_array[5, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(D_array[6, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(D_array[7, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(D_array[8, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(D_array[9, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
+matplot(t(D_array[10, , ]), type="l", xlab="サンプリング回数", ylab="結合係数")
