@@ -247,7 +247,6 @@ for(j in 1:k1){
  LLt2 <- LLt2 + LLt1[, index_k2[j, ]] * Zi2[index_t11, j] * zi2[, j]
 }
 
-
 #‘½€•ª•z‚©‚ç‰ºˆÊŠK‘w‚Ìó‘Ô‚ð¶¬
 Zi3 <- matrix(0, nrow=hhpt, ncol=k2)
 z3_vec <- rep(0, hhpt)
@@ -255,7 +254,7 @@ par2 <- exp(LLt2 - rowMaxs(LLt2))
 par_rate2 <- par2 / rowSums(par2)   #öÝ•Ï”‚ÌŠ„“–Šm—¦
 Zi3[index_t11, ] <- rmnom(hh, 1, par_rate2)   #ó‘Ô‚ð¶¬
 z3_vec[index_t11] <- as.numeric(Zi3[index_t11, ] %*% 1:k2)
-cbind(z3_vec[index_t11], Z3[index_t11])
+
 
 ##2Šú–ÚˆÈ~‚Ìƒ}ƒ‹ƒRƒt„ˆÚ‚ÉŠî‚Ã‚«öÝó‘Ô‚ð¶¬
 ##öÝó‘Ô‚ªØ‚è‘Ö‚í‚é‚©‚Ç‚¤‚©‚ð¶¬
@@ -269,30 +268,46 @@ zi3_j <- Zi3[index1, ]
 z3_j <- z3_vec[index1]
 
 #Šú‘Ò–Þ“x‚ðŒvŽZ
-LLz1 <- matrix(0, nrow=n, ncol=k2*2)
-LLi2 <- matrix(0, nrow=hhpt, ncol=k2) 
-LLo <- matrix(0, nrow=n, ncol=k2)
+LLz1 <- matrix(0, nrow=n, ncol=k1*k2)
+LLi2 <- matrix(0, nrow=n, ncol=k1*k2) 
+LLt2 <- matrix(0, nrow=n, ncol=k2)
 theta4_par <- matrix(0, nrow=n, ncol=k2) 
 
 for(l in 1:k1){
-  LLz1 <- LLz1 + LLi1[index2, as.numeric(index_k2[-l, ])] * (1-zi2_j[, l]) 
-  LLi2[index2, ] <- LLm[index2, index_k2[l, ]] * zi2_j[, l]
-  LLo <- LLo + LLi2[index2, ] * zi3_j
   theta4_par <- theta4_par + theta4[z3_j, , l] * zi2_j[, l]
+  LLz1[, index_k2[l, ]] <- LLi1[index2, index_k2[l, ]] * (1-zi2_j[, l])
+  LLo <- (log(theta4[z3_vec, , l]) + LLm[index2, index_k2[l, ]]) * zi2_j[, l] 
+  LLt2 <- LLt2 + LLo
+  LLi2[, index_k2[l, ]] <- LLz1[, index_k2[l, ]] + LLo
 }
-LLt2 <- rowSums(log(theta4_par) + LLo)
-
 
 #ãˆÊŠK‘w‚ÌöÝó‘ÔØŠ·‚¦‚ð¶¬
 Zi1 <- rep(0, hhpt)
-LLz0 <- cbind(LLz1, LLt2)
-max_z <- rowMaxs(LLz0)
-LLz <- exp(LLz0 - max_z)
+max_z <- rowMaxs(LLi2)
+LLz0 <- exp(LLz1 - max_z)
+LLz <- matrix(0, nrow=n, ncol=k1+1)
+for(l in 1:k1){
+  LLz[, l] <- rowSums(LLz0[, index_k2[l, ]])
+}
+LLz[, ncol(LLz)] <- rowSums(exp(LLt2 - max_z))
+LLz[, -ncol(LLz)] <- LLz[, -ncol(LLz)] * (1-zi2_j)
+
 beta_rate0 <- LLz / rowSums(LLz)   #öÝ•Ï”‚ÌŠ„“–Šm—¦
-beta_rate <- rowSums(beta_rate0[, 1:(k2*2)])
+beta_rate <- rowSums(beta_rate0[, 1:k1])
 Zi1[index2] <- rbinom(n, 1, beta_rate)
 
+cbind(beta_rate, Zi1[index2], Z1[index2])
 
-cbind(beta_rate, Z1[index2])
+Zi1
+cbind(LLz[, -ncol(LLz)] * Zi1[index2], Zi2[index1, ])
 
 
+LLt1 <- LLi1[index2, ]
+par0 <- exp(LLt1 - rowMaxs(LLt1))
+par1 <- matrix(0, nrow=hh, ncol=k1)
+for(j in 1:k1){
+  par1[, j] <- rowSums(par0[, index_k2[j, ]])
+}
+cbind(par1/rowSums(par1), Z2[index2])
+
+LLt1
