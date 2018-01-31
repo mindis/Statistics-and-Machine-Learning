@@ -62,7 +62,7 @@ for(i in 1:1000){
     theta3[j, ] <- thetat3[j, ] <- as.numeric(extraDistr::rdirichlet(1, alpha03))
     theta4[, , j] <- thetat4[, , j] <- extraDistr::rdirichlet(k2, alpha04)
     phi0 <- t(extraDistr::rdirichlet(item, rep(0.015, k2))) * 
-                    (matrix(extraDistr::rdirichlet(1, rep(2.0, item)), nrow=k2, ncol=item, byrow=T))
+      (matrix(extraDistr::rdirichlet(1, rep(2.0, item)), nrow=k2, ncol=item, byrow=T))
     phi[, , j] <- phit[, , j] <- phi0 / rowSums(phi0)
     if(sum(phi==0)==0) break
   }
@@ -170,7 +170,7 @@ phi <- array(0, dim=c(k2, item, k1))
 for(j in 1:k1){
   theta3[j, ] <- thetat3[j, ] <- as.numeric(extraDistr::rdirichlet(1, rep(2.0, k2)))
   theta4[, , j] <- thetat4[, , j] <- extraDistr::rdirichlet(k2, alpha)
-  phi0 <- extraDistr::rdirichlet(k2, colSums(Data)/sum(Data)*item/10) + 0.0001
+  phi0 <- extraDistr::rdirichlet(k2, colSums(Data)/sum(Data) * item) + 0.0001
   phi[, , j] <- phi0/rowSums(phi0)
 }
 
@@ -213,18 +213,10 @@ index_k2 <- matrix(1:(k2*k1), nrow=k1, ncol=k2, byrow=T)
 #対数尤度の基準値
 LLst <- sum(dmnom(Data, w, colSums(Data)/sum(Data), log=TRUE))
 
-##パラメータの真値
-beta1 <- betat1
-theta1 <- thetat1
-theta2 <- thetat2
-theta3 <- thetat3
-theta4 <- thetat4
-phi <- phit
-z1_vec <- Z1
 
 ####MCMCでパラメータをサンプリング####
 for(rp in 1:R){
-
+  
   ##パターンごとに対数尤度を計算
   #配列の設定
   rf12 <- matrix(0, nrow=k1, ncol=k1)
@@ -265,7 +257,7 @@ for(rp in 1:R){
       LLt2 <- matrix(0, nrow=hh, ncol=k2)
       zi2 <- Zi2[index_t11, ]
       for(j in 1:k1){
-       LLt2 <- LLt2 + LLt1[, index_k2[j, ]] * Zi2[index_t11, j] * zi2[, j]
+        LLt2 <- LLt2 + LLt1[, index_k2[j, ]] * Zi2[index_t11, j] * zi2[, j]
       }
       
       #多項分布から下位階層の状態を生成
@@ -337,7 +329,7 @@ for(rp in 1:R){
         #上位階層のマルコフ推移行列を更新
         rf12 <- rf12 + t(Zi2[index1, , drop=FALSE]) %*% (Zi2[index2, , drop=FALSE] * Zi1[index2])
       }
-  
+      
       
       ##下位階層の潜在状態を生成
       #上位階層の状態に応じて尤度を計算
@@ -356,7 +348,7 @@ for(rp in 1:R){
       #マルコフ推移行列を更新
       for(j in 1:k1){
         rf22[, , j] <- rf22[, , j] + t(Zi3[index1, , drop=FALSE]) %*% 
-                        (Zi3[index2, , drop=FALSE] * Zi2[index2, j] * (1-Zi1[index2]))
+          (Zi3[index2, , drop=FALSE] * Zi2[index2, j] * (1-Zi1[index2]))
       }
     }
   }
@@ -388,7 +380,7 @@ for(rp in 1:R){
     vf <- t(sparse_data_T %*% (Zi3 * Zi2[, j])) + beta03
     phi[, , j] <- extraDistr::rdirichlet(k2, vf)
   }
-
+  
   ##パラメータの格納とサンプリング結果の表示
   #サンプリングされたパラメータを格納
   if(rp%%keep==0){
@@ -410,11 +402,23 @@ for(rp in 1:R){
     #サンプリング結果を確認
     if(rp%%disp==0){
       print(rp)
-      #print(c(sum(log(rowSums(word_par))), LLst))
+      #対数尤度を計算
+      LLi <- matrix(0, nrow=hhpt, ncol=k1)
+      for(j in 1:k1){
+        LLi[, j] <- rowSums(sparse_data %*% log(t(phi[, , j])) * Zi3 * Zi2[, j])
+      }
+      LL <- sum(const + rowSums(LLi))
+      
+      #パラメータを表示
+      print(c(LL, LLst))
       print(round(rbind(theta1, thetat1), 3))
       print(round(cbind(theta2, thetat2), 3))
       print(round(rbind(theta3, thetat3), 3))
     }
   }
 }
+
+
+
+
 
