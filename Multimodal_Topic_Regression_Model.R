@@ -28,8 +28,8 @@ f2 <- sum(w2)   #総アイテム購買数
 
 
 #IDの設定
-u_id1 <- rep(1:hh, w2)
-u_id2 <- rep(1:hh, w1)
+u_id1 <- rep(1:hh, w1)
+u_id2 <- rep(1:hh, w2)
 t_id1 <- c()
 t_id2 <- c()
 for(i in 1:hh){
@@ -46,20 +46,20 @@ index_data <- matrix(1:(hh*dataset), nrow=hh, ncol=dataset)
 for(rp in 1:100){
   print(rp)
   #トピック分布のパラメータ
-  alpha01 <- alphat01 <- cbind(mvrnorm(hh, rep(0, k-1), diag(3.5, k-1)), 0)
-  alpha02 <- alphat02 <- cbind(mvrnorm(hh, rep(0, k-1), diag(0.75, k-1)), 0)
+  alpha01 <- alphat01 <- cbind(mvrnorm(hh, rep(0, k-1), diag(4.0, k-1)), 0)
+  alpha02 <- alphat02 <- cbind(mvrnorm(hh, rep(0, k-1), diag(1.0, k-1)), 0)
   alpha11 <- rep(0.15, page)
   alpha12 <- rep(0.1, item)
-
+  
   #パラメータを生成
   logit <- Data[, 1]*alpha01[index_logit, ] + Data[, 2]*alpha02[index_logit, ]   #ロジットの計算
   theta1 <- thetat1 <- exp(logit[index_data[, 1], ]) / rowSums(exp(logit[index_data[, 1], ]))
   theta2 <- thetat2 <- exp(logit[index_data[, 2], ]) / rowSums(exp(logit[index_data[, 2], ]))
   phi0 <- t(extraDistr::rdirichlet(page, rep(0.01, k))) * 
-                (matrix(extraDistr::rdirichlet(1, rep(2.0, page)), nrow=k, ncol=page, byrow=T))
+    (matrix(extraDistr::rdirichlet(1, rep(2.0, page)), nrow=k, ncol=page, byrow=T))
   phi <- phit <- phi0 / rowSums(phi0)
   gamma0 <- t(extraDistr::rdirichlet(item, rep(0.01, k))) * 
-                (matrix(extraDistr::rdirichlet(1, rep(2.0, item)), nrow=k, ncol=item, byrow=T))
+    (matrix(extraDistr::rdirichlet(1, rep(2.0, item)), nrow=k, ncol=item, byrow=T))
   gamma <- gammat <- gamma0 / rowSums(gamma0)
   
   ##モデルにもとづき単語を生成する
@@ -128,6 +128,20 @@ burden_fr <- function(theta, phi, wd, w, k){
   return(bval)
 }
 
+##ロジットモデルの対数尤度関数
+loglike <- function(Z, Data, beta1, beta2, index){
+  
+  #ロジットと確率の計算
+  logit <- Data[, 1]*beta1[index, ] + Data[, 2]*beta2[index, ]
+  Pr <- exp(logit) / rowSums(exp(logit))
+  
+  LLi <- rowSums(Z * log(Pr))
+  LL <- sum(LLi)
+  val <- list(LLi=LLi, LL=LL)
+  return(val)
+}
+
+
 ##アルゴリズムの設定
 R <- 10000
 keep <- 2  
@@ -135,10 +149,21 @@ iter <- 0
 burnin <- 1000/keep
 disp <- 10
 
+##パラメータの真値
+alpha1 <- alphat01
+alpha2 <- alphat02
+theta1 <- thetat1
+theta2 <- thetat2
+oldcov <- diag(dataset*(k-1))
+diag(oldcov) <- c(rep(4.0, k-1), rep(1.0, k-1)) 
+inv_cov <- solve(oldcov)
+phi <- phit
+gamma <- gammat
+
 
 ##初期値を設定
-alpha1 <- cbind(mvrnorm(hh, rep(0, k-1), diag(1.0, k-1)), 0)
-alpha2 <- cbind(mvrnorm(hh, rep(0, k-1), diag(0.25, k-1)), 0)
+alpha1 <- cbind(mvrnorm(hh, rep(0, k-1), diag(3.0, k-1)), 0)
+alpha2 <- cbind(mvrnorm(hh, rep(0, k-1), diag(0.75, k-1)), 0)
 logit <- Data[, 1]*alpha1[index_logit, ] + Data[, 2]*alpha2[index_logit, ]   #ロジットの計算
 theta1 <- exp(logit[index_data[, 1], ]) / rowSums(exp(logit[index_data[, 1], ]))
 theta2 <- exp(logit[index_data[, 2], ]) / rowSums(exp(logit[index_data[, 2], ]))
@@ -158,8 +183,8 @@ V <- nu * diag(rep(1, (dataset*k)-dataset))
 
 
 ##パラメータの格納用配列
-ALPHA1 <- array(0, dim=c(hh, k-1, R/keep))
-ALPHA2 <- array(0, dim=c(hh, k-1, R/keep))
+ALPHA1 <- array(0, dim=c(hh, k, R/keep))
+ALPHA2 <- array(0, dim=c(hh, k, R/keep))
 SIGMA <- matrix(0, nrow=R/keep, ncol=(dataset*k)-dataset) 
 PHI <- array(0, dim=c(k, page, R/keep))
 GAMMA <- array(0, dim=c(k, item, R/keep))
@@ -171,13 +196,7 @@ storage.mode(SEG2) <- "integer"
 #対数尤度の基準値
 LLst <- sum(WX1 %*% log(colSums(WX1)/f1) + WX2 %*% log(colSums(WX2)/f2))
 
-##パラメータの真値
-alpha1 <- alpha01
-alpha2 <- alpha02
-theta1 <- thetat1
-theta2 <- thetat2
-phi <- phit
-gamma <- gammat
+
 
 
 ####ギブスサンプリングでHTMモデルのパラメータをサンプリング####
@@ -197,76 +216,75 @@ for(rp in 1:R){
   z2_vec <- as.numeric(Zi2 %*% 1:k)
   
   
-  ##HMMで文章単位のセグメントを生成
-  #文章単位でのトピック頻度行列を作成
-  HMM_data <- matrix(0, nrow=a, ncol=k2)
-  for(i in 1:a){
-    HMM_data[i, ] <- vec_list[[i]] %*% Zi2[s_list[[i]], , drop=FALSE]
+  ##出現率の分布をphiおよびgammaを更新
+  #ディクレリ分布のパラメータを計算
+  vf0 <- matrix(0, nrow=k, ncol=page)
+  gf0 <- matrix(0, nrow=k, ncol=item)
+  for(j in 1:page){
+    vf0[, j] <- colSums(Zi1[page_list[[j]], , drop=FALSE])
   }
-  
-  #潜在変数ごとに尤度を推定
-  theta_log <- log(t(theta3))
-  LLi0 <- HMM_data %*% theta_log   #対数尤度
-  LLi_max <- rowMaxs(LLi0)
-  LLi <- exp(LLi0 - LLi_max)   #尤度に変換
-  
-  #セグメント割当確率の推定とセグメントの生成
-  z_rate1 <- matrix(0, nrow=a, ncol=k1)
-  Zi1 <- matrix(0, nrow=a, ncol=k1)
-  z1_vec <- rep(0, a)
-  rf02 <- matrix(0, nrow=k1, ncol=k1) 
-  
-  for(j in 1:max_time){
-    if(j==1){
-      #セグメントの割当確率
-      LLs <- matrix(theta1, nrow=length(index_t11), ncol=k1, byrow=T) * LLi[index_t11, ]   #重み付き尤度
-      z_rate1[index_t11, ] <- LLs / rowSums(LLs)   #割当確率
-      
-      #多項分布よりセグメントを生成
-      Zi1[index_t11, ] <- rmnom(length(index_t11), 1, z_rate1[index_t11, ])
-      z1_vec[index_t11] <- as.numeric(Zi1[index_t11, ] %*% 1:k1)
-      
-      #混合率のパラメータを更新
-      rf01 <- colSums(Zi1[index_t11, ])
-      
-    } else {
-      
-      #セグメントの割当確率
-      index <- index_t22[[j]]
-      LLs <- theta2[z1_vec[index_t21[[j]]], , drop=FALSE] * LLi[index, , drop=FALSE]   #重み付き尤度
-      z_rate1[index, ] <- LLs / rowSums(LLs)   #割当確率
-      
-      #多項分布よりセグメントを生成
-      Zi1[index, ] <- rmnom(length(index), 1, z_rate1[index, ])
-      z1_vec[index] <- as.numeric(Zi1[index, ] %*% 1:k1)
-      
-      #混合率のパラメータを更新
-      rf02 <- rf02 + t(Zi1[index_t21[[j]], , drop=FALSE]) %*% Zi1[index, , drop=FALSE]   #マルコフ推移
-    }
+  for(j in 1:item){
+    gf0[, j] <- colSums(Zi2[item_list[[j]], , drop=FALSE])
   }
+  vf <- vf0 + alpha01
+  gf <- gf0 + alpha02
   
-  ##パラメータをサンプリング
-  #ディクレリ分布からHMMの混合率をサンプリング
-  rf11 <- colSums(Zi1[index_t11, ]) + beta01
-  rf12 <- rf02 + alpha01
-  theta1 <- extraDistr::rdirichlet(1, rf11)
-  theta2 <- extraDistr::rdirichlet(k1, rf12)
+  #ディクレリ分布からパラメータをサンプリング
+  phi <- extraDistr::rdirichlet(k, vf)
+  gamma <- extraDistr::rdirichlet(k, gf)
   
-  #トピック分布のパラメータをサンプリング
-  wf0 <- matrix(0, nrow=k1, ncol=k2)
-  for(j in 1:k1){
-    wf0[j, ] <- colSums(HMM_data * Zi1[, j])
+  
+  ##階層ベイズ多項ロジットモデルでトピック分布のパラメータをサンプリング
+  #トピック割当からロジットモデルの応答変数を生成
+  item_sum <- page_sum <- matrix(0, nrow=hh, ncol=k)
+  for(i in 1:hh){
+    page_sum[i, ] <- rep(1, w1[i]) %*% page_rate[user_list1[[i]], ]
+    item_sum[i, ] <- rep(1, w2[i]) %*% item_rate[user_list2[[i]], ]
   }
-  wf <- wf0 + beta02
-  theta3 <- extraDistr::rdirichlet(k1, wf)
+  Z <- rbind(page_sum, item_sum)
   
-  #単語分布phiをサンプリング
-  vf0 <- matrix(0, nrow=k2, ncol=v)
-  for(j in 1:v){
-    vf0[, j] <- colSums(Zi2[word_list[[j]], , drop=FALSE])
-  }
-  vf <- vf0 + alpha02
-  phi <- extraDistr::rdirichlet(k2, vf)
+  ##MH法で回帰パラメータをサンプリング
+  #新しいパラメータをサンプリング
+  alphad1 <- alpha1; alphad2 <- alpha2
+  alphan1 <- alphad1 + cbind(mvrnorm(hh, rep(0, k-1), diag(0.03, k-1)), 0)
+  alphan2 <- alphad2 + cbind(mvrnorm(hh, rep(0, k-1), diag(0.01, k-1)), 0)
+  er_new <- cbind(alphan1[, -k], alphan2[, -k]) - 0
+  er_old <- cbind(alphad1[, -k], alphad2[, -k]) - 0
+  
+  #対数尤度と対数事前分布の計算
+  lognew0 <- loglike(Z, Data, alphan1, alphan2, index_logit)$LLi
+  logold0 <- loglike(Z, Data, alphad1, alphad2, index_logit)$LLi
+  logpnew <- -0.5 * rowSums(er_new %*% inv_cov * er_new)
+  logpold <- -0.5 * rowSums(er_old %*% inv_cov * er_old)
+  
+  #ID別に対数尤度の和を取る
+  lognew <- lognew0[index_data[, 1]] + lognew0[index_data[, 2]]
+  logold <- logold0[index_data[, 1]] + logold0[index_data[, 2]]
+  
+  #MHサンプリング
+  rand <- runif(hh)   #一様分布から乱数を発生
+  LLind_diff <- exp(lognew + logpnew - logold - logpold)   #採択率を計算
+  tau <- (LLind_diff > 1)*1 + (LLind_diff <= 1)*LLind_diff
+  
+  #tauの値に基づき新しいbetaを採択するかどうかを決定
+  flag <- matrix(((tau >= rand)*1 + (tau < rand)*0), nrow=hh, ncol=k)
+  alpha1 <- flag*alphan1 + (1-flag)*alphad1   #alphaがrandを上回っていたら採択
+  alpha2 <- flag*alphan2 + (1-flag)*alphad2
+  alpha <- cbind(alpha1[, -k], alpha2[, -k])
+  
+  #多項ロジットモデルで確率に変換
+  theta1 <- exp(alpha1) / rowSums(exp(alpha1))
+  theta2 <- exp(alpha1+alpha2) / rowSums(exp(alpha1+alpha2))
+  
+  ##逆ウィシャート分布から分散共分散行列をサンプリング
+  #逆ウィシャート分布のパラメータ
+  
+  V_par <- V + t(alpha) %*% alpha
+  Sn <- nu + hh
+  
+  #逆ウィシャート分布から分散共分散行列を発生
+  oldcov <- rwishart(Sn, solve(V_par))$IW
+  inv_cov <- solve(oldcov)
   
   
   ##パラメータの格納とサンプリング結果の表示
@@ -274,10 +292,11 @@ for(rp in 1:R){
   if(rp%%keep==0){
     #サンプリング結果の格納
     mkeep <- rp/keep
-    THETA1[mkeep, ] <- theta1
-    THETA2[, , mkeep] <- theta2
-    THETA3[, , mkeep] <- theta3
+    ALPHA1[, , mkeep] <- alpha1
+    ALPHA2[, , mkeep] <- alpha2
+    SIGMA[mkeep, ] <- diag(oldcov)
     PHI[, , mkeep] <- phi
+    GAMMA[, , mkeep] <- gamma
     
     #トピック割当はバーンイン期間を超えたら格納する
     if(mkeep >= burnin & rp%%keep==0){
@@ -288,13 +307,15 @@ for(rp in 1:R){
     #サンプリング結果を確認
     if(rp%%disp==0){
       print(rp)
-      print(c(sum(log(rowSums(word_par))), LLst))
-      print(round(rbind(theta1, thetat1), 3))
+      print(mean(tau))
+      print(round(Z[c(1, 2001), ], 3))
+      print(c(sum(log(rowSums(page_par$Bur)))+sum(log(rowSums(item_par$Bur))), LLst))
+      print(round(rbind(diag(oldcov)[5:24], c(rep(5, 10), rep(1.0, 10))), 3))
       print(round(cbind(phi[, 1:10], phit[, 1:10]), 3))
     }
   }
 }
-
+var(alpha)
 
 ####サンプリング結果の可視化と要約####
 burnin <- 2000/keep   #バーンイン期間
@@ -304,8 +325,10 @@ RS <- R/keep
 #HMMの初期分布のサンプリング結果
 matplot(THETA1, type="l", xlab="サンプリング数", ylab="パラメータ")
 
+matplot(SIGMA, type="l")
+
 #HMMのパラメータのサンプリング結果
-matplot(t(THETA2[1, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(ALPHA1[1, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
 matplot(t(THETA2[5, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
 matplot(t(THETA2[15, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
 
