@@ -72,13 +72,15 @@ k <- 10   #潜在変数数
 
 ##モデルの仮定に従いデータを生成
 #相関行列を設定
-Cor1 <- corrM(k, -0.7, 1.0)
-Cor2 <- corrM(k, -0.7, 1.0)
+Cor <- corrM(k, -0.7, 1.0)
 
 #ユーザーアイテム特徴行列のパラメータを生成
-W <- WT <- mvrnorm(hh, rep(0, k), Cor1)
-H0 <- t(mvrnorm(item, rep(0, k), Cor2))
-H <- HT <- ifelse(H0 > 0, H0, 0)
+W <- WT <- mvrnorm(hh, rep(0, k), Cor)
+H <- HT <- matrix(0, nrow=k, ncol=item)
+for(j in 1:k){
+  par <- rbeta(1, 20.0, 20.0)
+  H[j, ] <- HT[j, ] <- rbinom(item, 1, par)
+}
 
 #ユーザーとアイテムの変量効果パラメータを生成
 alpha <- alphat <- rnorm(hh, -1.25, 1)
@@ -149,8 +151,11 @@ beta <- item_rnorm[item_sort][ceiling(rank(colSums(Data)))]
 
 #行列分解のパラメータの初期値
 W <- mvrnorm(hh, rep(0, k), diag(k))
-H0 <- t(mvrnorm(item, rep(0, k), diag(k)))
-H <- ifelse(H0 > 0, H0, 0)
+H <- matrix(0, nrow=k, ncol=item)
+for(j in 1:k){
+  par <- rbeta(1, 30.0, 30.0)
+  H[j, ] <- rbinom(item, 1, par)
+}
 
 ##サンプリング結果の保存用配列
 W_array <- array(0, dim=c(hh, k, R/keep))
@@ -168,12 +173,14 @@ b_vec <- as.numeric(b)
 #パラメータの真値
 W <- WT
 H <- HT
+r <- rowMeans(H)
+
 alpha <- alphat
 alpha_matrix <- matrix(alpha, nrow=hh, ncol=item)
 beta <- betat
 beta_matrix <- matrix(beta, nrow=hh, ncol=item, byrow=T)
 util_mu <- alpha_matrix + beta_matrix + W %*% H   #効用関数
-cov_inv <- solve(Cor1)
+cov_inv <- solve(Cor)
 
 ####マルコフ連鎖モンテカルロ法でパラメータをサンプリング####
 
@@ -181,44 +188,52 @@ cov_inv <- solve(Cor1)
 util_mu <- alpha_matrix + beta_matrix + W %*% H   #効用関数
 util <- rtnorm(util_mu, 1, a, b, hh, item)
 
-##ユーザーおよびアイテム特徴行列をサンプリング
+##ユーザー特徴行列をサンプリング
 #アイテム特徴行列の誤差を設定
 util_fearture <- util - alpha_matrix - beta_matrix
 
-
-##ギブスサンプリングで個体内回帰係数をユーザーごとにサンプリング
-#回帰係数の事後分布のパラメータ
+#アイテム特徴行列の事後分布のパラメータ
 XX <- H %*% t(H)
 XXV <- solve(XX + cov_inv)
 
 for(i in 1:hh){
   XXb <- H %*% util_fearture[i, ]
-  mu[i, ] <- beta_mean <- XXV %*% XXb
+  beta_mean <- beta_mean <- XXV %*% XXb
   
   #多変量正規分布からbetaをサンプリング
   W[i, ] <- mnormt::rmnorm(1, beta_mean, XXV)
 }
 
-round(cbind(W, WT), 2)
+##アイテム特徴行列をサンプリング
+const <- -1/2*log(2*pi)   #標準正規分布の対数尤度の定数
 
-#多変量正規分布よりWをサンプリング
-round(cbind(t(solve(H %*% t(H)) %*% H %*% t(util_fearture)), W), 1)
-round(cbind(t(solve(t(W) %*% W) %*% t(W) %*% util_fearture), t(H)), 1)
+for(j in 1:k){
+  #変数パターンを設定
+  H1 <- H0 <- H
+  H1[j, ] <- 1
+  H0[j, ] <- 0
+  
+  #パターンごとの対数尤度を計算
+  WH0 <- W %*% H0
+  WH1 <- W %*% H1
+  LL_item0 <- colSums(const -1/2*(util_fearture - WH0)^2)   
+  LL_item1 <- colSums(const -1/2*(util_fearture - WH1)^2)
+  LLi0 <- cbind(LL_item0, LL_item1)
+  LLi <- exp(LLi0 - rowMaxs(LLi0)) * matrix(c(1-r[j], r[j]), nrow=item, ncol=2, byrow=T)   #尤度に変換
+  
+  #潜在変数の割当確率からHをサンプリング
+  z_rate <- LLi[, 2] / rowSums(LLi)  #潜在変数の割当確率 
+  H[j, ] <- rbinom(item, 1, z_rate)
+  
+  #混合率を更新
+  r[j] <- mean(H[j, ])
+}
+
+##個体間変量効果をサンプリング
+util_user <-  util - beta_matrix - W %*% H
+
+#ユーザーごとの平均を推定
+mu <- rowMeans(util_user)
 
 
 
-
-H %*% t(H) %*% solve(H %*% t(H))
-
-h <- solve(t(W0) %*% W0) %*% t(W0) %*% util_fearture
-round(cbind((W0 %*% h)[, 1:10], WH0[, 1:10]), 2)
-round(cbind(t(h)[, 1:10], t(H)[, 1:10]), 2)
-
-Z0 <- Z1 <- matrix(1, nrow=k, ncol=item)
-Z0[1, ] <- 0
-par0 <- W0 %*% (h * Z0)
-par1 <- W0 %*% (h * Z1)
-
-LLi1 <- colSums(dnorm(util_fearture, par0, 1, log=TRUE))
-LLi2 <- colSums(dnorm(util_fearture, par1, 1, log=TRUE))
-cbind(LLi1, LLi2, t(H)[, 1])
