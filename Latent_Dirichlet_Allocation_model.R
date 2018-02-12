@@ -43,7 +43,6 @@ for(i in 1:d){
   wdn <- colSums(wn)   #単語ごとに合計して1行にまとめる
   WX[i, ] <- wdn
   Z[[i]] <- z
-  print(i)
 }
 
 ####トピックモデル推定のためのデータと関数の準備####
@@ -54,7 +53,6 @@ wd_list <- list()
 
 #求人ごとに求人IDおよび単語IDを作成
 for(i in 1:nrow(WX)){
-  print(i)
   
   #単語のIDベクトルを作成
   ID_list[[i]] <- rep(i, w[i])
@@ -76,6 +74,9 @@ for(i in 1:length(unique(ID_d))) {doc_list[[i]] <- which(ID_d==i)}
 for(i in 1:length(unique(wd))) {word_list[[i]] <- which(wd==i)}
 gc(); gc()
 
+n_word <- c()
+for(j in 1:v) {n_word <- c(n_word, length(word_list[[j]]))} 
+
 
 ####マルコフ連鎖モンテカルロ法で対応トピックモデルを推定####
 ##単語ごとに尤度と負担率を計算する関数
@@ -88,14 +89,14 @@ burden_fr <- function(theta, phi, wd, w, k){
   }
   
   Br <- Bur / rowSums(Bur)   #負担率の計算
-  r <- colSums(Br) / sum(Br)   #混合率の計算
-  bval <- list(Br=Br, Bur=Bur, r=r)
+  bval <- list(Br=Br, Bur=Bur)
   return(bval)
 }
 
 ##アルゴリズムの設定
 R <- 10000   #サンプリング回数
 keep <- 2   #2回に1回の割合でサンプリング結果を格納
+disp <- 20
 iter <- 0
 burnin <- 1000/keep
 
@@ -105,7 +106,6 @@ alpha01 <- rep(1.0, k)
 beta0 <- rep(0.5, v)
 alpha01m <- matrix(alpha01, nrow=d, ncol=k, byrow=T)
 beta0m <- matrix(beta0, nrow=k, ncol=v)
-
 
 ##パラメータの初期値
 theta <- rdirichlet(d, rep(1, k))   #文書トピックのパラメータの初期値
@@ -137,14 +137,14 @@ for(rp in 1:R){
   ##単語トピックのパラメータを更新
   #ディクレリ分布からthetaをサンプリング
   for(i in 1:d){
-    wsum0[i, ] <- colSums(Zi[doc_list[[i]], ])
+    wsum0[i, ] <- rep(1, w[i]) %*% Zi[doc_list[[i]], ]
   }
   wsum <- wsum0 + alpha01m 
   theta <- extraDistr::rdirichlet(d, wsum)
   
   #ディクレリ分布からphiをサンプリング
   for(j in 1:v){
-    vf0[, j] <- colSums(Zi[word_list[[j]], ])
+    vf0[, j] <- rep(1, n_word[j]) %*% Zi[word_list[[j]], ]
   }
   vf <- vf0 + beta0m
   phi <- extraDistr::rdirichlet(k, vf)
@@ -163,9 +163,11 @@ for(rp in 1:R){
     }
     
     #サンプリング結果を確認
-    print(rp)
-    print(round(cbind(theta[1:10, ], thetat[1:10, ]), 3))
-    print(round(cbind(phi[, 1:10], phit[, 1:10]), 3))
+    if(rp%%disp==0){
+      print(rp)
+      print(round(cbind(theta[1:10, ], thetat[1:10, ]), 3))
+      print(round(cbind(phi[, 1:10], phit[, 1:10]), 3))
+    }
   }
 }
 
