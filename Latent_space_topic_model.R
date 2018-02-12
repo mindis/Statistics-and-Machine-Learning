@@ -70,70 +70,166 @@ for(j in 1:v){
 
 ####マルコフ連鎖モンテカルロ法で連続空間トピックモデルを推定####
 ##アルゴリズムの設定
-R <- 10000
+R <- 2000
 keep <- 2  
 iter <- 0
 burnin <- 1000/keep
-disp <- 10
+disp <- 4
+
+#データの設定
+rej2 <- rep(0, v)
+WX_vec <- as.numeric(WX)
+
+#インデックスを設定
+index_nzeros <- which(as.numeric(WX) > 0)
+index_word <- list()
+for(j in 1:v){
+  index_word[[j]] <- which(WX[, j] > 0)
+}
 
 ##事前分布の設定
+cov <- diag(k)
+inv_cov <- solve(cov)
+mu <- rep(0, k)
 sigma <- diag(k)
 
-##データの設定
-X <- diag(v)
-storage.mode(X) <- "iteger"
 
 ##パラメータの真値
 G0 <- GT0
 u <- ut
 phi <- phit
-inv_cov <- solve(diag(k))
 
 
-##MH法でuをサンプリング
-#新しいパラメータをサンプリング
-u_old <- u
-u_new <- u_old + mvrnorm(d, rep(0, k), diag(0.01, k))
-alphan <- matrix(G0, nrow=d, ncol=v, byrow=T) * exp(u_new %*% t(phi))
-alphad <- matrix(G0, nrow=d, ncol=v, byrow=T) * exp(u_old %*% t(phi))
-
-#対数尤度と対数事前分布を計算
-lognew1 <- extraDistr::ddirmnom(WX, w, alphan, log=TRUE)
-logold1 <- extraDistr::ddirmnom(WX, w, alphad, log=TRUE)
-logpnew1 <- -0.5 * rowSums(u_new %*% inv_cov * u_new)
-logpold1 <- -0.5 * rowSums(u_old %*% inv_cov * u_old)
-
-#MHサンプリング
-rand <- runif(d)   #一様分布から乱数を発生
-LLind_diff <- exp(lognew1 + logpnew1 - logold1 - logpold1)   #採択率を計算
-tau <- (LLind_diff > 1)*1 + (LLind_diff <= 1)*LLind_diff
-
-#tauの値に基づき新しいbetaを採択するかどうかを決定
-flag <- matrix(((tau >= rand)*1 + (tau < rand)*0), nrow=d, ncol=k)
-u <- flag*u_new + (1-flag)*u_old   #alphaがrandを上回っていたら採択
+##パラメータの初期値
+G0 <- colSums(WX) / sum(WX)
+u <- mvrnorm(d, rep(0, k), diag(k))
+phi <- mvrnorm(v, rep(0, k), diag(k))
 
 
-##MH法でphiをサンプリング
-#新しいパラメータをサンプリング
-phid <- phi
-phin <- phid + mvrnorm(v, rep(0, k), diag(0.02, k))
-alphan <- matrix(G0, nrow=d, ncol=v, byrow=T) * exp(u %*% t(phin))
-alphad <- matrix(G0, nrow=d, ncol=v, byrow=T) * exp(u %*% t(phid))
+##パラメータの保存用配列
+logl <- rep(0, R/keep)
+U <- array(0, dim=c(d, k, R/keep))
+PHI <- array(0, dim=c(v, k, R/keep))
 
-#単語ごとに候補分布を推定
-lognew2 <- logold2 <- rep(0, v)
+##対数尤度の基準値
+#ユニグラムモデルの対数尤度
+par <- colSums(WX)/sum(WX)
+LLst <- sum(WX %*% log(par))
 
-for(j in 1:v){
-  #対数尤度を設定
-  n <- length(dw_list[[j]])
-  x <- matrix(X[j, ], nrow=n, ncol=v, byrow=T)
-  par_new <- alphan[dw_list[[j]], ]
-  par_old <- alphad[dw_list[[j]], ]
-  lognew2[j] <- sum(extraDistr::ddirmnom(x, 1, par_new, log=TRUE))
-  logold2[j] <- sum(extraDistr::ddirmnom(x, 1, par_old, log=TRUE))
+#ベストな対数尤度
+alpha <- matrix(GT0, nrow=d, ncol=v, byrow=T) * exp(ut %*% t(phit))
+LLbest <- sum(lgamma(rowSums(alpha)) - lgamma(rowSums(alpha + WX))) + sum(lgamma(alpha + WX) - lgamma(alpha))
+
+
+####マルコフ連鎖モンテカルロ法でパラメータをサンプリング####
+for(rp in 1:R){
+  
+  ##トピック分布のパラメータuをサンプリング
+  #新しいパラメータをサンプリング
+  u_old <- u
+  u_new <- u_old + mvrnorm(d, rep(0, k), diag(0.01, k))
+  alphan <- matrix(G0, nrow=d, ncol=v, byrow=T) * exp(u_new %*% t(phi))
+  alphad <- matrix(G0, nrow=d, ncol=v, byrow=T) * exp(u_old %*% t(phi))
+  
+  #Polya分布のパラメータを計算
+  dirn_vec <- dird_vec <- rep(0, d*v)
+  alphan_vec <- as.numeric(alphan)
+  alphad_vec <- as.numeric(alphad)
+  dirn_vec[index_nzeros] <- lgamma(alphan_vec[index_nzeros] + WX_vec[index_nzeros]) - lgamma(alphan_vec[index_nzeros])
+  dird_vec[index_nzeros] <- lgamma(alphad_vec[index_nzeros] + WX_vec[index_nzeros]) - lgamma(alphad_vec[index_nzeros])
+  
+  #対数尤度と対数事前分布を計算
+  lognew1 <- lgamma(rowSums(alphan)) - lgamma(rowSums(alphan + WX)) + rowSums(matrix(dirn_vec, nrow=d, ncol=v))
+  logold1 <- lgamma(rowSums(alphad)) - lgamma(rowSums(alphad + WX)) + rowSums(matrix(dird_vec, nrow=d, ncol=v))
+  logpnew1 <- -0.5 * rowSums(u_new %*% inv_cov * u_new)
+  logpold1 <- -0.5 * rowSums(u_old %*% inv_cov * u_old)
+  
+  
+  #MHサンプリング
+  rand <- runif(d)   #一様分布から乱数を発生
+  LLind_diff <- exp(lognew1 + logpnew1 - logold1 - logpold1)   #採択率を計算
+  tau <- (LLind_diff > 1)*1 + (LLind_diff <= 1)*LLind_diff
+  
+  #tauの値に基づき新しいbetaを採択するかどうかを決定
+  flag <- matrix(((tau >= rand)*1 + (tau < rand)*0), nrow=d, ncol=k)
+  rej1 <- mean(flag[, 1])
+  u <- flag*u_new + (1-flag)*u_old   #alphaがrandを上回っていたら採択
+  u <- scale(u)   #正規化
+  
+  
+  ##単語分布のパラメータphiをサンプリング
+  for(j in 1:v){
+    index_vec <- index_word[[j]]
+    
+    if(j==1){
+      #新しいパラメータをサンプリング
+      phid <- phi 
+      alphan <- alphad <- matrix(G0, nrow=d, ncol=v, byrow=T) * exp(u %*% t(phid))
+      phin <- phid[j, ] + mvrnorm(1, rep(0, k), diag(0.01, k))
+      alphan[, j] <- G0[j] * exp(u %*% phin)
+      
+      #繰り返し1回目のパラメータを更新
+      dir_vec <- rep(0, d*v)
+      alpha_vec <- as.numeric(alphad)
+      dir_vec[index_nzeros] <- lgamma(alpha_vec[index_nzeros] + WX_vec[index_nzeros]) - lgamma(alpha_vec[index_nzeros])
+      
+      #Polya分布のパラメータを更新
+      dir_mnd1 <- lgamma(rowSums(alphad)) - lgamma(rowSums(alphad + WX))
+      dir_mnn2 <- dir_mnd2 <- matrix(dir_vec, nrow=d, ncol=v)
+      dir_mnn1 <- lgamma(rowSums(alphan)) - lgamma(rowSums(alphan + WX))
+      dir_mnn2[index_vec, j] <- lgamma(alphan[index_vec, j] + WX[index_vec, j]) - lgamma(alphan[index_vec, j])
+    
+    } else {
+        
+      #新しいパラメータをサンプリング
+      alphan <- alphad
+      phin <- phi[j, ] + mvrnorm(1, rep(0, k), diag(0.01, k))
+      alphan[, j] <- G0[j] * exp(u %*% phin)
+      
+      #繰り返し2回目以降のパラメータを更新
+      dir_mnn2 <- dir_mnd2
+      dir_mnn1 <- lgamma(rowSums(alphan)) - lgamma(rowSums(alphan + WX))
+      dir_mnn2[index_vec, j] <- lgamma(alphan[index_vec, j] + WX[index_vec, j]) - lgamma(alphan[index_vec, j])
+    }
+    
+    #対数尤度と対数事前分布を計算
+    lognew2 <- sum(dir_mnn1) + sum(dir_mnn2)
+    logold2 <- sum(dir_mnd1) + sum(dir_mnd2)
+    logpnew2 <- lndMvn(phin, mu, cov)
+    logpold2 <- lndMvn(phid[j, ], mu, cov)
+    
+    #MHサンプリング
+    rand <- runif(1)   #一様分布から乱数を発生
+    tau <- min(c(1, exp(lognew2 + logpnew2 - logold2 - logpold2)))   #採択率を計算
+    
+    #tauの値に基づき新しいbetaを採択するかどうかを決定
+    rej2[j] <- flag <- as.numeric(tau >= rand)
+    phi[j, ] <- flag*phin + (1-flag)*phid[j, ]
+    alphad[, j] <- flag*alphan[, j] + (1-flag)*alphad[, j]
+    dir_mnd1 <- flag*dir_mnn1 + (1-flag)*dir_mnd1
+    dir_mnd2 <- flag*dir_mnn2 + (1-flag)*dir_mnd2
+  }
+  phi <- scale(phi)   #正規化
+  
+  
+  ##パラメータの格納とサンプリング結果の表示
+  #サンプリングされたパラメータを格納
+  if(rp%%keep==0){
+    #サンプリング結果の格納
+    mkeep <- rp/keep
+    logl[mkeep] <- lognew2
+    U[, , mkeep] <- u
+    PHI[, , mkeep] <- phi
+    
+    #サンプリング結果を確認
+    if(rp%%disp==0){
+      print(rp)
+      print(c(lognew2, LLbest, LLst))
+      print(round(c(rej1, mean(rej2)), 3))
+      print(round(cbind(u[1:5, ], ut[1:5, ]), 2))
+      print(round(cbind(phi[1:5, ], phit[1:5, ]), 2))
+    }
+  }
 }
 
-#対数事前分布を設定
-logpnew2 <- -0.5 * rowSums(phin %*% inv_cov * phin)
-logpold2 <- -0.5 * rowSums(phid %*% inv_cov * phid)
 
