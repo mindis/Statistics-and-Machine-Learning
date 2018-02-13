@@ -5,6 +5,7 @@ library(bayesm)
 library(MCMCpack)
 library(gtools)
 library(extraDistr)
+library(matrixStats)
 library(reshape2)
 library(qrmtools)
 library(slfm)
@@ -221,16 +222,62 @@ gc(); gc()
 
 ##インデックスを作成
 max_pt <- max(pt)
-t_index <- list()
-for(j in 1:max_pt){
-  t_index[[j]] <- which(t_id==j)
+index_t11 <- which(t_id==1)
+index_t21 <- list()
+index_t22 <- list()
+n_time <- rep(0, max_pt)
+n_time[1] <- length(index_t11)
+for(j in 2:max_pt){
+  index_t21[[j]] <- which(t_id==j)-1
+  index_t22[[j]] <- which(t_id==j)
+  n_time[j] <- length(index_t22[[j]])
 }
 
 
 ####マルコフ連鎖モンテカルロ法でパラメータをサンプリング####
 ##ユーザーごとのセグメント割当を生成
-y1 <- sparse_data %*% item_vec   #アイテムセグメントごとの購入頻度
-LLi1 <- y1 %*% t(log(oldtheta))   #セグメントごとの多項分布の尤度
+#ユーザーのセグメント割当ごとの尤度を推定
+y1 <- as.matrix(sparse_data %*% item_vec)   #アイテムセグメントごとの購入頻度
+LLi0 <- y1 %*% t(log(oldtheta))   #セグメントごとの多項分布の対数尤度
+LLi_max <- rowMaxs(LLi0)
+LLi1 <- exp(LLi0 - LLi_max)   #尤度に変換
 
+#セグメント割当確率の推定とセグメントの生成
+z_rate1 <- matrix(0, nrow=hhpt, ncol=seg_u)
+Zi1 <- matrix(0, nrow=hhpt, ncol=seg_u)
+z1_vec <- rep(0, hhpt)
+rf02 <- matrix(0, nrow=seg_u, ncol=seg_u)
+
+for(j in 1:max_pt){
+  if(j==1){
+    #セグメント割当確率を推定
+    n <- n_time[j]
+    LLs <- matrix(gamma1, nrow=n, ncol=seg_u, byrow=T) * LLi1[index_t11, ]   #重み付き尤度
+    matrix(gamma1, nrow=n, ncol=seg_u, byrow=T)
+    z_rate1[index_t11, ] <- LLs / rowSums(LLs)   #割当確率
+    
+    #多項分布からセグメントを生成
+    Zi1[index_t11, ] <- rmnom(n, 1, z_rate1[index_t11, ])
+    z1_vec[index_t11] <- as.numeric(Zi1[index_t11, ] %*% 1:seg_u)
+    
+    #混合率のパラメータを更新
+    rf01 <- colSums(Zi1[index_t11, ])
+    
+  } else {
+    
+    #セグメントの割当確率
+    index <- index_t22[[j]]
+    n <- n_time[j]
+    LLs <- gamma2[z1_vec[index_t21[[j]]], , drop=FALSE] * LLi1[index, , drop=FALSE]   #重み付き尤度
+    z_rate1[index, ] <- LLs / rowSums(LLs)   #割当確率
+    
+    #多項分布よりセグメントを生成
+    Zi1[index, ] <- rmnom(n, 1, z_rate1[index, ])
+    z1_vec[index] <- as.numeric(Zi1[index, ] %*% 1:seg_u)
+    
+    #混合率のパラメータを更新
+    rf02 <- rf02 + t(Zi1[index_t21[[j]], , drop=FALSE]) %*% Zi1[index, , drop=FALSE]   #マルコフ推移
+  }
+}
 
 
