@@ -17,15 +17,15 @@ library(ggplot2)
 #set.seed(423943)
 #データの設定
 k <- 10   #トピック数
-d <- 2000   #文書数
-v <- 400   #語彙数
+d <- 3000   #文書数
+v <- 500   #語彙数
 w <- rpois(d, rgamma(d, 55, 0.50))   #1文書あたりの単語数
 f <- sum(w)
 
 
 #パラメータの設定
-alpha0 <- rep(0.15, k)   #文書のディレクリ事前分布のパラメータ
-alpha1 <- rep(0.4, v)   #単語のディレクリ事前分布のパラメータ
+alpha0 <- rep(0.1, k)   #文書のディレクリ事前分布のパラメータ
+alpha1 <- rep(0.3, v)   #単語のディレクリ事前分布のパラメータ
 
 #ディレクリ乱数の発生
 thetat <- theta <- rdirichlet(d, alpha0)   #文書のトピック分布をディレクリ乱数から発生
@@ -112,8 +112,8 @@ theta <- rdirichlet(d, rep(1, k))   #文書トピックのパラメータの初期値
 phi <- rdirichlet(k, colSums(WX)/sum(WX)*v)   #単語トピックのパラメータの初期値
 
 ##パラメータの格納用配列
-THETA <- array(0, dim=c(d, k, R/keep))
-PHI <- array(0, dim=c(k, v, R/keep))
+#THETA <- array(0, dim=c(d, k, R/keep))
+#PHI <- array(0, dim=c(k, v, R/keep))
 SEG <- matrix(0, nrow=f, ncol=k)
 storage.mode(SEG) <- "integer"
 gc(); gc()
@@ -122,13 +122,18 @@ gc(); gc()
 wsum0 <- matrix(0, nrow=d, ncol=k)
 vf0 <- matrix(0, nrow=k, ncol=v)
 
+##対数尤度の基準値
+LLst <- sum(WX %*% log(colSums(WX) / sum(WX)))
+
 
 ####ギブスサンプリングでパラメータをサンプリング####
 for(rp in 1:R){
   
   ##単語トピックをサンプリング
   #単語ごとにトピックの出現率を計算
-  word_rate <- burden_fr(theta, phi, wd, w, k)$Br
+  word_par <- burden_fr(theta, phi, wd, w, k)
+  word_rate <- word_par$Br
+
   
   #多項分布から単語トピックをサンプリング
   Zi <- rmnom(f, 1, word_rate)   
@@ -154,8 +159,8 @@ for(rp in 1:R){
   if(rp%%keep==0){
     #サンプリング結果の格納
     mkeep <- rp/keep
-    THETA[, , mkeep] <- theta
-    PHI[, , mkeep] <- phi
+    #THETA[, , mkeep] <- theta
+    #PHI[, , mkeep] <- phi
     
     #トピック割当はバーンイン期間を超えたら格納する
     if(rp%%keep==0 & rp >= burnin){
@@ -165,12 +170,12 @@ for(rp in 1:R){
     #サンプリング結果を確認
     if(rp%%disp==0){
       print(rp)
+      print(c(LLst, sum(log(rowSums(word_par$Bur)))))
       print(round(cbind(theta[1:10, ], thetat[1:10, ]), 3))
       print(round(cbind(phi[, 1:10], phit[, 1:10]), 3))
     }
   }
 }
-
 
 ####サンプリング結果の可視化と要約####
 burnin <- 1000/keep   #バーンイン期間
@@ -202,5 +207,4 @@ round(topic_sd <- apply(THETA[, , burnin:(R/keep)], c(1, 2), sd), 3)   #トピック
 #単語出現確率の事後推定量
 word_mu <- apply(PHI[, , burnin:(R/keep)], c(1, 2), mean)   #単語の出現率の事後平均
 round(rbind(word_mu, phit)[, 1:50], 3)
-
 
