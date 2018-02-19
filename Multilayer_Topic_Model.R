@@ -311,4 +311,59 @@ for(rp in 1:R){
   }
 }
 
-rowSums(t(phi2[[1]]))
+####サンプリング結果の可視化と要約####
+burnin <- 2000/keep   #バーンイン期間
+RS <- R/keep
+
+##サンプリング結果の可視化
+#上位階層のトピック分布の可視化
+matplot(t(THETA1[1, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA1[2, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA1[3, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+
+#上位階層の割当確率の分布の可視化
+matplot(t(PHI1[1, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(PHI1[2, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(PHI1[3, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+
+#下位階層のトピック分布の可視化
+matplot(t(THETA2[1, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA2[2, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA2[3, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA2[4, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(THETA2[5, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+
+#下位階層の単語分布の可視化
+matplot(t(PHI2[1, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(PHI2[10, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(PHI2[20, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(PHI2[30, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(PHI2[40, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+matplot(t(PHI2[50, , ]), type="l", xlab="サンプリング数", ylab="パラメータ")
+
+
+##サンプリング結果の要約推定量
+#上位トピック分布の事後推定量
+topic_mu1 <- apply(THETA1[, , burnin:(R/keep)], c(1, 2), mean)   #トピック分布の事後平均
+round(cbind(topic_mu1, thetat01), 3)
+round(topic_sd1 <- apply(THETA1[, , burnin:(R/keep)], c(1, 2), sd), 3)   #トピック分布の事後標準偏差
+
+#上位階層の割当確率の事後推定量
+word_mu1 <- apply(PHI1[, , burnin:(R/keep)], c(1, 2), mean)   #単語の出現率の事後平均
+round(t(rbind(word_mu1, phit01)), 3)
+
+#下位トピック分布の事後推定量
+topic_mu2 <- apply(THETA2[, , burnin:(R/keep)], c(1, 2), mean)   #トピック分布の事後平均
+round(cbind(topic_mu2, thetat02), 3)
+round(topic_sd2 <- apply(THETA2[, , burnin:(R/keep)], c(1, 2), sd), 3)   #トピック分布の事後標準偏差
+
+#下位階層の単語出現確率の事後推定量
+word_mu2 <- apply(PHI2[, , burnin:(R/keep)], c(1, 2), mean)   #単語の出現率の事後平均
+round(t(word_mu2), 3)
+
+
+##割当られたトピックの事後分布
+round(cbind(SEG1 / rowSums(SEG1), Z1), 3)
+round(cbind(SEG2 / rowSums(SEG2), apply(SEG1 / rowSums(SEG1), 1, which.max), Z1, Z2), 3)
+
+
