@@ -13,7 +13,7 @@ library(dplyr)
 library(plyr)
 library(ggplot2)
 
-#set.seed(93471)
+#set.seed(93441)
 
 ####データの発生####
 #データの設定
