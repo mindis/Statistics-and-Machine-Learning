@@ -60,7 +60,7 @@ sigma <- rep(0, seg)
 for(j in 1:seg){
   K <- kern_data[[j]]
   n <- n0[j]
-  sigma[j] <- runif(1, 0.5, 10.0)
+  sigma[j] <- runif(1, 0.5, 5.0)
   y[index_z[[j]]] <- mvrnorm(1, rep(0, n0[j]), K + diag(sigma[j], n))   #ガウス過程から応答変数を生成
 }
 
@@ -152,8 +152,9 @@ for(rp in 1:R){
     tau2[j] <- 1 / tau2_inv
     
     #周辺尤度の更新
-    Lm <- -1/2*abs(diag(tau2_inv, n0) + tau1_inv*KK) - 
-                    1/2*as.numeric((t(y_vec) %*% solve(diag(tau2_inv, n0) + tau1_inv*KK) %*% y_vec))
+    diag_tau2 <- diag(tau2_inv, n0)
+    tau1_KK <- tau1_inv * KK
+    Lm <- -1/2*abs(diag_tau2 + tau1_KK) - 1/2*as.numeric((t(y_vec) %*% solve(diag_tau2 + tau1_KK) %*% y_vec))
     LLm[j] <- sum(Lm)
   }
   
@@ -180,6 +181,4 @@ for(rp in 1:R){
     }
   }
 }
-
-
 
