@@ -95,14 +95,15 @@ dloglike <- function(b, X, y, par){
 
 ##最尤推定の推定値
 b0 <- rep(0, par)   #初期パラメータの設定
-res <- optim(b0, loglike, gr=NULL, X=XM, Y=Y, method="BFGS", hessian=FALSE, control=list(fnscale=-1))
-beta_ml <- res$par
+res_logit <- optim(b0, loglike, gr=NULL, X=XM, Y=Y, method="BFGS", hessian=FALSE, control=list(fnscale=-1))
+beta_ml <- res_logit$par
 
 
 ####ハミルトニアンモンテカルロ法でロジスティック回帰モデルのパラメータをサンプリング
 ##アルゴリズムの設定
 R <- 10000
 keep <- 2
+disp <- 100
 burnin <- 2000/keep
 iter <- 0
 e <- 0.01
@@ -128,7 +129,7 @@ for(rp in 1:R){
   res <- leapfrog(rold, betad, dloglike, e, L)   #リープフロッグ法による1ステップ移動
   rnew <- res$r
   betan <- res$z
-
+  
   #移動前と移動後のハミルトニアンを計算
   Hnew <- -loglike(betan, XM, Y) + sum(rnew^2)/2
   Hold <- -loglike(betad, XM, Y) + sum(rold^2)/2
@@ -149,21 +150,25 @@ for(rp in 1:R){
   } else {
     oldbeta <- betad
   }
+  
   #サンプリングを保存する回数ならbetaを書き込む
   if(rp%%keep==0){
     mkeep <- rp/keep
     BETA[mkeep, ] <- oldbeta
     ALPHA[mkeep] <- alpha
     LL[mkeep] <- logl
+    
+    if(rp%%disp==0){
+      print(rp)
+    }
   }
-  print(rp)
 }
 
 
 ####推定結果と適合度####
 ##推定結果の要約
 round(beta_mc <- colMeans(BETA[(2000/keep):nrow(BETA), ]), 2)   #MCMCの推定結果の事後平均
-round(res$par, 2)   #最尤法の推定結果
+round(res_logit$par, 2)   #最尤法の推定結果
 round(betaT, 2)   #真のbeta
 
 summary(BETA[(2000/keep):nrow(BETA), ])   #サンプリング結果の要約統計量
@@ -172,7 +177,6 @@ round(apply(BETA[(2000/keep):nrow(BETA), ], 2, function(x) quantile(x, 0.95)), 3
 round(apply(BETA[(2000/keep):nrow(BETA), ], 2, sd), 3)   #事後標準偏差
 
 ##サンプリング結果をプロット
-#サンプリング結果のプロット
 matplot(BETA[, 1:5], type="l", lty=1, ylab="beta 1-5")
 matplot(BETA[, 6:10], type="l", lty=1, ylab="beta 6-10")
 matplot(BETA[, 11:15], type="l", lty=1, ylab="beta 11-15")
