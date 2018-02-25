@@ -65,7 +65,7 @@ Pr <- exp(logit) / rowSums(exp(logit))
 y <- rmnom(hh, 1, Pr)
 y_vec <- as.numeric(t(y))
 colSums(y)
-
+round(Data, 3)
 
 #####HMCでベイジアン多項ロジットモデルを推定####
 ##Leap Frog法を解く関数
@@ -114,7 +114,7 @@ dloglike <- function(beta, y_vec, data, select){
 ####ハミルトニアンモンテカルロ法でロジットモデルのパラメータをサンプリング####
 ##アルゴリズムの設定
 R <- 10000
-keep <- 2
+keep <- 4
 disp <- 20
 burnin <- 2000/keep
 iter <- 0
@@ -179,9 +179,35 @@ for(rp in 1:R){
     
     if(rp%%disp==0){
       print(rp)
+      print(lognew)
       print(round(alpha, 3))
       print(round(rbind(betan, betat), 2))
     }
   }
 }
 
+
+####サンプリング結果の要約と可視化####
+burnin <- 2000/keep
+RS <- R/keep
+
+##サンプリング結果の可視化
+matplot(BETA[, 1:9], type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(BETA[, 10:18], type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(BETA[, 19:27], type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(BETA[, 28:ncol(BETA)], type="l", xlab="サンプリング回数", ylab="パラメータ")
+plot(1:RS, LL, type="l", xlab="サンプリング回数", ylab="対数尤度")
+plot(1:RS, ALPHA, type="l", xlab="サンプリング回数", ylab="棄却率")
+
+
+##サンプリング結果の要約統計量
+beta_mu <- colMeans(BETA[burnin:RS, ])   #回帰係数の事後平均
+round(cbind(beta_mu, betat), 3)   #推定結果と真値の比較
+apply(BETA[burnin:RS, ], 2, sd)   #事後標準偏差  
+
+par(mfrow=c(2, 2))
+hist(BETA[burnin:RS, 1], xlab="回帰係数のサンプリング結果", main="回帰係数の分布", col="grey", breaks=25)
+hist(BETA[burnin:RS, 3], xlab="回帰係数のサンプリング結果", main="回帰係数の分布", col="grey", breaks=25)
+hist(BETA[burnin:RS, 5], xlab="回帰係数のサンプリング結果", main="回帰係数の分布", col="grey", breaks=25)
+hist(BETA[burnin:RS, 7], xlab="回帰係数のサンプリング結果", main="回帰係数の分布", col="grey", breaks=25)
+par(mfrow=c(1, 1))
