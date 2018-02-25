@@ -112,7 +112,6 @@ for(rp in 1:R){
   rsum <- colSums(Zi) + alpha01
   r <- matrix(extraDistr::rdirichlet(1, rsum), nrow=d, ncol=seg, byrow=T)
 
-  
   #多項分布のパラメータを更新
   wsum0 <- t(Data) %*% Zi
   wsum <- t(wsum0 + alpha02)
@@ -181,4 +180,51 @@ for(rp in 1:R){
     }
   }
 }
+
+####推定結果の確認と要約####
+burnin <- 1000/keep
+RS <- R/keep
+
+##サンプリング結果の可視化
+#多項分布のパラメータの可視化
+matplot(t(THETA[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA[3, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA[5, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA[7, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+
+#正則化パラメータの可視化
+matplot(TAU1/TAU2, type="l", xlab="サンプリング回数", ylab="パラメータ")
+
+
+##推定結果の要約推定量
+#正則化パラメータの要約統計量
+tau_mu <- colMeans(TAU1[burnin:RS, ])/colMeans(TAU2[burnin:RS, ])
+
+##潜在変数の割当ごとに回帰係数を推定
+#潜在変数の割当
+Zi <- SEG / rowSums(SEG)
+
+#重み付きデータを設定
+data_list <- list()
+K_list <- list()
+y_list <- list()
+beta_list <- list()
+
+for(j in 1:seg){
+  data0 <- Zi[, j] * Data; y_vec0 <- Zi[, j] * y   
+  data_list[[j]] <- data <- data0[rowSums(abs(data0)) > 0, ]
+  y_list[[j]] <- y_vec <- y_vec0[abs(y_vec0) > 0]
+  n <- nrow(data)
+  
+  #回帰係数を推定
+  K_list[[j]] <- K <- data %*% t(data)   #カーネル関数
+  KK <- K %*% K
+  beta_list[[j]] <- solve(KK + diag(tau_mu, n)) %*% t(K) %*% y_vec
+}
+
+#予測結果を推定
+matplot(cbind(K_list[[1]] %*% beta_list[[1]], y_list[[1]]), type="l", xlab="サンプル番号", ylab="パラメータ")
+matplot(cbind(K_list[[3]] %*% beta_list[[3]], y_list[[3]]), type="l", xlab="サンプル番号", ylab="パラメータ")
+matplot(cbind(K_list[[5]] %*% beta_list[[5]], y_list[[5]]), type="l", xlab="サンプル番号", ylab="パラメータ")
+matplot(cbind(K_list[[7]] %*% beta_list[[7]], y_list[[7]]), type="l", xlab="サンプル番号", ylab="パラメータ")
 
