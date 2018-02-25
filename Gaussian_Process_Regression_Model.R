@@ -73,7 +73,7 @@ sparse_data <- as(Data, "CsparseMatrix")
 K <- Data %*% t(Data)
 
 #ガウス過程からセグメントごとに応答変数を生成
-sigma <- 1
+sigma <- 2.0
 y <- mvrnorm(1, rep(0, d), K + diag(sigma, d))   #ガウス過程から応答変数を生成
 plot(1:d, y, type="l", xlab="time", ylab="y")
 
@@ -117,6 +117,7 @@ while(abs(dl) >= tol){   #dlがtol以上なら繰り返す
   LL1 <- LL
   print(LL)
 }
+
 
 ####推定結果の確認と要約####
 ##予測結果と実測値の比較
