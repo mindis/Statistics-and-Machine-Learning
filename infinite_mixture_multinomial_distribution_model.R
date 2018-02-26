@@ -28,15 +28,14 @@ seg_id <- rep(1:seg, rep(n, seg))
 
 ####応答変数の発生####
 ##セグメントごとにパラメータの設定
-par <- rep(1.25, k)
-p <- rdirichlet(seg, par)
+alpha <- rep(0.15, k)
+p <- extraDistr::rdirichlet(seg, alpha)
 
 ##多項分布よりデータを発生
 Data <- matrix(0, nrow=N, ncol=k)
 for(i in 1:seg){
   index <- which(seg_id==i)
-  p_matrix <- matrix(p[i, ], nrow=length(index), ncol=k, byrow=T)
-  Data[index, ] <- t(apply(cbind(w[index], p_matrix), 1, function(x) rmultinom(1, x[1], x[-1])))
+  Data[index, ] <- rmnom(length(index), w[index], p[i, ])
 }
 colnames(Data) <- 1:k
 storage.mode(Data) <- "integer"
@@ -45,11 +44,12 @@ storage.mode(Data) <- "integer"
 ##アルゴリズムの設定
 R <- 10000
 keep <- 2
+disp <- 20
 sbeta <- 1.5
 iter <- 0
 
 ##事前分布の設定
-tau <- rep(1, k)   #ディクレリ分布の事前分布
+tau <- 1   #ディクレリ分布の事前分布
 alpha <- 1   #CRPの事前分布
 
 ##初期値の設定
@@ -66,70 +66,56 @@ z0 <- out$cluster
 for(i in 1:seg0){z[z0==i, i] <- 1}   
 
 #セグメントごとのパラメータ
-oldpar0 <- as.matrix(data.frame(class=out$cluster, Data) %>%
-                      dplyr::group_by(class) %>%
-                      dplyr::summarise_all(funs(sum)))[, 2:(k+1)]
-oldpar <- oldpar0/matrix(rowSums(oldpar0), nrow=seg0, ncol=k)
+oldpar0 <- extraDistr::rdirichlet(2, colSums(Data)/sum(Data)+1)
+oldpar <- (oldpar0+0.001) / matrix(rowSums(oldpar0+0.001), nrow=2, ncol=k, byrow=T)
 
-##パラメータの格納用配列
-max_seg <- 15
+#パラメータの格納用配列
+max_seg <- 20
 Z <- matrix(0, nrow=N, ncol=max_seg)
 P <- array(0, dim=c(max_seg, k, R/keep))
 storage.mode(Z) <- "integer"
 
+#データの設定
+const <- lfactorial(rowSums(Data)) - rowSums(lfactorial(Data))
+
 
 ####MCMCでパラメータをサンプリング####
 for(rp in 1:R){
-
+  
   ##多項分布の混合尤度を計算
   #パラメータごとに対数尤度を計算
-  LLind0 <- matrix(0, nrow=N, ncol=ncol(z))
-  for(j in 1:ncol(LLind0)){
-    Li <- dmnom(Data, w, oldpar[j, ], log=TRUE)
-    LLind0[, j] <- Li
-  }
+  LLind0 <- Data %*% t(log(oldpar))
   
   #新しい潜在変数の尤度の計算と尤度の結合
-  LL_new <- dmnom(Data, w, par_mean, log=TRUE)   #新しい潜在変数の対数尤度
+  LL_new <- Data %*% log(par_mean)   #新しい潜在変数の対数尤度
   LLi0 <- cbind(LLind0, LL_new)
-  LLi <- exp(LLi0 - max(LLi0))   #尤度に変換
+  LLi <- exp(LLi0 - rowMaxs(LLi0))   #尤度に変換
   
   ##CRPの計算
   gamma0 <- cbind(matrix(colSums(z), nrow=N, ncol=ncol(z), byrow=T) - z, alpha)
   gamma1 <- LLi * gamma0/(N-1-alpha)
-
+  
   ##多項分布より潜在変数をサンプリング
   z_rate <- gamma1 / rowSums(gamma1)   #潜在変数zの割当確率
   z <- rmnom(N, 1, z_rate)
   z <- z[, colSums(z) > 0]
-  
-  ##多項分布のパラメータを更新
-  oldpar <- matrix(0, nrow=ncol(z), ncol=k)
 
-  for(j in 1:ncol(z)){
- 
-    #割り当てられたセグメントのサンプルのみ抽出
-    index <- which(z[, j]==1)
-    Data0 <- Data[index, ]
-    
-    #ディクレリ分布から多項分布のパラメータをサンプリング
-    if(class(Data0)=="matrix"){
-      dir_par <- colSums(Data0) + tau   #ディクレリ分布のパラメータ
-    } else {
-      dir_par <- Data0 + tau
-    }
-    oldpar[j, ] <- rdirichlet(1, dir_par)   #ディクレリ分布より多項分布のパラメータをサンプリング
-  }
-  
+  ##多項分布のパラメータを更新
+  dir_par <- t(t(Data) %*% z) + tau   #ディクレリ分布のパラメータ
+  oldpar <- extraDistr::rdirichlet(ncol(z), dir_par)   #多項分布からパラメータを生成
+
+
   ##パラメータの格納とサンプリング結果の表示
   if(rp%%keep==0){
     mkeep <- rp/keep
     if(rp >= R/2){Z[, 1:ncol(z)] <- Z[, 1:ncol(z)] + z}   #繰り返し数が最大反復数の半分を超えたらパラメータを格納
     P[1:nrow(oldpar), , mkeep] <- oldpar
     
-    print(rp)
-    print(colSums(z))
-    #print(round(rbind(oldpar, p), 3))
+    if(rp%%disp==0){
+      print(rp)
+      print(colSums(z))
+      #print(round(rbind(oldpar, p), 3))
+    }
   }
 }
 
