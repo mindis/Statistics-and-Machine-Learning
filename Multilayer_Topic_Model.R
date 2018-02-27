@@ -302,7 +302,7 @@ for(rp in 1:R){
     if(rp%%disp==0){
       print(rp)
       LL <- sum(log(rowSums(LLi * Si)))
-      print(c(LLst, LL))
+      print(c(LL, LLst))
       print(round(c(exp(-LL / f), exp(-LLst / f)), 3))
       print(round(cbind(phi1, phit01), 3))
       print(round(cbind(theta2[1:10, ], thetat02[1:10, ]), 3))
