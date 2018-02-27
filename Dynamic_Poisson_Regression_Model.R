@@ -110,6 +110,7 @@ LL <- rep(0, d)
 BETA <- array(0, dim=c(s, k, d))
 y_factorial <- lfactorial(y)
 
+
 ##準ニュートン法で初期値を設定
 theta <- rep(0, k)
 target <- 1:100
@@ -120,18 +121,18 @@ beta <- res$par
 
 ####粒子フィルタの固定パラメータを推定####
 particle_fr <- function(tau, beta, Data, y, k, s){
-
+  
   #パラメータの設定
   BETA <- array(0, dim=c(s, k, d))
   sigma <- abs(diag(tau, k))
-
+  
   ##システムモデルのパラメータを更新
   betan <- matrix(beta, nrow=s, ncol=k, byrow=T) + mvrnorm(s, rep(0, k), diag(0.5, k))
   
   ##観測モデルの尤度を評価
   #尤度を評価
   lambda <- exp(betan[, 1] + rowSums(matrix(Data[1, -1], nrow=s, ncol=k-1, byrow=T) * betan[, -1]))
-  Li <- dpois(y[1], lambda)   #粒子ごとの尤度
+  Li <- exp(y[1]*log(lambda)-lambda - y_factorial[1])   #粒子ごとの尤度
   LL[1] <- sum(Li)   #尤度の和
   
   #尤度の負担率に応じてパラメータをリサンプリング
@@ -144,11 +145,11 @@ particle_fr <- function(tau, beta, Data, y, k, s){
   for(i in 2:d){
     ##システムモデルのパラメータの更新
     betan <- BETA[, , i-1] + mvrnorm(s, rep(0, k), sigma)
-  
+    
     ##観測モデルの尤度を評価
     #ロジットと確率を計算
     lambda <- exp(betan[, 1] + rowSums(matrix(Data[i, -1], nrow=s, ncol=k-1, byrow=T) * betan[, -1]))
-    Li <- dpois(y[i], lambda)   #粒子ごとの尤度
+    Li <- exp(y[i]*log(lambda)-lambda - y_factorial[i])   #粒子ごとの尤度
     LL[i] <- sum(Li)   #尤度の和
     
     #尤度の負担率に応じてパラメータをリサンプリング
@@ -168,19 +169,19 @@ tau <- rep(0.025, k)
 res <- optim(tau, particle_fr, beta=beta, Data=Data, y=y, k=k, s=s0,
              method="Nelder-Mead", control=list(fnscale=-1, maxit=100, trace=TRUE))
 res$value   #最大化された対数尤度
-v <- diag(res$par, k)   #パラメータ推定値
+v <- abs(diag(res$par, k))   #パラメータ推定値
 
 
 ####推定された静的パラメータをもとに動的ポアソン回帰モデルを推定####
 ##システムモデルのパラメータを更新
 BETA <- array(0, dim=c(s, k, d))
-beta[2] <- -1.25
+beta[2] <- -1.4
 betan <- matrix(beta, nrow=s, ncol=k, byrow=T) + mvrnorm(s, rep(0, k), diag(0.1, k))
 
 ##観測モデルの尤度を評価
 #尤度を評価
 lambda <- exp(betan[, 1] + rowSums(matrix(Data[1, -1], nrow=s, ncol=k-1, byrow=T) * betan[, -1]))
-Li <- dpois(y[1], lambda)   #粒子ごとの尤度
+Li <- exp(y[1]*log(lambda)-lambda - y_factorial[1])   #粒子ごとの尤度
 LL[1] <- sum(Li)   #尤度の和
 
 #尤度の負担率に応じてパラメータをリサンプリング
@@ -197,7 +198,7 @@ for(i in 2:d){
   ##観測モデルの尤度を評価
   #ロジットと確率を計算
   lambda <- exp(betan[, 1] + rowSums(matrix(Data[i, -1], nrow=s, ncol=k-1, byrow=T) * betan[, -1]))
-  Li <- dpois(y[i], lambda)   #粒子ごとの尤度
+  Li <- exp(y[i]*log(lambda)-lambda - y_factorial[i])   #粒子ごとの尤度
   LL[i] <- sum(Li)   #尤度の和
   
   #尤度の負担率に応じてパラメータをリサンプリング
@@ -229,5 +230,3 @@ pred_lambda <- exp(rowSums(Data * theta))
 plot(1:d, y, type="l", xlab="日数", ylab="購買点数", xlim=c(0, d), ylim=c(0, max(y)))
 par(new=T)
 plot(1:d, pred_lambda, xlim=c(0, d), ylim=c(0, max(y)), ylab="", xlab="", type="p", pch=4, col=2)
-
-
