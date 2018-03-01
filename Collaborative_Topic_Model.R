@@ -64,7 +64,7 @@ tau1 <- 0.5
 tau2 <- 0.025
 sigma <- 0.2
 theta2 <- thetat2 <- mvrnorm(hh, rep(0, k), diag(tau1, k))
-psi <- psit <- t(theta + mvrnorm(item, rep(0, k), diag(tau2, k)))
+psi <- psit <- t(theta1 + mvrnorm(item, rep(0, k), diag(tau2, k)))
 
 
 ##Collavorative topic modelのデータを生成
@@ -95,3 +95,84 @@ Z <- do.call(rbind, Z_list)
 words_vec <- unlist(word_list)
 storage.mode(WX) <- "integer"
 
+
+####EMアルゴリズムでCollaborative Topic Modelを推定####
+##単語ごとに尤度と負担率を計算する関数
+burden_fr <- function(theta, phi, wd, w, k){
+  #負担係数を計算
+  Bur <- theta1[w_id, ] * t(phi)[words_vec, ]   #尤度
+  Br <- Bur / rowSums(Bur)   #負担率
+  r <- colSums(Br) / sum(Br)   #混合率
+  bval <- list(Br=Br, Bur=Bur, r=r)
+  return(bval)
+}
+
+#インデックスの作成
+doc_list <- list()
+word_list <- list()
+doc_ones <- list()
+word_ones <- list()
+doc_n <- rep(0, item)
+word_n <- rep(0, v)
+
+for(i in 1:item){
+  doc_list[[i]] <- which(w_id==i)
+  doc_n[i] <- length(doc_list[[i]])
+  doc_ones[[i]] <- rep(1, doc_n[i])
+}
+for(i in 1:v){
+  word_list[[i]] <- which(words_vec==i)
+  word_n[i] <- length(word_list[[i]])
+  word_ones[[i]] <- rep(1, word_n[i])
+}
+
+
+#初期値の設定
+theta1 <- extraDistr::rdirichlet(item, rep(0.5, k))
+phi <- extraDistr::rdirichlet(k, rep(1.0, v))
+
+
+#EMアルゴリズムの更新ステータス
+iter <- 1
+dl <- 100   #EMステップでの対数尤度の差の初期値
+tol <- 1
+LLw <- -1000000000   #対数尤度の初期値
+
+##EMアルゴリズムでパラメータを更新
+while(abs(dl) >= tol){   #dlがtol以上の場合は繰り返す
+  
+  ##トピックモデルで単語のトピックを推定
+  ##尤度と潜在変数zを推定
+  par <- burden_fr(theta1, phi, words_vec, w_id, k)
+  z <- par$Br   #潜在変数zを出力
+  r <- par$r   #混合率rを出力
+  
+  ##トピックモデルのパラメータを更新
+  #トピック分布theta1を更新
+  wsum <- matrix(0, nrow=item, ncol=k)
+  for(i in 1:item){
+    wsum[i, ] <- t(z[doc_list[[i]], ]) %*% doc_ones[[i]]
+  }
+  theta1 <- wsum / doc_n
+  
+  #単語分布phiを更新
+  vsum <- matrix(0, nrow=k, ncol=v)
+  for(j in 1:v){
+    vsum[, j] <- t(z[word_list[[j]], ]) %*% word_ones[[j]]
+  }
+  phi <- vsum / matrix(rowSums(vsum), nrow=k, ncol=v)
+  
+  
+  ##潜在因子モデルでスコア要因を推定
+  
+  
+  
+  
+  #対数尤度の計算
+  LLS <- sum(log(rowSums(par$Bur)))
+  iter <- iter+1
+  dl <- LLS-LLo
+  LLo <- LLS
+  LLw <- c(LLw, LLo)
+  print(LLo)
+}
