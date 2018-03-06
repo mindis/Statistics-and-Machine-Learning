@@ -5,6 +5,7 @@ library(RMeCab)
 library(matrixStats)
 library(Matrix)
 library(bayesm)
+library(HMM)
 library(extraDistr)
 library(reshape2)
 library(dplyr)
@@ -13,182 +14,169 @@ library(ggplot2)
 
 #set.seed(8079)
 
-####データの発生####
+####データの生成####
 #set.seed(423943)
 #文書データの設定
-k <- 8   #トピック数
-d <- 2000   #文書数
-v <- 300   #語彙数
-w <- rpois(d, 200)   #1文書あたりの単語数
+k <- 15   #トピック数
+d <- 2500   #文書数
+v <- 1000   #語彙数
+w <- rpois(d, rgamma(d, 75, 0.5))   #1文書あたりの単語数
 f <- sum(w)   #総単語数
-a1 <- 40   #トピックに関係のあるタグ数
-a2 <- 20   #トピックに関係のないタグ数
+a1 <- 100   #トピックに関係のあるタグ数
+a2 <- 50   #トピックに関係のないタグ数
 a <- a1 + a2   #補助変数数
-x0 <- rpois(d, 25)
-x <- ifelse(x0 < 1, 1, x0)
-e <- sum(x)
+x <- rtpois(d, 30, 2, Inf)
+f1 <- sum(w)
+f2 <- sum(x)
 
 #IDの設定
-word_id <- rep(1:d, w)
-aux_id <- rep(1:d, x)
+w_id <- rep(1:d, w)
+a_id <- rep(1:d, x)
 
 #パラメータの設定
-alpha0 <- rep(0.3, k)   #文書のディレクリ事前分布のパラメータ
-alpha1 <- rep(0.3, v)   #単語のディレクリ事前分布のパラメータ
-alpha2 <- c(rep(0.3, a1), rep(0.005, a2))   #トピックに関係のあるタグのディクレリ事前分布のパラメータ
-alpha3 <- c(rep(0.025, a1), rep(3, a2))   #トピックに関係のないタグのディクレリ事前分布のパラメータ
+alpha0 <- rep(0.15, k)   #文書のディレクリ事前分布のパラメータ
+alpha1 <- rep(0.15, v)   #単語のディレクリ事前分布のパラメータ
+alpha2 <- c(rep(0.2, a1), rep(0.001, a2))   #トピックに関係のあるタグのディクレリ事前分布のパラメータ
+alpha3 <- c(rep(0.001, a1), rep(1.0, a2))   #トピックに関係のないタグのディクレリ事前分布のパラメータ
 beta0 <- rbeta(sum(x), 0.55, 0.175)
 
-
-#ディレクリ乱数の発生
-thetat <- theta <- rdirichlet(d, alpha0)   #文書のトピック分布をディレクリ乱数から発生
-phit <- phi <- rdirichlet(k, alpha1)   #単語のトピック分布をディレクリ乱数から発生
-lambda <- matrix(0, nrow=d, ncol=k)   #文書に含むトピックだけを補助情報のトピックにするための確率を格納する行列
-omegat <- omega <- extraDistr::rdirichlet(k, alpha2)   #補助情報のトピック分布をディクレリ乱数から発生
-gammat <- gamma <- extraDistr::rdirichlet(1, alpha3)   #トピックに関係のないタグ
-omega0 <- rbind(omega, gamma)   #単語分布の結合
-
-
-##多項分布からトピックおよび単語データを発生
-WX <- matrix(0, nrow=d, ncol=v)
-AX <- matrix(0, nrow=d, ncol=a)
-z0 <- rep(0, sum(x)) 
-Z1 <- list()
-Z2 <- list()
-
-#文書ごとにトピックと単語を逐次生成
-for(i in 1:d){
-  print(i)
+##モデルに基づき単語を生成
+for(rp in 1:1000){
+  print(rp)
   
-  #文書のトピック分布を発生
-  z1 <- rmnom(w[i], 1, theta[i, ])   #文書のトピック分布を発生
+  #ディレクリ分布からパラメータを生成
+  thetat <- theta <- extraDistr::rdirichlet(d, alpha0)   #文書のトピック分布をディレクリ乱数から生成
+  phit <- phi <- extraDistr::rdirichlet(k, alpha1)   #単語のトピック分布をディレクリ乱数から生成
+  lambda <- matrix(0, nrow=d, ncol=k)   #文書に含むトピックだけを補助情報のトピックにするための確率を格納する行列
+  omegat <- omega <- extraDistr::rdirichlet(k, alpha2)   #補助情報のトピック分布をディクレリ乱数から生成
+  gammat <- gamma <- extraDistr::rdirichlet(1, alpha3)   #トピックに関係のないタグ
+  omega0 <- rbind(omega, gamma)   #単語分布の結合
   
-  #文書のトピック分布から単語を発生
-  zd <- as.numeric(z1 %*% 1:k)   #0,1を数値に置き換える
-  wn <- rmnom(w[i], 1, phi[zd, ])   #文書のトピックから単語を生成
-  wd <- colSums(wn)   #単語ごとに合計して1行にまとめる
-  WX[i, ] <- wd
+  ##多項分布からトピックおよび単語データを生成
+  WX <- matrix(0, nrow=d, ncol=v)
+  AX <- matrix(0, nrow=d, ncol=a)
+  word_list <- list()
+  aux_list <- list()
+  Z0 <- rep(0, sum(x)) 
+  Z1_list <- list()
+  Z2_list <- list()
   
-  #文書のトピック分布から補助変数を発生
-  #文書で発生させたトピックのみを補助情報のトピック分布とする
-  rate <- rep(0, k)
-  z_table <- plyr::count(zd)
-  lambda[i, z_table$x] <-  z_table$freq / sum(z_table$freq)   #補助情報のトピック分布
+  #文書ごとにトピックと単語を逐次生成
+  for(i in 1:d){
+    
+    #文書のトピック分布を生成
+    z1 <- rmnom(w[i], 1, theta[i, ])   #文書のトピック分布を生成
+    z1_vec <- as.numeric(z1 %*% 1:k)
+    
+    #文書のトピック分布から単語を生成
+    word <- rmnom(w[i], 1, phi[z1_vec, ])   #文書のトピックから単語を生成
+    word_vec <- colSums(word)   #単語ごとに合計して1行にまとめる
+    WX[i, ] <- word_vec
+    
+    #文書のトピック分布から補助変数を生成
+    #文書で生成させたトピックのみを補助情報のトピック分布とする
+    lambda[i, ] <- colSums(z1) / w[i]   #補助情報のトピック分布
+    
+    #ベルヌーイ分布からトピックに関係があるかどうかを生成
+    index <- which(a_id==i)
+    Z0[index] <- rbinom(length(index), 1, beta0[index])
   
-  #ベルヌーイ分布からトピックに関係があるかどうかを発生
-  index <- which(aux_id==i) 
-  z0[index] <- rbinom(length(index), 1, beta0[index])
-  
-  #トピックを発生
-  zi <- rmnom(x[i], 1, lambda[i, ])
-  z2 <- cbind(zi * matrix(z0[index], nrow=length(index), ncol=k), 1-z0[index])
-  
-  #発生させたトピックの単語分布に従い単語を発生
-  zx <- as.numeric(z2 %*% 1:(k+1))
-  an <- rmnom(length(zx), 1, omega0[zx, ])
-  ad <- colSums(an)
-  AX[i, ] <- ad
-  
-  #文書トピックおよび補助情報トピックを格納
-  Z1[[i]] <- zd
-  Z2[[i]] <- zx
+    #補助情報のトピックを生成
+    z2_aux <- rmnom(x[i], 1, lambda[i, ])
+    z2 <- cbind(z2_aux * Z0[index], 1-Z0[index])
+    z2_vec <- as.numeric(z2 %*% 1:(k+1))
+    
+    #生成させたトピックの単語分布に従い単語を生成
+    aux <- rmnom(x[i], 1, omega0[z2_vec, ])
+    aux_vec <- colSums(aux)
+    AX[i, ] <- aux_vec
+    
+    #文書トピックおよび補助情報トピックを格納
+    Z1_list[[i]] <- z1
+    Z2_list[[i]] <- z2
+    word_list[[i]] <- as.numeric(word %*% 1:v)
+    aux_list[[i]] <- as.numeric(aux %*% 1:a)
+  }
+  if(min(colSums(AX)) > 0 & min(colSums(WX)) > 0){
+    break
+  }
 }
 
 #データ行列を整数型行列に変更
+Z1 <- do.call(rbind, Z1_list)
+Z2 <- do.call(rbind, Z2_list)
+wd <- unlist(word_list)
+ad <- unlist(aux_list)
 storage.mode(WX) <- "integer"
 storage.mode(AX) <- "integer"
-r0 <- c(mean(z0), 1-mean(z0))
+r0 <- c(mean(Z0), 1-mean(Z0))
 
 
 ####トピックモデル推定のためのデータと関数の準備####
-##それぞれの文書中の単語の出現および補助情報の出現をベクトルに並べる
-##データ推定用IDを作成
-ID1_list <- list()
-wd_list <- list()
-ID2_list <- list()
-ad_list <- list()
-
-#求人ごとに求人IDおよび単語IDを作成
-for(i in 1:nrow(WX)){
-  print(i)
-  
-  #単語のIDベクトルを作成
-  ID1_list[[i]] <- rep(i, w[i])
-  num1 <- (WX[i, ] > 0) * (1:v)
-  num2 <- which(num1 > 0)
-  W1 <- WX[i, (WX[i, ] > 0)]
-  number <- rep(num2, W1)
-  wd_list[[i]] <- number
-  
-  #補助情報のIDベクトルを作成
-  ID2_list[[i]] <- rep(i, x[i])
-  num1 <- (AX[i, ] > 0) * (1:a)
-  num2 <- which(num1 > 0)
-  A1 <- AX[i, (AX[i, ] > 0)]
-  number <- rep(num2, A1)
-  ad_list[[i]] <- number
-}
-
-#リストをベクトルに変換
-ID1_d <- unlist(ID1_list)
-ID2_d <- unlist(ID2_list)
-wd <- unlist(wd_list)
-ad <- unlist(ad_list)
-
 ##インデックスを作成
 doc1_list <- list()
+doc1_vec <- list()
 word_list <- list()
+word_vec <- list()
 doc2_list <- list()
+doc2_vec <- list()
 aux_list <- list()
-for(i in 1:length(unique(ID1_d))) {doc1_list[[i]] <- which(ID1_d==i)}
-for(i in 1:length(unique(wd))) {word_list[[i]] <- which(wd==i)}
-for(i in 1:length(unique(ID2_d))) {doc2_list[[i]] <- which(ID2_d==i)}
-for(i in 1:length(unique(ad))) {aux_list[[i]] <- which(ad==i)}
-gc(); gc()
+aux_vec <- list()
 
+for(i in 1:d){
+  doc1_list[[i]] <- which(w_id==i)
+  doc1_vec[[i]] <- rep(1, length(doc1_list[[i]]))
+  doc2_list[[i]] <- which(a_id==i)
+  doc2_vec[[i]] <- rep(1, length(doc2_list[[i]]))
+}
+for(j in 1:v){
+  word_list[[j]] <- which(wd==j)
+  word_vec[[j]] <- rep(1, length(word_list[[j]]))
+}
+for(j in 1:a){
+  aux_list[[j]] <- which(ad==j)
+  aux_vec[[j]] <- rep(1, length(aux_list[[j]]))
+}
+gc(); gc()
 
 ####マルコフ連鎖モンテカルロ法で対応トピックモデルを推定####
 ##単語ごとに尤度と負担率を計算する関数
 burden_fr <- function(theta, phi, wd, w, k){
-  Bur <-  matrix(0, nrow=length(wd), ncol=k)   #負担係数の格納用
-  for(j in 1:k){
-    #負担係数を計算
-    Bi <- rep(theta[, j], w) * phi[j, wd]   #尤度
-    Bur[, j] <- Bi   
-  }
-  
-  Br <- Bur / rowSums(Bur)   #負担率の計算
-  r <- colSums(Br) / sum(Br)   #混合率の計算
+  #負担係数を計算
+  Bur <- theta[w, ] * t(phi)[wd, ]   #尤度
+  Br <- Bur / rowSums(Bur)   #負担率
+  r <- colSums(Br) / sum(Br)   #混合率
   bval <- list(Br=Br, Bur=Bur, r=r)
   return(bval)
 }
 
+
 ##アルゴリズムの設定
-R <- 10000   #サンプリング回数
+R <- 5000   #サンプリング回数
 keep <- 2   #2回に1回の割合でサンプリング結果を格納
+disp <- 10
 iter <- 0
 burnin <- 1000/keep
 
 ##事前分布の設定
 #ハイパーパラメータの事前分布
-alpha01 <- rep(1.0, k)
-beta0 <- rep(0.5, v)
-gamma0 <- rep(0.5, a)
-alpha01m <- matrix(alpha01, nrow=d, ncol=k, byrow=T)
-beta0m <- matrix(beta0, nrow=k, ncol=v)
-gamma0m <- matrix(gamma0, nrow=a, ncol=k)
-delta0m <- gamma0
+alpha01 <- 1
+alpha02 <- 1
+beta01 <- 0.1
+beta02 <- 0.1
+gamma01 <- 1
+gamma02 <- 1
 
 ##パラメータの初期値
 #tfidfで初期値を設定
-tf <- AX/rowSums(AX)
-idf1 <- log(nrow(AX)/colSums(AX > 0))
-idf2 <- log(nrow(AX)/colSums(AX==0))
+tf <- AX / rowSums(AX)
+idf1 <- log(nrow(AX) / colSums(AX > 0))
+idf2 <- log(nrow(AX) / colSums(AX==0))
 
-theta <- rdirichlet(d, rep(1, k))   #文書トピックのパラメータの初期値
-phi <- rdirichlet(k, colSums(WX)/sum(WX)*v)   #単語トピックのパラメータの初期値
-omega <- rdirichlet(k, idf1)   #タグのトピックのパラメータの初期値
-gamma <- rdirichlet(1, idf2)   #内容と関係のタグのパラメータの初期値
+theta <- extraDistr::rdirichlet(d, rep(1, k))   #文書トピックのパラメータの初期値
+phi <- extraDistr::rdirichlet(k, colSums(WX)/sum(WX)*100)   #単語トピックのパラメータの初期値
+omega <- extraDistr::rdirichlet(k, idf1)   #タグのトピックのパラメータの初期値
+gamma <- extraDistr::rdirichlet(1, idf2)   #内容と関係のタグのパラメータの初期値
 r <- c(0.5, 0.5)   #内容に関係があるかどうかの混合率
 
 ##パラメータの格納用配列
@@ -196,19 +184,13 @@ THETA <- array(0, dim=c(d, k, R/keep))
 PHI <- array(0, dim=c(k, v, R/keep))
 OMEGA <- array(0, dim=c(k, a, R/keep))
 GAMMA <- matrix(0, nrow=R/keep, ncol=a)
-TAU_Z <- rep(0, length(ad))
-W_SEG <- matrix(0, nrow=f, ncol=k)
-A_SEG <- matrix(0, nrow=e, ncol=k+1)
+Z_SEG <- rep(0, f2)
+W_SEG <- matrix(0, nrow=f1, ncol=k)
+A_SEG <- matrix(0, nrow=f2, ncol=k+1)
 storage.mode(W_SEG) <- "integer"
 storage.mode(A_SEG) <- "integer"
-storage.mode(TAU_Z) <- "integer"
+storage.mode(Z_SEG) <- "integer"
 gc(); gc()
-
-##MCMC推定用配列
-wsum0 <- matrix(0, nrow=d, ncol=k)
-vf0 <- matrix(0, nrow=k, ncol=v)
-af0 <- matrix(0, nrow=a, ncol=k)
-aux_z <- rep(0, length(ad))
 
 
 ####ギブスサンプリングでパラメータをサンプリング####
@@ -239,7 +221,7 @@ for(rp in 1:R){
   
   
   ##タグが文書のトピックと関連があるかどうかを決定
-  #発生させた単語トピックからトピック抽出確率を計算
+  #生成させた単語トピックからトピック抽出確率を計算
   aux_sums <- wsum - alpha01m
   theta_aux <- aux_sums/rowSums(aux_sums)
   
@@ -248,7 +230,7 @@ for(rp in 1:R){
   tau02 <- r[2] * gamma[, ad]
   tau <- tau01 / (tau01 + tau02)
   
-  #ベルヌーイ分布より潜在変数を発生
+  #ベルヌーイ分布より潜在変数を生成
   z <- rbinom(e, 1, tau)
   r <- c(mean(z), 1-mean(z))   #混合率
   
