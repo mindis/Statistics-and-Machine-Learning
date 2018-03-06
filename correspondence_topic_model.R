@@ -3,176 +3,174 @@ library(MASS)
 library(lda)
 library(RMeCab)
 library(matrixStats)
-detach("package:gtools", unload=TRUE)
-detach("package:bayesm", unload=TRUE)
+library(Matrix)
+library(bayesm)
+library(HMM)
 library(extraDistr)
 library(reshape2)
 library(dplyr)
 library(plyr)
 library(ggplot2)
 
-set.seed(8079)
+#set.seed(93441)
 
-####データの発生####
+####データの生成####
 #set.seed(423943)
 #文書データの設定
-k <- 8   #トピック数
-d <- 5000   #文書数
-v <- 300   #語彙数
-w <- rpois(d, 200)   #1文書あたりの単語数
-a <- 25   #補助変数数
-x0 <- rpois(d, 10)
-x <- ifelse(x0 < 1, 1, x0)
+k <- 10   #トピック数
+d <- 3000   #文書数
+v <- 1000   #語彙数
+w <- rpois(d, rgamma(d, 75, 0.5))   #1文書あたりの単語数
+a <- 100   #補助変数数
+x <- rtpois(d, 22.5, 2, Inf)
+f1 <- sum(w)
+f2 <- sum(x)
+
+#IDの設定
+w_id <- rep(1:d, w)
+a_id <- rep(1:d, x)
 
 #パラメータの設定
-alpha0 <- round(runif(k, 0.1, 1.25), 3)   #文書のディレクリ事前分布のパラメータ
-alpha1 <- rep(0.25, v)   #単語のディレクリ事前分布のパラメータ
-alpha2 <- rep(0.3, a)   #補助情報のディクレリ事前分布のパラメータ
+alpha0 <- rep(0.2, k)   #文書のディレクリ事前分布のパラメータ
+alpha1 <- rep(0.15, v)   #単語のディレクリ事前分布のパラメータ
+alpha2 <- rep(0.15, a)   #補助情報のディクレリ事前分布のパラメータ
 
-#ディレクリ乱数の発生
-thetat <- theta <- rdirichlet(d, alpha0)   #文書のトピック分布をディレクリ乱数から発生
-phit <- phi <- rdirichlet(k, alpha1)   #単語のトピック分布をディレクリ乱数から発生
-lambda <- matrix(0, nrow=d, ncol=k)   #文書に含むトピックだけを補助情報のトピックにするための確率を格納する行列
-omegat <- omega <- rdirichlet(k, alpha2)   #補助情報のトピック分布をディクレリ乱数から発生
+##モデルに基づき単語を生成
+for(rp in 1:1000){
+  print(rp)
+  
+  #ディレクリ分布からパラメータを生成
+  thetat <- theta <- extraDistr::rdirichlet(d, alpha0)   #文書のトピック分布をディレクリ乱数から生成
+  phit <- phi <- extraDistr::rdirichlet(k, alpha1)   #単語のトピック分布をディレクリ乱数から生成
+  lambda <- matrix(0, nrow=d, ncol=k)   #文書に含むトピックだけを補助情報のトピックにするための確率を格納する行列
+  omegat <- omega <- rdirichlet(k, alpha2)   #補助情報のトピック分布をディクレリ乱数から生成
+  
+  #多項分布の乱数からデータを生成
+  WX <- matrix(0, nrow=d, ncol=v)
+  AX <- matrix(0, nrow=d, ncol=a)
+  word_list <- list()
+  aux_list <- list()
+  Z1_list <- list()
+  Z2_list <- list()
+  
+  for(i in 1:d){
+    #文書のトピックを生成
+    z1 <- rmnom(w[i], 1, theta[i, ])   #文書のトピック分布を生成
+    z1_vec <- as.numeric(z1 %*% 1:k)
+    
+    #文書のトピック分布から単語を生成
+    word <- rmnom(w[i], 1, phi[z1_vec, ])   #文書のトピックから単語を生成
+    word_vec <- colSums(word)   #単語ごとに合計して1行にまとめる
+    WX[i, ] <- word_vec  
+    
+    #文書のトピック分布から補助変数を生成
+    #文書で生成させたトピックのみを補助情報のトピック分布とする
+    rate <- rep(0, k)
+    lambda[i, ] <- colSums(z1) / w[i]
 
-#多項分布の乱数からデータを発生
-WX <- matrix(0, nrow=d, ncol=v)
-AX <- matrix(0, nrow=d, ncol=a)
-Z1 <- list()
-Z2 <- list()
+    #補助情報のトピックを生成
+    z2 <- rmnom(x[i], 1, lambda[i, ])
+    z2_vec <- as.numeric(z2 %*% 1:k)
 
-for(i in 1:d){
-  print(i)
-  
-  #文書のトピック分布を発生
-  z1 <- t(rmultinom(w[i], 1, theta[i, ]))   #文書のトピック分布を発生
-  
-  #文書のトピック分布から単語を発生
-  zn <- z1 %*% c(1:k)   #0,1を数値に置き換える
-  zdn <- cbind(zn, z1)   #apply関数で使えるように行列にしておく
-  wn <- t(apply(zdn, 1, function(x) rmultinom(1, 1, phi[x[1], ])))   #文書のトピックから単語を生成
-  wdn <- colSums(wn)   #単語ごとに合計して1行にまとめる
-  WX[i, ] <- wdn  
-  
-  #文書のトピック分布から補助変数を発生
-  #文書で発生させたトピックのみを補助情報のトピック分布とする
-  rate <- rep(0, k)
-  z_table <- table(zn)
-  lambda[i, as.numeric(names(z_table))] <- z_table/sum(z_table)
-  
-  z2 <- t(rmultinom(x[i], 1, lambda[i, ]))  
-  zx <- z2 %*% 1:k
-  zax <- cbind(zx, z2)
-  an <- t(apply(zax, 1, function(x) rmultinom(1, 1, omega[x[1], ])))
-  adn <- colSums(an)
-  AX[i, ] <- adn
-  
-  #文書トピックおよび補助情報トピックを格納
-  Z1[[i]] <- zdn[, 1]
-  Z2[[i]] <- zax[, 1]
+    #補助情報のトピックから補助情報を生成
+    aux <- rmnom(x[i], 1, omega[z2_vec, ])
+    aux_vec <- colSums(aux)
+    AX[i, ] <- aux_vec
+    
+    #文書トピックおよび補助情報トピックを格納
+    Z1_list[[i]] <- z1
+    Z2_list[[i]] <- z2
+    word_list[[i]] <- as.numeric(word %*% 1:v)
+    aux_list[[i]] <- as.numeric(aux %*% 1:a)
+  }
+  if(min(colSums(AX)) > 0 & min(colSums(WX)) > 0){
+    break
+  }
 }
 
 #データ行列を整数型行列に変更
+Z1 <- do.call(rbind, Z1_list)
+Z2 <- do.call(rbind, Z2_list)
+wd <- unlist(word_list)
+ad <- unlist(aux_list)
 storage.mode(WX) <- "integer"
 storage.mode(AX) <- "integer"
 
 
-####EMアルゴリズムでトピックモデルを推定####
-####トピックモデルのためのデータと関数の準備####
+####トピックモデル推定のためのデータと関数の準備####
 ##それぞれの文書中の単語の出現および補助情報の出現をベクトルに並べる
-##データ推定用IDを作成
-ID1_list <- list()
-wd_list <- list()
-ID2_list <- list()
-ad_list <- list()
-
-#求人ごとに求人IDおよび単語IDを作成
-for(i in 1:nrow(WX)){
-  print(i)
-  
-  #単語のIDベクトルを作成
-  ID1_list[[i]] <- rep(i, w[i])
-  num1 <- (WX[i, ] > 0) * (1:v)
-  num2 <- subset(num1, num1 > 0)
-  W1 <- WX[i, (WX[i, ] > 0)]
-  number <- rep(num2, W1)
-  wd_list[[i]] <- number
-  
-  #補助情報のIDベクトルを作成
-  ID2_list[[i]] <- rep(i, x[i])
-  num1 <- (AX[i, ] > 0) * (1:a)
-  num2 <- subset(num1, num1 > 0)
-  A1 <- AX[i, (AX[i, ] > 0)]
-  number <- rep(num2, A1)
-  ad_list[[i]] <- number
-}
-
-#リストをベクトルに変換
-ID1_d <- unlist(ID1_list)
-ID2_d <- unlist(ID2_list)
-wd <- unlist(wd_list)
-ad <- unlist(ad_list)
-
 ##インデックスを作成
 doc1_list <- list()
+doc1_vec <- list()
 word_list <- list()
+word_vec <- list()
 doc2_list <- list()
+doc2_vec <- list()
 aux_list <- list()
-for(i in 1:length(unique(ID1_d))) {doc1_list[[i]] <- subset(1:length(ID1_d), ID1_d==i)}
-for(i in 1:length(unique(wd))) {word_list[[i]] <- subset(1:length(wd), wd==i)}
-for(i in 1:length(unique(ID2_d))) {doc2_list[[i]] <- subset(1:length(ID2_d), ID2_d==i)}
-for(i in 1:length(unique(ad))) {aux_list[[i]] <- subset(1:length(ad), ad==i)}
+aux_vec <- list()
+
+for(i in 1:d){
+  doc1_list[[i]] <- which(w_id==i)
+  doc1_vec[[i]] <- rep(1, length(doc1_list[[i]]))
+  doc2_list[[i]] <- which(a_id==i)
+  doc2_vec[[i]] <- rep(1, length(doc2_list[[i]]))
+}
+for(j in 1:v){
+  word_list[[j]] <- which(wd==j)
+  word_vec[[j]] <- rep(1, length(word_list[[j]]))
+}
+for(j in 1:a){
+  aux_list[[j]] <- which(ad==j)
+  aux_vec[[j]] <- rep(1, length(aux_list[[j]]))
+}
 gc(); gc()
 
 
 ####マルコフ連鎖モンテカルロ法で対応トピックモデルを推定####
 ##単語ごとに尤度と負担率を計算する関数
 burden_fr <- function(theta, phi, wd, w, k){
-  Bur <-  matrix(0, nrow=length(wd), ncol=k)   #負担係数の格納用
-  for(kk in 1:k){
-    #負担係数を計算
-    Bi <- rep(theta[, kk], w) * phi[kk, c(wd)]   #尤度
-    Bur[, kk] <- Bi   
-  }
-  
-  Br <- Bur / rowSums(Bur)   #負担率の計算
-  r <- colSums(Br) / sum(Br)   #混合率の計算
+  #負担係数を計算
+  Bur <- theta[w, ] * t(phi)[wd, ]   #尤度
+  Br <- Bur / rowSums(Bur)   #負担率
+  r <- colSums(Br) / sum(Br)   #混合率
   bval <- list(Br=Br, Bur=Bur, r=r)
   return(bval)
 }
 
 
 ##アルゴリズムの設定
-R <- 10000   #サンプリング回数
+R <- 5000   #サンプリング回数
 keep <- 2   #2回に1回の割合でサンプリング結果を格納
+disp <- 10 
+burnin <- 1000/keep
 iter <- 0
 
 ##事前分布の設定
 #ハイパーパラメータの事前分布
-alpha01 <- rep(1.0, k)
-beta0 <- rep(0.5, v)
-gamma0 <- rep(0.5, a)
-alpha01m <- matrix(alpha01, nrow=d, ncol=k, byrow=T)
-beta0m <- matrix(beta0, nrow=v, ncol=k)
-gamma0m <- matrix(gamma0, nrow=a, ncol=k)
+alpha01 <- 1
+alpha02 <- 1
+beta01 <- 0.1
+beta02 <- 0.1
 
 ##パラメータの初期値
-theta.ini <- runif(k, 0.5, 2)
-phi.ini <- runif(v, 0.5, 1)
-omega.ini <- runif(a, 0.5, 1)
-theta <- rdirichlet(d, theta.ini)   #文書トピックのパラメータの初期値
-phi <- rdirichlet(k, phi.ini)   #単語トピックのパラメータの初期値
-omega <- rdirichlet(k, omega.ini)   #補助情報トピックのパラメータの初期値
+theta <- rdirichlet(d, rep(1.0, k))  #文書トピックのパラメータの初期値
+phi <- rdirichlet(k, rep(0.5, v))   #単語トピックのパラメータの初期値
+omega <- rdirichlet(k, rep(0.5, a))   #補助情報トピックのパラメータの初期値
 
 ##パラメータの格納用配列
 THETA <- array(0, dim=c(d, k, R/keep))
 PHI <- array(0, dim=c(k, v, R/keep))
 OMEGA <- array(0, dim=c(k, a, R/keep))
-W_SEG <- matrix(0, nrow=R/(keep*10), ncol=sum(w))
-A_SEG <- matrix(0, nrow=R/(keep*10), ncol=sum(x))
+W_SEG <- matrix(0, nrow=f1, ncol=k)
+A_SEG <- matrix(0, nrow=f2, ncol=k)
 storage.mode(W_SEG) <- "integer"
 storage.mode(A_SEG) <- "integer"
 gc(); gc()
+
+##対数尤度の基準値
+LLst1 <- sum(WX %*% log(colSums(WX) / f1))
+LLst2 <- sum(AX %*% log(colSums(AX) / f2))
+LLst <- LLst1 + LLst2
 
 
 ####ギブスサンプリングでパラメータをサンプリング####
@@ -180,80 +178,116 @@ for(rp in 1:R){
   
   ##単語トピックをサンプリング
   #単語ごとにトピックの出現率を計算
-  word_rate <- burden_fr(theta, phi, wd, w, k)$Br
-  
+  word_par <- burden_fr(theta, phi, wd, w_id, k)
+  word_rate <- word_par$Br
+
   #多項分布から単語トピックをサンプリング
-  word_cumsums <- rowCumsums(word_rate)
-  rand <- matrix(runif(nrow(word_rate)), nrow=nrow(word_rate), ncol=k)   #一様乱数
-  word_z <- (k+1) - (word_cumsums > rand) %*% rep(1, k)   #トピックをサンプリング
-  cbind(word_cumsums > rand, (k+1) - (word_cumsums > rand) %*% rep(1, k))
+  Zi1 <- rmnom(f1, 1, word_rate)
+  Zi1_T <- t(Zi1)
+  z1_vec <- as.numeric(Zi1 %*% 1:k)
   
-  
-  #発生させたトピックをダミー変数化
-  Zi1 <- matrix(0, nrow(word_z), k)
-  for(i in 1:k){
-    index <- subset(1:nrow(word_z), word_z==i)
-    Zi1[index, i] <- 1
-  }
   
   ##単語トピックのパラメータを更新
   #ディクレリ分布からthetaをサンプリング
-  wsum <- as.matrix(data.frame(id=ID1_d, Br=Zi1) %>%
-                      dplyr::group_by(id) %>%
-                      dplyr::summarize_all(funs(sum)))[, 2:(k+1)] + alpha01m
-  theta <- t(apply(wsum, 1, function(x) rdirichlet(1, x)))
-
-  #ディクレリ分布からphiをサンプリング
-  vf <- as.matrix(data.frame(id=wd, Br=Zi1) %>%
-                    dplyr::group_by(id) %>%
-                    dplyr::summarize_all(funs(sum)))[, 2:(k+1)] + beta0m
-  phi <- t(apply(t(vf), 1, function(x) rdirichlet(1, x)))
+  wsum0 <- matrix(0, nrow=d, ncol=k)
+  for(i in 1:d){
+    wsum0[i, ] <- Zi1_T[, doc1_list[[i]]] %*% doc1_vec[[i]]
+  }
+  wsum <- wsum0 + alpha01   #ディリクレ分布のパラメータ
+  theta <- extraDistr::rdirichlet(d, wsum)   #ディリクレ分布からパラメータをサンプリング
   
+  #ディクレリ分布からphiをサンプリング
+  vsum0 <- matrix(0, nrow=k, ncol=v)
+  for(j in 1:v){
+    vsum0[, j] <- Zi1_T[, word_list[[j]], drop=FALSE] %*% word_vec[[j]]
+  }
+  vsum <- vsum0 + beta01   #ディリクレ分布のパラメータ
+  phi <- extraDistr::rdirichlet(k, vsum)   #ディリクレ分布からパラメータをサンプリング
+
   
   ##補助情報トピックをサンプリング
-  #発生させた単語トピックからトピック抽出確率を計算
-  aux_sums <- wsum - alpha01m
-  theta_aux <- aux_sums/rowSums(aux_sums)
+  #生成させた単語トピックからトピック抽出確率を計算
+  theta_aux <- wsum0 / w
   
   #補助情報ごとにトピックの出現率を計算
-  aux_rate <- burden_fr(theta_aux, omega, ad, x, k)$Br
+  aux_par <- burden_fr(theta_aux, omega, ad, a_id, k)
+  aux_rate <- aux_par$Br
   
   #多項分布から補助情報トピックをサンプリング
-  aux_cumsums <- rowCumsums(aux_rate)
-  rand <- matrix(runif(nrow(aux_rate)), nrow=nrow(aux_rate), ncol=k)   #一様乱数
-  aux_z <- (k+1) - (aux_cumsums > rand) %*% rep(1, k)   #トピックをサンプリング
-  
-  #発生させたトピックをダミー変数化
-  Zi2 <- matrix(0, nrow(aux_z), k)
-  for(i in 1:k){
-    index <- subset(1:nrow(aux_z), aux_z==i)
-    Zi2[index, i] <- 1
-  }
+  Zi2 <- rmnom(f2, 1, aux_rate)
+  Zi2_T <- t(Zi2)
+  z2_vec <- as.numeric(Zi2 %*% 1:k)
   
   ##補助情報トピックのパラメータを更新
-  af <- as.matrix(data.frame(id=ad, Br=Zi2) %>%
-                    dplyr::group_by(id) %>%
-                    dplyr::summarize_all(funs(sum)))[, 2:(k+1)] + gamma0m
-  omega <- t(apply(t(af), 1, function(x) rdirichlet(1, x)))
+  asum0 <- matrix(0, nrow=k, ncol=a)
+  for(j in 1:a){
+    asum0[, j] <- Zi2_T[, aux_list[[j]], drop=FALSE] %*% aux_vec[[j]]
+  }
+  asum <- asum0 + beta02   #ディリクレ分布のパラメータ
+  omega <- extraDistr::rdirichlet(k, asum)   #ディリクレ分布からパラメータをサンプリング
+  
   
   ##パラメータの格納とサンプリング結果の表示
   #サンプリングされたパラメータを格納
   if(rp%%keep==0){
-    mkeep1 <- rp/keep
-    THETA[, , mkeep1] <- theta
-    PHI[, , mkeep1] <- phi
-    OMEGA[, , mkeep1] <- omega
-    if(rp%%(keep*10)==0){
-      mkeep2 <- rp/(keep*5)
-      W_SEG[mkeep2, ] <- word_z
-      A_SEG[mkeep2, ] <- aux_z
+    mkeep <- rp/keep
+    THETA[, , mkeep] <- theta
+    PHI[, , mkeep] <- phi
+    OMEGA[, , mkeep] <- omega
+    
+    #トピック割当はバーンイン期間を超えたら格納する
+    if(rp%%keep==0 & rp >= burnin){
+      W_SEG <- W_SEG + Zi1
+      A_SEG <- A_SEG + Zi2
     }
-  
+    
     #サンプリング結果を確認
-    print(rp)
-    print(round(cbind(theta[1:5, ], thetat[1:5, ]), 3))
-    #print(round(cbind(phi[, 1:10], phit[, 1:10]), 3))
-    #print(round(cbind(omega[, 1:10], omegat[, 1:10]), 3))
+    if(rp%%disp==0){
+      LL <- sum(log(rowSums(word_par$Bur))) + sum(log(rowSums(aux_par$Bur)))
+      print(rp)
+      print(c(LL, LLst))
+      print(round(cbind(theta[1:10, ], thetat[1:10, ]), 3))
+      print(round(cbind(omega[, 1:10], omegat[, 1:10]), 3))
+    }
   }
 }
+
+####サンプリング結果の可視化と要約####
+burnin <- 2000   #バーンイン期間
+
+##サンプリング結果の可視化
+#文書のトピック分布のサンプリング結果
+matplot(t(THETA[1, , ]), type="l", ylab="パラメータ", main="文書1のトピック分布のサンプリング結果")
+matplot(t(THETA[2, , ]), type="l", ylab="パラメータ", main="文書2のトピック分布のサンプリング結果")
+matplot(t(THETA[3, , ]), type="l", ylab="パラメータ", main="文書3のトピック分布のサンプリング結果")
+matplot(t(THETA[4, , ]), type="l", ylab="パラメータ", main="文書4のトピック分布のサンプリング結果")
+matplot(t(THETA[5, , ]), type="l", ylab="パラメータ", main="文書4のトピック分布のサンプリング結果")
+
+#単語の出現確率のサンプリング結果
+matplot(t(PHI[1, , ]), type="l", ylab="パラメータ", main="トピック1の単語の出現率のサンプリング結果")
+matplot(t(PHI[3, , ]), type="l", ylab="パラメータ", main="トピック2の単語の出現率のサンプリング結果")
+matplot(t(PHI[5, , ]), type="l", ylab="パラメータ", main="トピック3の単語の出現率のサンプリング結果")
+matplot(t(PHI[7, , ]), type="l", ylab="パラメータ", main="トピック4の単語の出現率のサンプリング結果")
+matplot(t(PHI[9, , ]), type="l", ylab="パラメータ", main="トピック5の単語の出現率のサンプリング結果")
+
+#補助情報の出現確率のサンプリング結果
+matplot(t(OMEGA[2, , ]), type="l", ylab="パラメータ", main="トピック1の補助情報の出現率のパラメータのサンプリング結果")
+matplot(t(OMEGA[4, , ]), type="l", ylab="パラメータ", main="トピック2の補助情報の出現率のパラメータのサンプリング結果")
+matplot(t(OMEGA[6, , ]), type="l", ylab="パラメータ", main="トピック3の補助情報の出現率のパラメータのサンプリング結果")
+matplot(t(OMEGA[8, , ]), type="l", ylab="パラメータ", main="トピック4の補助情報の出現率のパラメータのサンプリング結果")
+matplot(t(OMEGA[10, , ]), type="l", ylab="パラメータ", main="トピック5の補助情報の出現率のパラメータのサンプリング結果")
+
+##サンプリング結果の要約推定量
+#トピック分布の事後推定量
+topic_mu <- apply(THETA[, , burnin:(R/keep)], c(1, 2), mean)   #トピック分布の事後平均
+round(cbind(topic_mu, thetat), 3)
+round(topic_sd <- apply(THETA[, , burnin:(R/keep)], c(1, 2), sd), 3)   #トピック分布の事後標準偏差
+
+#単語出現確率の事後推定量
+word_mu <- apply(PHI[, , burnin:(R/keep)], c(1, 2), mean)   #単語の出現率の事後平均
+round(cbind(t(word_mu), t(phit)), 3)
+
+#補助情報出現率の事後推定量
+tag_mu1 <- apply(OMEGA[, , burnin:(R/keep)], c(1, 2), mean)   #補助情報の出現率の事後平均
+round(cbind(t(tag_mu1), t(omegat)), 3)
 
