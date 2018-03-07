@@ -18,7 +18,7 @@ library(ggplot2)
 ####データの発生####
 k <- 10   #トピック数
 d <- 2000   #ユーザー数
-v <- 500   #語彙数
+v <- 1000   #語彙数
 w <- rpois(d, rgamma(d, 45, 0.3))   #1人あたりのページ閲覧数
 f <- sum(w)   #総語彙数
 
@@ -74,7 +74,7 @@ R <- 2000
 keep <- 2  
 iter <- 0
 burnin <- 1000/keep
-disp <- 4
+disp <- 10
 
 #データの設定
 rej2 <- rep(0, v)
@@ -124,7 +124,7 @@ LLbest <- sum(lgamma(rowSums(alpha)) - lgamma(rowSums(alpha + WX))) + sum(lgamma
 ####マルコフ連鎖モンテカルロ法でパラメータをサンプリング####
 for(rp in 1:R){
   
-  ##トピック分布のパラメータuをサンプリング
+  ##ユーザートピック行列Uをサンプリング
   #新しいパラメータをサンプリング
   u_old <- u
   u_new <- u_old + mvrnorm(d, rep(0, k), diag(0.01, k))
@@ -139,13 +139,15 @@ for(rp in 1:R){
   dird_vec[index_nzeros] <- lgamma(alphad_vec[index_nzeros] + WX_vec[index_nzeros]) - lgamma(alphad_vec[index_nzeros])
   
   #対数尤度と対数事前分布を計算
-  lognew1 <- lgamma(rowSums(alphan)) - lgamma(rowSums(alphan + WX)) + rowSums(matrix(dirn_vec, nrow=d, ncol=v))
-  logold1 <- lgamma(rowSums(alphad)) - lgamma(rowSums(alphad + WX)) + rowSums(matrix(dird_vec, nrow=d, ncol=v))
+  dir_new <- lgamma(rowSums(alphan)) - lgamma(rowSums(alphan + WX))
+  dir_old <- lgamma(rowSums(alphad)) - lgamma(rowSums(alphad + WX))
+  lognew1 <- dir_new + rowSums(matrix(dirn_vec, nrow=d, ncol=v))
+  logold1 <- dir_old + rowSums(matrix(dird_vec, nrow=d, ncol=v))
   logpnew1 <- -0.5 * rowSums(u_new %*% inv_cov * u_new)
   logpold1 <- -0.5 * rowSums(u_old %*% inv_cov * u_old)
+
   
-  
-  #MHサンプリング
+  ##MHサンプリング
   rand <- runif(d)   #一様分布から乱数を発生
   LLind_diff <- exp(lognew1 + logpnew1 - logold1 - logpold1)   #採択率を計算
   tau <- (LLind_diff > 1)*1 + (LLind_diff <= 1)*LLind_diff
@@ -154,33 +156,31 @@ for(rp in 1:R){
   flag <- matrix(((tau >= rand)*1 + (tau < rand)*0), nrow=d, ncol=k)
   rej1 <- mean(flag[, 1])
   u <- flag*u_new + (1-flag)*u_old   #alphaがrandを上回っていたら採択
-  u <- scale(u)   #正規化
-  
+  dir_vec <- flag[, 1]*dirn_vec + (1-flag[, 1])*dird_vec
+  dir_mnd <- flag[, 1]*dir_new + (1-flag[, 1])*dir_old
+
   
   ##単語分布のパラメータphiをサンプリング
   for(j in 1:v){
     index_vec <- index_word[[j]]
     
+    #単語ごとにMHサンプリングを実行
     if(j==1){
+      
       #新しいパラメータをサンプリング
       phid <- phi 
       alphan <- alphad <- matrix(G0, nrow=d, ncol=v, byrow=T) * exp(u %*% t(phid))
       phin <- phid[j, ] + mvrnorm(1, rep(0, k), diag(0.01, k))
       alphan[, j] <- G0[j] * exp(u %*% phin)
       
-      #繰り返し1回目のパラメータを更新
-      dir_vec <- rep(0, d*v)
-      alpha_vec <- as.numeric(alphad)
-      dir_vec[index_nzeros] <- lgamma(alpha_vec[index_nzeros] + WX_vec[index_nzeros]) - lgamma(alpha_vec[index_nzeros])
-      
       #Polya分布のパラメータを更新
-      dir_mnd1 <- lgamma(rowSums(alphad)) - lgamma(rowSums(alphad + WX))
+      dir_mnd1 <- dir_mnd
       dir_mnn2 <- dir_mnd2 <- matrix(dir_vec, nrow=d, ncol=v)
       dir_mnn1 <- lgamma(rowSums(alphan)) - lgamma(rowSums(alphan + WX))
       dir_mnn2[index_vec, j] <- lgamma(alphan[index_vec, j] + WX[index_vec, j]) - lgamma(alphan[index_vec, j])
-    
+      
     } else {
-        
+      
       #新しいパラメータをサンプリング
       alphan <- alphad
       phin <- phi[j, ] + mvrnorm(1, rep(0, k), diag(0.01, k))
@@ -209,7 +209,10 @@ for(rp in 1:R){
     dir_mnd1 <- flag*dir_mnn1 + (1-flag)*dir_mnd1
     dir_mnd2 <- flag*dir_mnn2 + (1-flag)*dir_mnd2
   }
-  phi <- scale(phi)   #正規化
+  
+  #パラメータの正規化
+  u <- scale(u)
+  phi <- scale(phi)   
   
   
   ##パラメータの格納とサンプリング結果の表示
