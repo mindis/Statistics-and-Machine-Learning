@@ -36,8 +36,8 @@ a_id <- rep(1:d, x)
 #ƒpƒ‰ƒ[ƒ^‚ÌÝ’è
 alpha0 <- rep(0.15, k)   #•¶‘‚ÌƒfƒBƒŒƒNƒŠŽ–‘O•ª•z‚Ìƒpƒ‰ƒ[ƒ^
 alpha1 <- rep(0.15, v)   #’PŒê‚ÌƒfƒBƒŒƒNƒŠŽ–‘O•ª•z‚Ìƒpƒ‰ƒ[ƒ^
-alpha2 <- c(rep(0.2, a1), rep(0.001, a2))   #ƒgƒsƒbƒN‚ÉŠÖŒW‚Ì‚ ‚éƒ^ƒO‚ÌƒfƒBƒNƒŒƒŠŽ–‘O•ª•z‚Ìƒpƒ‰ƒ[ƒ^
-alpha3 <- c(rep(0.001, a1), rep(1.0, a2))   #ƒgƒsƒbƒN‚ÉŠÖŒW‚Ì‚È‚¢ƒ^ƒO‚ÌƒfƒBƒNƒŒƒŠŽ–‘O•ª•z‚Ìƒpƒ‰ƒ[ƒ^
+alpha2 <- c(rep(0.2, a1), rep(0.0001, a2))   #ƒgƒsƒbƒN‚ÉŠÖŒW‚Ì‚ ‚éƒ^ƒO‚ÌƒfƒBƒNƒŒƒŠŽ–‘O•ª•z‚Ìƒpƒ‰ƒ[ƒ^
+alpha3 <- c(rep(0.0001, a1), rep(1.25, a2))   #ƒgƒsƒbƒN‚ÉŠÖŒW‚Ì‚È‚¢ƒ^ƒO‚ÌƒfƒBƒNƒŒƒŠŽ–‘O•ª•z‚Ìƒpƒ‰ƒ[ƒ^
 beta0 <- rbeta(sum(x), 0.55, 0.175)
 
 ##ƒ‚ƒfƒ‹‚ÉŠî‚Ã‚«’PŒê‚ð¶¬
@@ -111,6 +111,12 @@ storage.mode(WX) <- "integer"
 storage.mode(AX) <- "integer"
 r0 <- c(mean(Z0), 1-mean(Z0))
 
+#’PŒêƒxƒNƒgƒ‹‚ðs—ñ‰»
+aux_table <- table(1:f2, ad)
+aux_data <- matrix(as.numeric(aux_table), nrow=f2, ncol=a)
+storage.mode(aux_data) <- "integer"
+rm(aux_table)
+
 
 ####ƒgƒsƒbƒNƒ‚ƒfƒ‹„’è‚Ì‚½‚ß‚Ìƒf[ƒ^‚ÆŠÖ”‚Ì€”õ####
 ##ƒCƒ“ƒfƒbƒNƒX‚ðì¬
@@ -162,10 +168,10 @@ burnin <- 1000/keep
 #ƒnƒCƒp[ƒpƒ‰ƒ[ƒ^‚ÌŽ–‘O•ª•z
 alpha01 <- 1
 alpha02 <- 1
-beta01 <- 0.1
-beta02 <- 0.1
-gamma01 <- 1
-gamma02 <- 1
+beta01 <- 0.25
+beta02 <- 0.25
+gamma01 <- 0.01
+gamma02 <- 0.01
 
 ##ƒpƒ‰ƒ[ƒ^‚Ì‰Šú’l
 #tfidf‚Å‰Šú’l‚ðÝ’è
@@ -174,10 +180,10 @@ idf1 <- log(nrow(AX) / colSums(AX > 0))
 idf2 <- log(nrow(AX) / colSums(AX==0))
 
 theta <- extraDistr::rdirichlet(d, rep(1, k))   #•¶‘ƒgƒsƒbƒN‚Ìƒpƒ‰ƒ[ƒ^‚Ì‰Šú’l
-phi <- extraDistr::rdirichlet(k, colSums(WX)/sum(WX)*100)   #’PŒêƒgƒsƒbƒN‚Ìƒpƒ‰ƒ[ƒ^‚Ì‰Šú’l
-omega <- extraDistr::rdirichlet(k, idf1)   #ƒ^ƒO‚ÌƒgƒsƒbƒN‚Ìƒpƒ‰ƒ[ƒ^‚Ì‰Šú’l
-gamma <- extraDistr::rdirichlet(1, idf2)   #“à—e‚ÆŠÖŒW‚Ìƒ^ƒO‚Ìƒpƒ‰ƒ[ƒ^‚Ì‰Šú’l
-r <- c(0.5, 0.5)   #“à—e‚ÉŠÖŒW‚ª‚ ‚é‚©‚Ç‚¤‚©‚Ì¬‡—¦
+phi <- extraDistr::rdirichlet(k, rep(2.0, v))   #’PŒêƒgƒsƒbƒN‚Ìƒpƒ‰ƒ[ƒ^‚Ì‰Šú’l
+omega <- extraDistr::rdirichlet(k, rep(10, a))   #ƒ^ƒO‚ÌƒgƒsƒbƒN‚Ìƒpƒ‰ƒ[ƒ^‚Ì‰Šú’l
+gamma <- as.numeric(extraDistr::rdirichlet(1, rep(10, a)))   #“à—e‚ÆŠÖŒW‚Ìƒ^ƒO‚Ìƒpƒ‰ƒ[ƒ^‚Ì‰Šú’l
+r <- 0.5   #“à—e‚ÉŠÖŒW‚ª‚ ‚é‚©‚Ç‚¤‚©‚Ì¬‡—¦
 
 ##ƒpƒ‰ƒ[ƒ^‚ÌŠi”[—p”z—ñ
 THETA <- array(0, dim=c(d, k, R/keep))
@@ -192,94 +198,117 @@ storage.mode(A_SEG) <- "integer"
 storage.mode(Z_SEG) <- "integer"
 gc(); gc()
 
+##‘Î”–Þ“x‚ÌŠî€’l
+LLst1 <- sum(log((colSums(WX) / f1)[wd]))
+LLst2 <- sum(log((colSums(AX) / f2)[ad]))
+LLst <- LLst1 + LLst2
+
 
 ####ƒMƒuƒXƒTƒ“ƒvƒŠƒ“ƒO‚Åƒpƒ‰ƒ[ƒ^‚ðƒTƒ“ƒvƒŠƒ“ƒO####
 for(rp in 1:R){
   
   ##’PŒêƒgƒsƒbƒN‚ðƒTƒ“ƒvƒŠƒ“ƒO
-  #’PŒê‚²‚Æ‚ÉƒgƒsƒbƒN‚ÌoŒ»—¦‚ðŒvŽZ
-  word_rate <- burden_fr(theta, phi, wd, w, k)$Br
+  #’PŒê‚²‚Æ‚ÉƒgƒsƒbƒN‚ÌoŒ»Šm—¦‚ðŒvŽZ
+  word_par <- burden_fr(theta, phi, wd, w_id, k)
+  word_rate <- word_par$Br
   
   #‘½€•ª•z‚©‚ç’PŒêƒgƒsƒbƒN‚ðƒTƒ“ƒvƒŠƒ“ƒO
-  Zi1 <- rmnom(f, 1, word_rate)   
-  z_vec1 <- Zi1 %*% 1:k
+  Zi1 <- rmnom(f1, 1, word_rate)   
+  Zi1_T <- t(Zi1)
+  z1_vec <- as.numeric(Zi1 %*% 1:k)
+  
   
   ##’PŒêƒgƒsƒbƒN‚Ìƒpƒ‰ƒ[ƒ^‚ðXV
   #ƒfƒBƒNƒŒƒŠ•ª•z‚©‚çtheta‚ðƒTƒ“ƒvƒŠƒ“ƒO
+  wsum0 <- matrix(0, nrow=d, ncol=k)
   for(i in 1:d){
-    wsum0[i, ] <- colSums(Zi1[doc1_list[[i]], ])
+    wsum0[i, ] <- Zi1_T[, doc1_list[[i]]] %*% doc1_vec[[i]]
   }
-  wsum <- wsum0 + alpha01m 
-  theta <- extraDistr::rdirichlet(d, wsum)
+  wsum <- wsum0 + alpha01   #ƒfƒBƒNƒŒƒŠ•ª•z‚Ìƒpƒ‰ƒ[ƒ^
+  theta <- extraDistr::rdirichlet(d, wsum)   #ƒfƒBƒNƒŒƒŠ•ª•z‚©‚çtheta‚ðƒTƒ“ƒvƒŠƒ“ƒO
   
   #ƒfƒBƒNƒŒƒŠ•ª•z‚©‚çphi‚ðƒTƒ“ƒvƒŠƒ“ƒO
+  vf0 <- matrix(0, nrow=k, ncol=v)
   for(j in 1:v){
-    vf0[, j] <- colSums(Zi1[word_list[[j]], ])
+    vf0[, j] <- Zi1_T[, word_list[[j]]] %*% word_vec[[j]]
   }
-  vf <- vf0 + beta0m
-  phi <- extraDistr::rdirichlet(k, vf)
+  vf <- vf0 + beta01   #ƒfƒBƒNƒŒƒŠ•ª•z‚Ìƒpƒ‰ƒ[ƒ^
+  phi <- extraDistr::rdirichlet(k, vf)   #ƒfƒBƒNƒŒƒŠ•ª•z‚©‚çphi‚ðƒTƒ“ƒvƒŠƒ“ƒO
   
   
   ##ƒ^ƒO‚ª•¶‘‚ÌƒgƒsƒbƒN‚ÆŠÖ˜A‚ª‚ ‚é‚©‚Ç‚¤‚©‚ðŒˆ’è
   #¶¬‚³‚¹‚½’PŒêƒgƒsƒbƒN‚©‚çƒgƒsƒbƒN’ŠoŠm—¦‚ðŒvŽZ
-  aux_sums <- wsum - alpha01m
-  theta_aux <- aux_sums/rowSums(aux_sums)
+  theta_aux <- wsum0 / w
   
   #ƒxƒ‹ƒk[ƒC•ª•z‚ÌŠm—¦‚ðŒvŽZ
-  tau01 <- r[1] * rowSums(theta_aux[ID2_d, ]*t(omega[, ad]))
-  tau02 <- r[2] * gamma[, ad]
-  tau <- tau01 / (tau01 + tau02)
+  tau01 <- r * rowSums(theta_aux[a_id, ] * t(omega)[ad, ])   #•â••Ï”ƒgƒsƒbƒN‚Ì–Þ“x
+  tau02 <- (1-r) * gamma[ad]   #ƒmƒCƒY•â••Ï”‚Ì–Þ“x
+  tau <- tau01 / (tau01 + tau02)  
   
-  #ƒxƒ‹ƒk[ƒC•ª•z‚æ‚èöÝ•Ï”‚ð¶¬
-  z <- rbinom(e, 1, tau)
-  r <- c(mean(z), 1-mean(z))   #¬‡—¦
+  #ƒxƒ‹ƒk[ƒC•ª•z‚æ‚èƒmƒCƒY‚ÌöÝ•Ï”‚ð¶¬
+  z <- rbinom(f2, 1, tau)
+  r <- mean(z)   #¬‡—¦
+
   
   ##•â•î•ñƒgƒsƒbƒN‚ðƒTƒ“ƒvƒŠƒ“ƒO
   #z=1‚Ìê‡Aƒ^ƒO‚²‚Æ‚ÉƒgƒsƒbƒN‚ÌoŒ»—¦‚ðŒvŽZ
   index_z <- which(z==1)   #z=1‚Ì‚Ý’Šo
-  aux_rate <- burden_fr(theta_aux, omega, ad, x, k)$Br
+  aux_par <- burden_fr(theta_aux, omega, ad[index_z], a_id[index_z], k)
+  aux_rate <- aux_par$Br
   
   #‘½€•ª•z‚©‚ç•â•î•ñƒgƒsƒbƒN‚ðƒTƒ“ƒvƒŠƒ“ƒO
-  Zi2 <- cbind(rmnom(e, 1, aux_rate), 0)   
+  Zi2 <- matrix(0, nrow=f2, ncol=k+1)
+  Zi2[index_z, -(k+1)] <- rmnom(length(index_z), 1, aux_rate)   #‘½€•ª•z‚©‚çƒgƒsƒbƒN‚ðƒTƒ“ƒvƒŠƒ“ƒO
   Zi2[-index_z, k+1] <- 1
-  z_vec1 <- Zi2 %*% 1:(k+1)
+  Zi2_T <- t(Zi2[, -(k+1)])
+  z2_vec <- as.numeric(Zi2 %*% 1:(k+1))
+  
   
   ##ƒ^ƒOƒgƒsƒbƒN‚Ìƒpƒ‰ƒ[ƒ^‚ðXV
-  af <- as.matrix(data.frame(id=ad[index_z], Br=Zi2[index_z, -(k+1)]) %>%
-                    dplyr::group_by(id) %>%
-                    dplyr::summarize_all(funs(sum)))[, 2:(k+1)] + gamma0m
-  omega <- extraDistr::rdirichlet(k, t(af))
+  af0 <- matrix(0, nrow=k, ncol=a)
+  for(j in 1:a){
+    af0[, j] <- Zi2_T[, aux_list[[j]]] %*% aux_vec[[j]]
+  }
+  af <- af0 + gamma01   #ƒfƒBƒNƒŒƒŠ•ª•z‚Ìƒpƒ‰ƒ[ƒ^
+  omega <- extraDistr::rdirichlet(k, af)   #ƒfƒBƒNƒŒƒŠ•ª•z‚©‚çomega‚ðƒTƒ“ƒvƒŠƒ“ƒO
   
   ##“à—e‚ÉŠÖŒW‚Ì‚È‚¢ƒ^ƒO‚Ìƒpƒ‰ƒ[ƒ^‚ÌXV
-  gamma0 <- delta0m
-  par <- tapply(c(Zi2[-index_z, k+1], rep(1, a)), c(ad[-index_z], 1:a), sum) - 1 + gamma0
-  gamma <- rdirichlet(1, par)   #ƒfƒBƒNƒŒƒŠ•ª•z‚æ‚èƒpƒ‰ƒ[ƒ^‚ðƒTƒ“ƒvƒŠƒ“ƒO
+  nf <- colSums(aux_data[-index_z, ]) + gamma02   #ƒfƒBƒNƒŒƒŠ•ª•z‚Ìƒpƒ‰ƒ[ƒ^
+  gamma <- as.numeric(extraDistr::rdirichlet(1, nf))   #ƒfƒBƒNƒŒƒŠ•ª•z‚©‚çgamma‚ðƒTƒ“ƒvƒŠƒ“ƒO
   
   
   ##ƒpƒ‰ƒ[ƒ^‚ÌŠi”[‚ÆƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚Ì•\Ž¦
   #ƒTƒ“ƒvƒŠƒ“ƒO‚³‚ê‚½ƒpƒ‰ƒ[ƒ^‚ðŠi”[
   if(rp%%keep==0){
     #ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚ÌŠi”[
-    mkeep1 <- rp/keep
-    THETA[, , mkeep1] <- theta
-    PHI[, , mkeep1] <- phi
-    OMEGA[, , mkeep1] <- omega
-    GAMMA[mkeep1, ] <- gamma
+    mkeep <- rp/keep
+    THETA[, , mkeep] <- theta
+    PHI[, , mkeep] <- phi
+    OMEGA[, , mkeep] <- omega
+    GAMMA[mkeep, ] <- gamma
     
     #ƒgƒsƒbƒNŠ„“–‚Íƒo[ƒ“ƒCƒ“ŠúŠÔ‚ð’´‚¦‚½‚çŠi”[‚·‚é
-    if(rp >= burnin){
-      TAU_Z <- TAU_Z + z
+    if(rp%%keep==0 & rp >= burnin){
       W_SEG <- W_SEG + Zi1
       A_SEG <- A_SEG + Zi2
+      Z_SEG <- Z_SEG + z
     }
     
-    #ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚ðŠm”F
-    print(rp)
-    print(round(c(r, r0), 3))
-    print(round(cbind(theta[1:10, ], thetat[1:10, ]), 3))
-    print(round(rbind(gamma, gammat), 3))
-    #print(round(cbind(phi[, 1:10], phit[, 1:10]), 3))
-    #print(round(cbind(omega[, 1:10], omegat[, 1:10]), 3))
+    if(rp%%disp==0){
+      
+      #‘Î”–Þ“x‚ÌŒvŽZ
+      LL1 <- sum(log(rowSums(word_par$Bur)))
+      LL2 <- sum(log(rowSums(aux_par$Bur)))
+      LL3 <- sum(log(gamma[ad][-index_z]))
+      LL <- LL1 + LL2 + LL3
+      
+      #ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚ðŠm”F
+      print(rp)
+      print(c(LL, LLst, LL1, LLst1, LL2+LL3, LLst2))
+      print(round(c(r, r0[1]), 3))
+      print(round(cbind(omega[, 96:105], omegat[, 96:105]), 3))
+      print(round(rbind(gamma[91:110], gammat[91:110]), 3))
+    }
   }
 }
 
@@ -294,26 +323,26 @@ matplot(t(THETA[3, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="•¶‘3‚ÌƒgƒsƒbƒN•ª•z‚
 matplot(t(THETA[4, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="•¶‘4‚ÌƒgƒsƒbƒN•ª•z‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
 
 #’PŒê‚ÌoŒ»Šm—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê
-matplot(t(PHI[1, 1:10, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN1‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(PHI[2, 11:20, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN2‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(PHI[3, 21:30, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN3‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(PHI[4, 31:40, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN4‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(PHI[5, 41:50, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN5‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(PHI[6, 51:60, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN6‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(PHI[7, 61:70, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN7‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(PHI[8, 71:80, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN8‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(PHI[1, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN1‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(PHI[2, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN2‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(PHI[3, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN3‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(PHI[4, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN4‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(PHI[5, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN5‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(PHI[6, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN6‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(PHI[7, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN7‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(PHI[8, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN8‚Ì’PŒê‚ÌoŒ»—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
 
 #ƒ^ƒO‚ÌoŒ»Šm—¦‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê
-matplot(t(OMEGA[1, 1:10, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN1‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(OMEGA[2, 6:15, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN2‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(OMEGA[3, 16:25, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN3‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(OMEGA[4, 21:30, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN4‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(OMEGA[5, 26:35, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN5‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(OMEGA[6, 31:40, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN6‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(OMEGA[7, 36:45, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN7‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(t(OMEGA[8, 41:50, ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN8‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
-matplot(GAMMA[, 41:50], type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN‚Æ–³ŠÖŒW‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê1")
-matplot(GAMMA[, 51:60], type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN‚Æ–³ŠÖŒW‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê2")
+matplot(t(OMEGA[1, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN1‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(OMEGA[2, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN2‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(OMEGA[3, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN3‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(OMEGA[4, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN4‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(OMEGA[5, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN5‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(OMEGA[6, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN6‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(OMEGA[7, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN7‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(t(OMEGA[8, , ]), type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN8‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+matplot(GAMMA, type="l", ylab="ƒpƒ‰ƒ[ƒ^", main="ƒgƒsƒbƒN‚Æ–³ŠÖŒW‚Ìƒ^ƒO‚ÌoŒ»—¦‚Ìƒpƒ‰ƒ[ƒ^‚ÌƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê")
+
 
 ##ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚Ì—v–ñ„’è—Ê
 #ƒgƒsƒbƒN•ª•z‚ÌŽ–Œã„’è—Ê
