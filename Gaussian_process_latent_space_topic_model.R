@@ -35,12 +35,14 @@ G0 <- GT0 <- extraDistr::rdirichlet(1, rep(2.0, v))   #単語出現率
 u <- ut <- mvrnorm(d, rep(0, k), diag(0.75, k))
 phi <- phit <- mvrnorm(v, rep(0, k), diag(0.75, k))
 
+
 ##データの生成
 word_list <- list()
 word_vec_list <- list()
 WX <- matrix(0, nrow=d, ncol=v)
 
 for(i in 1:d){
+
   #ディクレリ-多項分布から単語を生成
   alpha <- G0 * exp(u[i, ] %*% t(phi))
   words <- extraDistr::rdirmnom(w[i], 1, alpha)
@@ -93,7 +95,7 @@ for(j in 1:v){
 
 ##事前分布の設定
 cov <- diag(k)
-inv_cov <- solve(cov)
+inv_cov2 <- inv_cov1 <- solve(cov)
 mu <- rep(0, k)
 sigma <- diag(k)
 
@@ -108,6 +110,7 @@ G0 <- colSums(WX) / sum(WX)
 K0 <- rowSums(WX) / sum(WX)
 u <- mvrnorm(d, rep(0, k), diag(0.01, k))
 phi <- mvrnorm(v, rep(0, k), diag(0.01, k))
+
 
 ##パラメータの保存用配列
 logl <- rep(0, R/keep)
@@ -124,13 +127,14 @@ alpha <- matrix(GT0, nrow=d, ncol=v, byrow=T) * exp(ut %*% t(phit))
 LLbest <- sum(lgamma(rowSums(alpha)) - lgamma(rowSums(alpha + WX))) + sum(lgamma(alpha + WX) - lgamma(alpha))
 
 
+
 ####マルコフ連鎖モンテカルロ法でパラメータをサンプリング####
 for(rp in 1:R){
   
   ##ユーザートピック行列Uをサンプリング
   #新しいパラメータをサンプリング
   u_old <- u
-  u_new <- u_old + mvrnorm(d, rep(0, k), diag(0.005, k))
+  u_new <- u_old + mvrnorm(d, rep(0, k), diag(0.01, k))
   alphan <- matrix(G0, nrow=d, ncol=v, byrow=T) * exp(u_new %*% t(phi))
   alphad <- matrix(G0, nrow=d, ncol=v, byrow=T) * exp(u_old %*% t(phi))
   
@@ -146,8 +150,8 @@ for(rp in 1:R){
   dir_old <- lgamma(rowSums(alphad)) - lgamma(rowSums(alphad + WX))
   lognew1 <- dir_new + rowSums(matrix(dirn_vec, nrow=d, ncol=v))
   logold1 <- dir_old + rowSums(matrix(dird_vec, nrow=d, ncol=v))
-  logpnew1 <- -0.5 * rowSums(u_new %*% inv_cov * u_new)
-  logpold1 <- -0.5 * rowSums(u_old %*% inv_cov * u_old)
+  logpnew1 <- -0.5 * rowSums(u_new %*% inv_cov1 * u_new)
+  logpold1 <- -0.5 * rowSums(u_old %*% inv_cov1 * u_old)
   
   ##MHサンプリング
   rand <- runif(d)   #一様分布から乱数を発生
@@ -161,14 +165,14 @@ for(rp in 1:R){
   rej1 <- mean(flag[, 1])
   u <- flag*u_new + (1-flag)*u_old   #alphaがrandを上回っていたら採択
 
-  
+
   ##単語分布のパラメータphiをサンプリング
   index_vec <- index_word[[j]]
   
   #単語ごとにMHサンプリングを実行
   #新しいパラメータをサンプリング
   phid <- phi
-  phin <- phid + mvrnorm(v, rep(0, k), diag(0.01, k))
+  phin <- phid + mvrnorm(v, rep(0, k), diag(0.05, k))
   alphan <- matrix(K0, nrow=v, ncol=d) * exp(phin %*% t(u))
   alphad <- matrix(K0, nrow=v, ncol=d) * exp(phid %*% t(u))
   
@@ -184,8 +188,8 @@ for(rp in 1:R){
   dir_old <- lgamma(rowSums(alphad)) - lgamma(rowSums(alphad + WX_T))
   lognew2 <- dir_new + rowSums(matrix(dirn_vec, nrow=v, ncol=d))
   logold2 <- dir_old + rowSums(matrix(dird_vec, nrow=v, ncol=d))
-  logpnew2 <- -0.5 * rowSums(phin %*% inv_cov * phin)
-  logpold2 <- -0.5 * rowSums(phid %*% inv_cov * phid)
+  logpnew2 <- -0.5 * rowSums(phin %*% inv_cov2 * phin)
+  logpold2 <- -0.5 * rowSums(phid %*% inv_cov2 * phid)
   
   
   ##MHサンプリング
@@ -199,7 +203,7 @@ for(rp in 1:R){
   flag <- matrix(((tau >= rand)*1 + (tau < rand)*0), nrow=v, ncol=k)
   rej2 <- mean(flag[, 1])
   phi <- flag*phin + (1-flag)*phid   #alphaがrandを上回っていたら採択
-  
+
   #パラメータを正規化
   u <- scale(u)
   phi <- scale(phi)
@@ -228,7 +232,8 @@ for(rp in 1:R){
   }
 }
 
-
+####サンプリング結果の可視化と要約####
+##サンプリング結果をプロット
 matplot(t(U[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="トピック分布のサンプリング結果")
 matplot(t(U[2, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="トピック分布のサンプリング結果")
 matplot(t(U[3, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="トピック分布のサンプリング結果")
