@@ -145,39 +145,35 @@ beta2 <- 1
 k1 <- kt1; k2 <- kt2; k3 <- kt3
 
 #トピックモデルのパラメータの真値
-theta1 <- thetat1; theta2 <- thetat2; theta3 <- thetat3
+theta <- thetat1
 phi1 <- phit1; phi2 <- phit2; phi3 <- phit3
-Zi2 <- Level <- Z2; Zi12 <- Z12
-Zi13 <- list()
-Zi13_table <- table(1:d, Z1[, 3])
-for(j in 1:k2){ 
-  Zi13[[j]] <- (matrix(as.numeric(Zi13_table), nrow=d, ncol=ncol(Zi13_table)) * Zi12[, j])[, 1:k3[j]]
-}
-
 
 #トピック数の初期値
 k1 <- 1; k2 <- 2; k3 <- rep(2, k2)
 
 #パラメータの初期値
-theta1 <- extraDistr::rdirichlet(d, rep(1, L))
+theta <- extraDistr::rdirichlet(d, rep(1, L))
 phi1 <- extraDistr::rdirichlet(1, rep(1.0, v))
-theta2 <- as.numeric(extraDistr::rdirichlet(1, rep(1, 2)))
 phi2 <- extraDistr::rdirichlet(k2, rep(1.0, v))
-theta3 <- phi3 <- list()
+phi3 <- list()
 for(j in 1:k2){
-  theta3[[j]] <- extraDistr::rdirichlet(1, rep(1.0, k3[j]))
   phi3[[j]] <- extraDistr::rdirichlet(k3[j], rep(1.0, v))
 }
 
 #トピック割当の初期値
-Zi2 <- rmnom(f, 1, rep(1/L, L))
-Zi2 <- Z2
-Zi12 <- rmnom(d, 1, rep(1/k2, k2))
-Zi13 <- list()
-for(j in 1:k2){
-  Zi13[[j]] <- rmnom(d, 1, rep(0.5, k3[j]))
+Zi1 <- rmnom(d, 1, rep(1/sum(k3), sum(k3)))
+Zi12 <- matrix(0, nrow=d, ncol=k2)
+cumsum_k3 <- cumsum(k3)
+index_z1 <- list()
+for(j in 1:length(k3)){
+  if(j==1){
+    index_z1[[j]] <- 1:cumsum_k3[j]
+  } else {
+    index_z1[[j]] <- (cumsum_k3[j-1]+1):cumsum_k3[j]
+  }
+  Zi12[, j] <- rowSums(Zi1[, index_z1[[j]]])
 }
-
+Zi2 <- rmnom(f, 1, rep(1/L, L))
 
 ##インデックスを作成
 doc_vec <- doc_list <- list()
@@ -190,10 +186,11 @@ for(i in 1:d){
 ####ギブスサンプリングでパラメータをサンプリング####
 for(rp in 1:R){
   
-  ##レベル2のパスをサンプリング
+  ##レベル2のパスの対数尤度
   #新しい潜在変数のパラメータを結合
-  #par0 <- extraDistr::rdirichlet(1, colSums((sparse_data * Zi2[, 2])[doc_list[[sample(1:d, 1)]], ]) + alpha3)
-  par0 <- phit2[sample(1:kt2, 1), ]
+  index_d <- sample(1:d, 1)
+  #par0 <- extraDistr::rdirichlet(1, colSums((sparse_data * Zi2[, 2])[doc_list[[index_d]], ]) + alpha3)
+  par0 <- extraDistr::rdirichlet(1, rep(0.3, v))
   phi2_new <- rbind(phi2, par0)
   
   #文書ごとに対数尤度を設定
@@ -204,83 +201,90 @@ for(rp in 1:R){
   }
   LLi2 <- t(LLi2_T)
   Li2 <- exp(LLi2 - rowMaxs(LLi2))   #尤度に変換
+
   
-  #CRPの設定
-  gamma0 <- cbind(matrix(colSums(Zi12), nrow=d, ncol=k2, byrow=T) - Zi12, beta1)
-  gamma1 <- Li2 * gamma0/(d-1-beta)
+  ##レベル3のパスの対数尤度
+  LLi3 <- list()
+  LLi_z <- cbind()
+  #par0 <- extraDistr::rdirichlet(1, colSums((sparse_data * Zi2[, 3])[doc_list[[index_d]], ]) + alpha3)   #新しいパラメータ
+  par0 <- extraDistr::rdirichlet(1, rep(0.3, v))
   
-  
-  #潜在変数zの割当確率の推定とZのサンプリング
-  z12_rate <- gamma1 / rowSums(gamma1)
-  Zi12 <- rmnom(d, 1, z12_rate)
-  
-  #新しいトピックの生成がないなら新しいトピックは消滅
-  if(min(colSums(Zi12)) <= 10){
-    index <- which(colSums(Zi12) <= 10)
-    Zi12 <- Zi12[, -index]
-    z12_vec <- as.numeric(Zi12 %*% 1:(ncol(Zi12)))
-    k2 <- ncol(Zi12)   #トピック数を更新
+  #レベル2のテーブルごとにレベル3のパスの対数尤度を設定
+  for(j in 1:(length(phi3)+1)){
     
-  } else {
-    
-    #新しいトピックを生成
-    z12_vec <- as.numeric(Zi12 %*% 1:(k2+1))
-    k2 <- sum(colSums(Zi12) > 0)   #トピック数を更新
-  }
-  
-  ##レベル3のパスのサンプリング
-  #レベル3の新しいパラメータをサンプリング
-  if(k2 > length(phi3)){
-    par <- colSums(sparse_data * Zi12[d_id, 3] * Zi2[, 3]) + alpha3
-    phi3[[k2]] <- as.numeric(extraDistr::rdirichlet(1, par))
-    Zi13[[k2]] <- matrix(1, nrow=d, ncol=1)
-    k3[k2] <- 1
-  }
-  
-  #レベル2のノードごとに新しいノードをサンプリング
-  z13_vec <- list()
-  Zi13_list <- Zi13
-  Zi13 <- list()
-  
-  for(j in 1:k2){
     #新しい潜在変数のパラメータを結合
-    #par0 <- extraDistr::rdirichlet(1, colSums((sparse_data * Zi12[d_id, j] * Zi2[, 3])[doc_list[[sample(1:d, 1)]], ]) + alpha3)
-    sparse_data * Zi12[d_id, j]
-    
-    phi3_new <- rbind(phi3[[j]], par0)
+    if(j < (length(phi3)+1)){
+      phi3_new <- rbind(phi3[[j]], par0)
+    } else {
+      phi3_new <- par0
+    }
     
     #文書ごとに対数尤度を設定
-    LLho3 <- as.matrix(t((sparse_data * Zi12[d_id, j] * Zi2[, 3]) %*% t(log(phi3_new))))
+    LLho3 <- as.matrix(t((sparse_data * Zi2[, 3]) %*% t(log(phi3_new))))
     LLi3_T <- matrix(0, nrow=nrow(phi3_new), ncol=d)
     for(i in 1:d){
       LLi3_T[, i] <- LLho3[, doc_list[[i]]] %*% doc_vec[[i]]
     }
-    LLi3 <- t(LLi3_T)
-    Li3 <- exp(LLi3 - rowMaxs(LLi3))   #尤度に変換
-    
-    #CRPの設定
-    gamma0 <- cbind(matrix(colSums(Zi13_list[[j]]), nrow=d, ncol=k3[j], byrow=T) - Zi13_list[[j]], beta2)
-    gamma1 <- Li3 * gamma0/(d-1-beta)
-    
-    #潜在変数zの割当確率の推定とZのサンプリング
-    z13_rate <- gamma1 / rowSums(gamma1)
-    Zi13[[j]] <- rmnom(d, 1, z13_rate)
-    
-    #新しいトピックの生成がないなら新しいトピックは消滅
-    if(min(colSums(Zi13[[j]])) <= 5){
-      index <- which(colSums(Zi13[[j]]) <= 5)
-      Zi13[[j]] <- Zi13[[j]][, -index, drop=FALSE]
-      z13_vec[[j]] <- as.numeric(Zi13[[j]] %*% 1:ncol(Zi13[[j]]))
-      k3[j] <- ncol(Zi13[[j]])   #トピック数を更新
-      
+    LLi3[[j]] <- t(LLi3_T)
+    LLi_z <- cbind(LLi_z, LLi3[[j]] + LLi2[, j])   #対数尤度の和
+  }
+  LLi_z
+  Li_z <- exp(LLi_z - rowMaxs(LLi_z))   #尤度に変換
+
+  ##CRPの事前分布を設定
+  #既存のテーブルと新しいテーブルのインデックスを定義
+  index_exit <- c()
+  for(j in 1:length(index_z1)){
+    if(j==1){
+      index_exit <- c(index_exit, index_z1[[j]])
     } else {
-      
-      #新しいトピックを生成
-      z13_vec[[j]] <- as.numeric(Zi13[[j]] %*% 1:(k3[j]+1))
-      k3[j] <- sum(colSums(Zi13[[j]]) > 0)   #トピック数を更新
+      index_exit <- c(index_exit, index_z1[[j]]+1)
     }
   }
+  #CRPを計算
+  gamma0 <- matrix(0, nrow=d, ncol=ncol(LLi_z))
+  gamma0[, index_exit] <- matrix(colSums(Zi1), nrow=d, ncol=length(index_exit)) - Zi1; gamma0[, -index_exit] <- beta1
+  gamma1 <- Li_z * gamma0/(d-1-beta1)
+  colSums(Zi1)
+  
+  #潜在変数zの割当確率の推定とZのサンプリング
+  z1_rate <- gamma1 / rowSums(gamma1)
+  Zi01 <- rmnom(d, 1, z1_rate)
+  
 
+  ##テーブル定義を更新
+  #既存テーブルと新規テーブルの生成と消滅のインデックスを定義
+  index_list <- index_z1
+  Zi1_index <- (colSums(Zi01) > 0) * 1:ncol(Zi01)
+  
+  for(j in 1:k2){
+    if(j==1){
+      index <- c(index_list[[j]], max(index_list[[j]])+1)
+      index_z1[[j]] <- subset(Zi1_index[index], Zi1_index[index] %in% index)
+    } else {
+      index <- c(j-1+index_list[[j]], j-1+max(index_list[[j]])+1)
+      index_z1[[j]] <- subset(Zi1_index[index], Zi1_index[index] %in% index)
+      if(min(index_z1[[j]]) - max(index_z1[[j-1]]) != 1){
+        x <- (max(index_z1[[j-1]]) + 1):(max(index_z1[[j-1]]) + 100)
+        index_z1[[j]] <- x[1:length(index_z1[[j]])]
+      }
+    }
+  }
+  if(Zi1_index[length(Zi1_index)] > 0){
+    index_z1[[k2+1]] <- max(index_z1[[k2]])+1
+  }
+  k2 <- length(index_z1)
+  
+
+  #ノードから消滅したテーブルを削除
+  Zi1 <- Zi01[, Zi1_index > 0]
+  k3 <- rep(0, k2)
+  Zi12 <- matrix(0, nrow=d, ncol=k2)
+  for(j in 1:k2){
+    k3[j] <- length(index_z1[[j]])
+    Zi12[, j] <- rowSums(Zi1[, index_z1[[j]], drop=FALSE])
+  }
+  
   ##パラメータを更新
   #レベル1の単語分布をサンプリング
   vsum11 <- colSums(sparse_data * Zi2[, 1]) + alpha3
@@ -293,29 +297,24 @@ for(rp in 1:R){
   #レベル3の単語分布をサンプリング
   phi3 <- list()
   for(j in 1:k2){
-    vsum13 <- as.matrix(t(Zi13[[j]][d_id, ]) %*% (sparse_data * Zi2[, 3]) + alpha3)
+    vsum13 <- as.matrix(t(Zi1[d_id, index_z1[[j]], drop=FALSE]) %*% (sparse_data * Zi2[, 3]) + alpha3)
     phi3[[j]] <- extraDistr::rdirichlet(nrow(vsum13), vsum13)
   }
   
-  
   ##トピック割当をサンプリング
   #トピック割当の尤度を設定
-  Zi12_d <- Zi12[d_id, ]
-  par1 <- phit1[word_vec]
-  par2 <- rowSums(t(phi2)[word_vec, ] * Zi12_d)
-  par0 <- c()
-  for(j in 1:length(phi3)){
-    par0 <- cbind(par0, rowSums(t(phi3[[j]])[word_vec, , drop=FALSE] * Zi13[[j]][d_id, ]))
+  par1 <- phi1[word_vec]   
+  par2 <- rowSums(t(phi2)[word_vec, ] * Zi12[d_id, ])
+  par3 <- matrix(0, nrow=f, ncol=k2)
+  for(j in 1:k2){
+    par3[, j] <- rowSums(t(phi3[[j]])[word_vec, , drop=FALSE] * Zi1[d_id, index_z1[[j]], drop=FALSE])
   }
-  par3 <- rowSums(par0 * Zi12_d)
-  z_par <- theta1[d_id, ] * cbind(par1, par2, par3)   #トピック尤度
+  z_par <- theta[d_id, ] * cbind(par1, par2, rowSums(par3))   #レベルごとのトピック尤度
   
   #多項分布からトピック割当をサンプリング
   z_rate <- z_par / rowSums(z_par)   #レベル割当確率
   Zi2 <- rmnom(f, 1, z_rate)   #多項分布からレベル割当を生成
-  Zi2 <- Z2
   Zi2_T <- t(Zi2)
-  
   
   ##トピック分布を更新
   #ディレクリ分布のパラメータ
@@ -327,7 +326,6 @@ for(rp in 1:R){
   
   #ディレクリ分布からパラメータをサンプリング
   theta <- extraDistr::rdirichlet(d, wsum)
-  
   
   ##パラメータの格納とサンプリング結果の表示
   #サンプリングされたパラメータを格納
@@ -344,7 +342,7 @@ for(rp in 1:R){
       print(rp)
       print(c(k1, k2, k3))
       print(c(kt1, kt2, kt3))
-      print(colSums(Zi12))
+      print(colSums(Zi1))
       print(round(cbind(theta[1:10, ], thetat1[1:10, ]), 3))
       print(round(rbind(phi2[1:nrow(phi2), 1:20], phit2[, 1:20]), 3))
     }
