@@ -35,7 +35,7 @@ for(rp in 1:1000){
   print(rp)
   
   #ディレクリ分布のパラメータを設定
-  alpha1 <- alphat1 <- c(0.1, 0.2, 0.225)
+  alpha1 <- alphat1 <- c(0.1, 0.2, 0.25)
   alpha2 <- alphat2 <- rep(10.0, k2)
   alpha3 <- alphat3 <- list()
   for(j in 1:k2){
@@ -147,17 +147,30 @@ k1 <- kt1; k2 <- kt2; k3 <- kt3
 #トピックモデルのパラメータの真値
 theta <- thetat1
 phi1 <- phit1; phi2 <- phit2; phi3 <- phit3
+Zi2 <- Z2
+Zi1 <- rmnom(d, 1, rep(1/sum(k3), sum(k3)))
+Zi12 <- matrix(0, nrow=d, ncol=k2)
+cumsum_k3 <- cumsum(k3)
+index_z1 <- list()
+for(j in 1:length(k3)){
+  if(j==1){
+    index_z1[[j]] <- 1:cumsum_k3[j]
+  } else {
+    index_z1[[j]] <- (cumsum_k3[j-1]+1):cumsum_k3[j]
+  }
+  Zi12[, j] <- rowSums(Zi1[, index_z1[[j]]])
+}
 
 #トピック数の初期値
-k1 <- 1; k2 <- 2; k3 <- rep(2, k2)
+k1 <- 1; k2 <- 2; k3 <- rep(1, k2)
 
 #パラメータの初期値
 theta <- extraDistr::rdirichlet(d, rep(1, L))
-phi1 <- extraDistr::rdirichlet(1, rep(1.0, v))
-phi2 <- extraDistr::rdirichlet(k2, rep(1.0, v))
+phi1 <- extraDistr::rdirichlet(1, rep(10.0, v))
+phi2 <- extraDistr::rdirichlet(k2, rep(10.0, v))
 phi3 <- list()
 for(j in 1:k2){
-  phi3[[j]] <- extraDistr::rdirichlet(k3[j], rep(1.0, v))
+  phi3[[j]] <- extraDistr::rdirichlet(k3[j], rep(10.0, v))
 }
 
 #トピック割当の初期値
@@ -171,7 +184,7 @@ for(j in 1:length(k3)){
   } else {
     index_z1[[j]] <- (cumsum_k3[j-1]+1):cumsum_k3[j]
   }
-  Zi12[, j] <- rowSums(Zi1[, index_z1[[j]]])
+  Zi12[, j] <- rowSums(Zi1[, index_z1[[j]], drop=FALSE])
 }
 Zi2 <- rmnom(f, 1, rep(1/L, L))
 
@@ -189,9 +202,9 @@ for(rp in 1:R){
   ##レベル2のパスの対数尤度
   #新しい潜在変数のパラメータを結合
   index_d <- sample(1:d, 1)
-  #par0 <- extraDistr::rdirichlet(1, colSums((sparse_data * Zi2[, 2])[doc_list[[index_d]], ]) + alpha3)
-  par0 <- extraDistr::rdirichlet(1, rep(0.3, v))
-  phi2_new <- rbind(phi2, par0)
+  #par01 <- extraDistr::rdirichlet(1, colSums((sparse_data)[doc_list[[index_d]], ]) + alpha1)
+  par01 <- extraDistr::rdirichlet(1, rep(5.0, v))
+  phi2_new <- rbind(phi2, par01)
   
   #文書ごとに対数尤度を設定
   LLho2 <- as.matrix(t((sparse_data * Zi2[, 2]) %*% t(log(phi2_new))))
@@ -206,17 +219,16 @@ for(rp in 1:R){
   ##レベル3のパスの対数尤度
   LLi3 <- list()
   LLi_z <- cbind()
-  #par0 <- extraDistr::rdirichlet(1, colSums((sparse_data * Zi2[, 3])[doc_list[[index_d]], ]) + alpha3)   #新しいパラメータ
-  par0 <- extraDistr::rdirichlet(1, rep(0.3, v))
+  par02 <- extraDistr::rdirichlet(1, colSums((sparse_data)[doc_list[[index_d]], ]) + alpha1)
   
   #レベル2のテーブルごとにレベル3のパスの対数尤度を設定
   for(j in 1:(length(phi3)+1)){
     
     #新しい潜在変数のパラメータを結合
     if(j < (length(phi3)+1)){
-      phi3_new <- rbind(phi3[[j]], par0)
+      phi3_new <- rbind(phi3[[j]], par02)
     } else {
-      phi3_new <- par0
+      phi3_new <- par01
     }
     
     #文書ごとに対数尤度を設定
@@ -228,9 +240,9 @@ for(rp in 1:R){
     LLi3[[j]] <- t(LLi3_T)
     LLi_z <- cbind(LLi_z, LLi3[[j]] + LLi2[, j])   #対数尤度の和
   }
-  LLi_z
   Li_z <- exp(LLi_z - rowMaxs(LLi_z))   #尤度に変換
 
+  
   ##CRPの事前分布を設定
   #既存のテーブルと新しいテーブルのインデックスを定義
   index_exit <- c()
@@ -241,29 +253,39 @@ for(rp in 1:R){
       index_exit <- c(index_exit, index_z1[[j]]+1)
     }
   }
+  
   #CRPを計算
   gamma0 <- matrix(0, nrow=d, ncol=ncol(LLi_z))
-  gamma0[, index_exit] <- matrix(colSums(Zi1), nrow=d, ncol=length(index_exit)) - Zi1; gamma0[, -index_exit] <- beta1
+  gamma0[, index_exit] <- matrix(colSums(Zi1), nrow=d, ncol=length(index_exit), byrow=T) - Zi1; gamma0[, -index_exit] <- beta1
   gamma1 <- Li_z * gamma0/(d-1-beta1)
-  colSums(Zi1)
   
   #潜在変数zの割当確率の推定とZのサンプリング
   z1_rate <- gamma1 / rowSums(gamma1)
   Zi01 <- rmnom(d, 1, z1_rate)
-  
 
   ##テーブル定義を更新
   #既存テーブルと新規テーブルの生成と消滅のインデックスを定義
   index_list <- index_z1
-  Zi1_index <- (colSums(Zi01) > 0) * 1:ncol(Zi01)
-  
+  Zi1_index <- (colSums(Zi01) >= 5) * 1:ncol(Zi01)
+
   for(j in 1:k2){
+    if(length(index_z1[[j]])==0){
+      next
+    }
+  
     if(j==1){
       index <- c(index_list[[j]], max(index_list[[j]])+1)
       index_z1[[j]] <- subset(Zi1_index[index], Zi1_index[index] %in% index)
+      index_z1[[j]] <- 1:length(index_z1[[1]])
     } else {
       index <- c(j-1+index_list[[j]], j-1+max(index_list[[j]])+1)
       index_z1[[j]] <- subset(Zi1_index[index], Zi1_index[index] %in% index)
+      if(length(index_z1[[j]])==0){
+        index_z1[[j]] <- NULL
+        next
+      }
+      index_z1[[j]] <- min(index_z1[[j]]):(min(index_z1[[j]])+(length(index_z1[[j]])-1))
+      
       if(min(index_z1[[j]]) - max(index_z1[[j-1]]) != 1){
         x <- (max(index_z1[[j-1]]) + 1):(max(index_z1[[j-1]]) + 100)
         index_z1[[j]] <- x[1:length(index_z1[[j]])]
@@ -304,7 +326,7 @@ for(rp in 1:R){
   ##トピック割当をサンプリング
   #トピック割当の尤度を設定
   par1 <- phi1[word_vec]   
-  par2 <- rowSums(t(phi2)[word_vec, ] * Zi12[d_id, ])
+  par2 <- rowSums(t(phi2)[word_vec, , drop=FALSE] * Zi12[d_id, ])
   par3 <- matrix(0, nrow=f, ncol=k2)
   for(j in 1:k2){
     par3[, j] <- rowSums(t(phi3[[j]])[word_vec, , drop=FALSE] * Zi1[d_id, index_z1[[j]], drop=FALSE])
