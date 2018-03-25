@@ -16,12 +16,14 @@ library(ggplot2)
 ####データの発生####
 #set.seed(423943)
 #データの設定
-k <- 10   #トピック数
-d <- 3000   #文書数
-v <- 500   #語彙数
+k <- 15   #トピック数
+d <- 20000   #文書数
+v <- 3000   #語彙数
 w <- rpois(d, rgamma(d, 55, 0.50))   #1文書あたりの単語数
 f <- sum(w)
 
+#IDの設定
+d_id <- rep(1:d, w)
 
 #パラメータの設定
 alpha0 <- rep(0.1, k)   #文書のディレクリ事前分布のパラメータ
@@ -69,9 +71,17 @@ wd <- unlist(wd_list)
 
 ##インデックスを作成
 doc_list <- list()
+doc_vec <- list()
 word_list <- list()
-for(i in 1:length(unique(ID_d))) {doc_list[[i]] <- which(ID_d==i)}
-for(i in 1:length(unique(wd))) {word_list[[i]] <- which(wd==i)}
+word_vec <- list()
+for(i in 1:length(unique(ID_d))){
+  doc_list[[i]] <- which(ID_d==i)
+  doc_vec[[i]] <- rep(1, length(doc_list[[i]]))
+}
+for(i in 1:length(unique(wd))){
+  word_list[[i]] <- which(wd==i)
+  word_vec[[i]] <- rep(1, length(word_list[[i]]))
+}
 gc(); gc()
 
 n_word <- c()
@@ -80,14 +90,11 @@ for(j in 1:v) {n_word <- c(n_word, length(word_list[[j]]))}
 
 ####マルコフ連鎖モンテカルロ法で対応トピックモデルを推定####
 ##単語ごとに尤度と負担率を計算する関数
-burden_fr <- function(theta, phi, wd, w, k){
+burden_fr <- function(theta, phi, wd, d_id, k){
   Bur <-  matrix(0, nrow=length(wd), ncol=k)   #負担係数の格納用
-  for(j in 1:k){
-    #負担係数を計算
-    Bi <- rep(theta[, j], w) * phi[j, wd]   #尤度
-    Bur[, j] <- Bi   
-  }
-  
+
+  #負担係数を計算
+  Bur <- theta[d_id, ] * t(phi)[wd, ]   #尤度
   Br <- Bur / rowSums(Bur)   #負担率の計算
   bval <- list(Br=Br, Bur=Bur)
   return(bval)
@@ -112,8 +119,8 @@ theta <- rdirichlet(d, rep(1, k))   #文書トピックのパラメータの初期値
 phi <- rdirichlet(k, colSums(WX)/sum(WX)*v)   #単語トピックのパラメータの初期値
 
 ##パラメータの格納用配列
-#THETA <- array(0, dim=c(d, k, R/keep))
-#PHI <- array(0, dim=c(k, v, R/keep))
+THETA <- matrix(0, nrow=d, ncol=k)
+PHI <- matrix(0, nrow=k, ncol=v)
 SEG <- matrix(0, nrow=f, ncol=k)
 storage.mode(SEG) <- "integer"
 gc(); gc()
@@ -131,49 +138,46 @@ for(rp in 1:R){
   
   ##単語トピックをサンプリング
   #単語ごとにトピックの出現率を計算
-  word_par <- burden_fr(theta, phi, wd, w, k)
+  word_par <- burden_fr(theta, phi, wd, d_id, k)
   word_rate <- word_par$Br
-
+  
   
   #多項分布から単語トピックをサンプリング
   Zi <- rmnom(f, 1, word_rate)   
+  Zi_T <- t(Zi)
   z_vec <- Zi %*% 1:k
   
   ##単語トピックのパラメータを更新
   #ディクレリ分布からthetaをサンプリング
+  wsum0 <- matrix(0, nrow=d, ncol=k)
   for(i in 1:d){
-    wsum0[i, ] <- rep(1, w[i]) %*% Zi[doc_list[[i]], ]
+    wsum0[i, ] <- Zi_T[, doc_list[[i]]] %*% doc_vec[[i]]
   }
   wsum <- wsum0 + alpha01m 
   theta <- extraDistr::rdirichlet(d, wsum)
   
+  
   #ディクレリ分布からphiをサンプリング
   for(j in 1:v){
-    vf0[, j] <- rep(1, n_word[j]) %*% Zi[word_list[[j]], ]
+    vf0[, j] <- Zi_T[, word_list[[j]]] %*% word_vec[[j]]
   }
   vf <- vf0 + beta0m
   phi <- extraDistr::rdirichlet(k, vf)
   
   ##パラメータの格納とサンプリング結果の表示
-  #サンプリングされたパラメータを格納
-  if(rp%%keep==0){
-    #サンプリング結果の格納
-    mkeep <- rp/keep
-    #THETA[, , mkeep] <- theta
-    #PHI[, , mkeep] <- phi
-    
-    #トピック割当はバーンイン期間を超えたら格納する
-    if(rp%%keep==0 & rp >= burnin){
-      SEG <- SEG + Zi
-    }
-    
-    #サンプリング結果を確認
-    if(rp%%disp==0){
-      print(rp)
-      print(c(LLst, sum(log(rowSums(word_par$Bur)))))
-      print(round(cbind(theta[1:10, ], thetat[1:10, ]), 3))
-      print(round(cbind(phi[, 1:10], phit[, 1:10]), 3))
-    }
+  #トピック割当はバーンイン期間を超えたら格納する
+  if(rp%%keep==0 & rp >= burnin){
+    SEG <- SEG + Zi
+    THETA <- THETA + theta
+    PHI <- PHI + phi
+  }
+  
+  #サンプリング結果を確認
+  if(rp%%disp==0){
+    print(rp)
+    print(c(LLst, sum(log(rowSums(word_par$Bur)))))
+    print(round(rbind(theta[1:5, ], thetat[1:5, ]), 3))
+    print(round(cbind(phi[, 1:10], phit[, 1:10]), 3))
   }
 }
 
@@ -207,4 +211,3 @@ round(topic_sd <- apply(THETA[, , burnin:(R/keep)], c(1, 2), sd), 3)   #トピック
 #単語出現確率の事後推定量
 word_mu <- apply(PHI[, , burnin:(R/keep)], c(1, 2), mean)   #単語の出現率の事後平均
 round(rbind(word_mu, phit)[, 1:50], 3)
-
