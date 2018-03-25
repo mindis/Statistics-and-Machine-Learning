@@ -126,7 +126,7 @@ for(rp in 1:R){
     lambda2[, , j] <- A[, j] %*% t(C[j, ]) / AC
   }
   
-  ##ガンマ分布よりAをサンプリング
+  ##ガンマ分布よりユーザー特徴行列をサンプリング
   for(j in 1:k){
     a1 <- alpha1 + (rowSums(lambda1[, , j] * X) + rowSums(lambda2[, , j] * Y))/2
     a2 <- sum(B[j, ])
@@ -144,18 +144,17 @@ for(rp in 1:R){
     lambda2[, , j] <- D[, j] %*% t(B[j, ]) / BD
   }
   
-  ##ガンマ分布よりBをサンプリング
+  ##ガンマ分布よりアイテム特徴行列をサンプリング
   for(j in 1:k){
     b1 <- alpha2 + (colSums(lambda1[, , j] * X) + colSums(lambda2[, , j] * Z))/2
     b2 <- beta2 + sum(A[, j])
     B[j, ] <- rgamma(item, b1, b2)  
   }
   
-  
-  ##線形制約をつけたCおよびDを更新
+  ##線形制約をつけたグループ特徴行列およびカテゴリー特徴行列を更新
   C <- t(t(W) %*% t(B))   #カテゴリー特徴行列の更新
   D <- t(V) %*% A   #グループ特徴行列の更新
-
+  
   
   ##サンプリング結果の保存と表示
   if(rp%%keep==0){
