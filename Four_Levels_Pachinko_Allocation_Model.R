@@ -130,8 +130,8 @@ beta1 <- 0.1
 theta1 <- thetat1
 theta2 <- thetat2
 phi <- phit
-Z1 <- Zi1 
-Z2 <- Zi2
+Zi1 <- Z1 
+Zi2 <- Z2
 
 ##初期値の設定
 theta1 <- extraDistr::rdirichlet(d, rep(2.0, k1))
@@ -237,12 +237,60 @@ for(rp in 1:R){
     if(rp%%disp==0){
       #サンプリング結果を確認
       print(rp)
-      print(sum(log(rowSums(topic_par))))
+      print(c(sum(log(rowSums(word_par))), sum(log(rowSums(topic_par)))))
       print(round(cbind(theta1[1:10, ], thetat1[1:10, ]), 3))
       print(round(cbind(phi[, 1:10], phit[, 1:10]), 3))
     }
   }
 }
 
+####サンプリング結果の可視化と要約####
+burnin <- 1000/keep
+RS <- R/keep
 
+##サンプリング結果の可視化
+#上位トピックのトピック分布のサンプリング結果
+matplot(t(THETA1[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="上位トピックのサンプリング結果")
+matplot(t(THETA1[5, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="上位トピックのサンプリング結果")
+matplot(t(THETA1[10, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="上位トピックのサンプリング結果")
+matplot(t(THETA1[15, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="上位トピックのサンプリング結果")
+matplot(t(THETA1[20, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="上位トピックのサンプリング結果")
 
+#下位トピックのトピック分布のサンプリング結果
+matplot(t(THETA2[1, , 1, ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="下位トピックのサンプリング結果")
+matplot(t(THETA2[1, , 2, ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="下位トピックのサンプリング結果")
+matplot(t(THETA2[1, , 3, ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="下位トピックのサンプリング結果")
+matplot(t(THETA2[1, , 4, ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="下位トピックのサンプリング結果")
+matplot(t(THETA2[10, , 1, ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="下位トピックのサンプリング結果")
+matplot(t(THETA2[10, , 2, ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="下位トピックのサンプリング結果")
+matplot(t(THETA2[10, , 3, ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="下位トピックのサンプリング結果")
+matplot(t(THETA2[10, , 4, ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="下位トピックのサンプリング結果")
+
+#単語分布のサンプリング結果
+matplot(t(PHI[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="単語分布のサンプリング結果")
+matplot(t(PHI[5, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="単語分布のサンプリング結果")
+matplot(t(PHI[10, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="単語分布のサンプリング結果")
+matplot(t(PHI[15, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ", main="単語分布のサンプリング結果")
+
+##事後分布の要約統計量
+#トピック分布の事後平均
+topic_mu1 <- apply(THETA1[, , burnin:RS], c(1, 2), mean)
+topic_mu2 <- array(0, dim=c(d, k2, k1))
+for(j in 1:k1){
+  topic_mu2[, , j] <- apply(THETA2[, , j, burnin:RS], c(1, 2), mean)
+}
+round(topic_mu1, 3)
+round(topic_mu2[, , 1], 3)
+
+#単語分布の事後平均
+round(phi_mu <- t(apply(PHI[, , burnin:RS], c(1, 2), mean)), 3)
+round(cbind(phi_mu, t(phit)), 3)
+
+#トピック割当の事後分布
+topic_rate1 <- SEG1 / rowSums(SEG1) 
+topic_allocation1 <- apply(topic_rate1, 1, which.max)
+round(data.frame(真値=Z1 %*% 1:k1, 推定=topic_allocation1, z=topic_rate1), 3)
+
+topic_rate2 <- SEG2 / rowSums(SEG2)
+topic_allocation2 <- apply(topic_rate2, 1, which.max)
+round(data.frame(真値=Z2 %*% 1:k2, 推定=topic_allocation2, z=topic_rate2), 3)
