@@ -54,7 +54,7 @@ covmatrix <- function(col, corM, lower, upper){
   UDU <- eigen(cc)
   val <- UDU$values
   vec <- UDU$vectors
-  D <- ifelse(val < 0, val + abs(val) + 0.00001, val)
+  D <- ifelse(val < 0, val + abs(val) + 0.01, val)
   covM <- vec %*% diag(D) %*% t(vec)
   data <- list(covM, cc,  m)
   names(data) <- c("covariance", "cc", "mu")
@@ -65,7 +65,7 @@ covmatrix <- function(col, corM, lower, upper){
 ##データの設定
 k1 <- 5
 k2 <- 7
-d <- 3000   #データ数
+d <- 1000   #データ数
 w <- rpois(d, rgamma(d, 30, 0.7))
 f <- sum(w)
 v <- 5   #変数数
@@ -88,7 +88,7 @@ Cov <- Covt <- array(0, dim=c(v, v, k1))
 Mu <- Mut <- matrix(0, nrow=k1, ncol=v)
 for(j in 1:k1){
   corr <- corrM(v, -0.8, 0.9, 0.01, 0.2)
-  Cov[, , j] <- Covt[, , j] <- covmatrix(v, corr, 1.0, 5.0)$covariance
+  Cov[, , j] <- Covt[, , j] <- covmatrix(v, corr, 2^2, 4^2)$covariance
   Mu[j, ] <- Mut[j, ] <- runif(v, 10.0, 30.0)
 }
 
@@ -139,6 +139,13 @@ dmv <- function(x, mean.vec, S, S_det, S_inv){
   return(LLo)
 }
 
+##アルゴリズムの設定
+R <- 2000
+keep <- 2  
+iter <- 0
+burnin <- 200/keep
+disp <- 10
+
 ##事前分布の設定
 #多変量正規分布の事前分布
 mu0 <- rep(0, v)
@@ -164,9 +171,17 @@ beta0 <- betat0
 ##初期値の設定
 theta1 <- rdirichlet(d, rep(10.0, k1))
 theta2 <- rdirichlet(k1, rep(10.0, k2))
-mu <- mvrnorm(k1, rep(20, v), diag(10^2, v))
-Cov <- array(diag(3^2, v), dim=c(v, v, k1))
-beta0 <- mvrnorm(k2, rep(0, v), diag(3^2, v))
+mu <- mvrnorm(k1, rep(mean(Data), v), diag(2^2, v))
+Cov <- array(diag(2^2, v), dim=c(v, v, k1))
+beta0 <- mvrnorm(k2, rep(0, v), diag(2^2, v))
+
+##パラメータの格納用配列
+THETA1 <- array(0, dim=c(d, k1, R/keep))
+THETA2 <- array(0, dim=c(k1, k2, R/keep))
+MU <- array(0, dim=c(k1, v, R/keep))
+BETA <- array(0, dim=c(k2, v, R/keep))
+COV <- array(0, dim=c(v, v, k1, R/keep))
+SEG <- matrix(0, nrow=f, ncol=k1*k2)
 
 
 #インデックスを作成
@@ -179,10 +194,10 @@ for(i in 1:d){
 }
 
 
-####変分ベイズEMアルゴリズムでパラメータを推定####
-for(rp in 1:1000){
+####ギブスサンプリングでパラメータをサンプリング####
+for(rp in 1:R){
   
-  ##Eステップで潜在変数zを推定
+  ##潜在変数zをサンプリング
   #多変量正規分布の対数尤度を計算
   Li <- matrix(0, nrow=f, ncol=k1*k2)
   for(i in 1:k1){
@@ -194,64 +209,105 @@ for(rp in 1:1000){
   #潜在変数zの事前分布の設定
   theta1_z <- log(theta1)[d_id, index_column]
   theta2_z <- matrix(as.numeric(t(log(theta2))), nrow=f, ncol=k1*k2, byrow=T)
+
   
   #潜在変数zの計算
   LLi <- theta1_z + theta2_z + Li   #潜在変数zの対数尤度
   z_par <- exp(LLi - rowMaxs(LLi))   #尤度に変換
   z_rate <- z_par / rowSums(z_par)   #潜在変数z
   
-  #混合率を更新
-  r <- colSums(z_rate) / f
+  #多項分布から潜在変数をサンプリング
+  Zi <- rmnom(f, 1, z_rate)
+  z_vec <- as.numeric(Zi %*% 1:(k1*k2))
+
+  #パターンごとに潜在変数を割当
+  Zi1 <- matrix(0, nrow=f, ncol=k1)
+  Zi2 <- matrix(0, nrow=f, ncol=k2)
+  for(j in 1:k1) {Zi1[, j] <- rowSums(Zi[, index_k1[j, ]])}
+  for(j in 1:k2) {Zi2[, j] <- rowSums(Zi[, index_k1[, j]])}
+  z1_vec <- as.numeric(Zi1 %*% 1:k1)
+  z2_vec <- as.numeric(Zi2 %*% 1:k2)
   
-  ##Mステップで多変量正規分布のパラメータと固定パラメータを更新
-  #平均および分散共分散行列の変分事後平均を推定
-  for(i in 1:k1){
-    weighted_data <- matrix(0, nrow=f, ncol=v)
-    weighted_er <- matrix(0, nrow=f, ncol=v)
-    
-    for(j in 1:k2){
-      #重み付きパラメータを更新
-      weighted_data <- weighted_data + z_rate[, index_k1[i, j]] * (Data - matrix(beta0[j, ], nrow=f, ncol=v, byrow=T))
-       weighted_er <- weighted_er + (z_rate[, index_k1[i, j]] * Data) -
-         (z_rate[, index_k1[i, j]] * matrix(mu[i, ] + beta0[j, ], nrow=f, ncol=v, byrow=T))
-    }
-    
-    #変分事後平均を推定
-    n <- sum(z_rate[, index_k1[i, ]])
-    mu[i, ] <- colSums(weighted_data) / (f * sum(r[index_k1[i, ]]) + sigma0_inv)   #変分事後平均
-    Cov[, , i] <- (inv_V + t(weighted_er) %*% weighted_er) / n   #変分事後分散共分散行列
+  #混合率を更新
+  r <- colSums(Zi) / f
+
+  
+  ##多変量正規分布のパラメータと固定パラメータを更新
+  #平均ベクトルを更新
+  index1 <- list()
+  for(j in 1:k1){
+    index1[[j]] <- which(Zi1[, j]==1)
+    mu_par <- colSums(Data[index1[[j]], ] - beta0[as.numeric(Zi[index1[[j]], index_k1[j, ]] %*% 1:k2), ])
+    mu_mean <- mu_par / (length(index1[[j]]) + sigma0_inv)   #平均パラメータ
+    mu_cov <- Cov[, , j] / (1+length(index1[[j]]))   #平均ベクトルの分散共分散行列
+    mu[j, ] <- mvrnorm(1, mu_mean, mu_cov)   #多変量正規分布より平均ベクトルをサンプリング
   }
   
-  #固定パラメータの変分事後平均を推定
-  for(i in 1:k2){
-    weighted_data <- matrix(0, nrow=f, ncol=v)
-    for(j in 1:k1){
-      #重み付きパラメータを更新
-      weighted_data <- weighted_data + z_rate[, index_k1[j, i]] * (Data - matrix(mu[j, ], nrow=f, ncol=v, byrow=T))
+  #固定パラメータを更新
+  for(j in 1:k2){
+    weighted_cov <- matrix(0, nrow=v, ncol=v)
+    index2 <- which(Zi2[, j]==1)
+    mu_par <- colSums(Data[index2, ] - mu[as.numeric(Zi[index2, index_k1[, j]] %*% 1:k1), ])
+    mu_mean <- mu_par / (length(index2) + sigma0_inv)   #平均パラメータ
+    for(l in 1:k1){
+      weighted_cov <-  weighted_cov <- Cov[, , l] * mean(Zi[index2, index_k1[, j]][, l])
     }
-    beta0[i, ] <- colSums(weighted_data) / (f * sum(r[index_k1[, i]]) + sigma0_inv)   #変分事後平均を推定
+    mu_cov <- weighted_cov / (1+length(index2))   #固定パラメータの分散共分散行列
+    beta0[j, ] <- mvrnorm(1, mu_mean, mu_cov)   #多変量正規分布より固定パラメータをサンプリング
+  }
+  
+  #分散共分散行列の変分事後平均を推定
+  for(j in 1:k1){
+    Vn <- nu + length(index1[[j]])
+    er <- Data[index1[[j]], ] - mu[z1_vec[index1[[j]]], ] - beta0[as.numeric(Zi[index1[[j]], index_k1[j, ]] %*% 1:k2), ]
+    R_par <- solve(V) + t(er) %*% er
+    Cov[, , j] <- rwishart(Vn, solve(R_par))$IW   #逆ウィシャート分布から分散共分散行列をサンプリング
   }
   
   ##潜在変数の割当確率を更新
-  #基底の分布の変分事後平均を推定
-  Zi_T <- t(z_rate)   #潜在変数zの転置行列
-  wsum01 <- matrix(0, nrow=d, ncol=k1*k2)
-  wsum1 <- matrix(0, nrow=d, ncol=k1)
+  #基底の分布を更新
+  Zi1_T <- t(Zi1)   #潜在変数zの転置行列
+  wsum0 <- matrix(0, nrow=d, ncol=k1)
   for(i in 1:d){
-    wsum01[i, ] <- Zi_T[, d_list[[i]]] %*% d_vec[[i]]
+    wsum0[i, ] <- Zi1_T[, d_list[[i]]] %*% d_vec[[i]]
   }
+  wsum1 <- wsum0 + alpha   #ディリクレ分布のパラメータ
+  theta1 <- extraDistr::rdirichlet(d, wsum1)   #ディリクレ分布からサンプリング
+  
+  
+  #固定パラメータの割当分布の更新
   for(j in 1:k1){
-    wsum1[, j] <- rowSums(wsum01[, index_k1[j, ]]) + alpha   #ディリクレ分布のパラメータ
-  }
-  theta1 <- wsum1 / rowSums(wsum1)   #変分事後平均の推定
-  
-  
-  #固定パラメータの割当分布の変分事後平均を推定
-  for(j in 1:k1){
-    wsum2 <- colSums(z_rate[, index_k1[j, ]]) + alpha   #ディリクレ分布のパラメータ
-    theta2[j, ] <- wsum2 / sum(wsum2)   #変分事後平均の推定
+    wsum2 <- colSums(Zi[, index_k1[j, ]]) + alpha   #ディリクレ分布のパラメータ
+    theta2[j, ] <- extraDistr::rdirichlet(1, wsum2)   #ディリクレ分布からサンプリング
   }
   
-  print(sum(log(rowSums(exp(LLi)))))
+  ##パラメータの格納とサンプリング結果の表示
+  #サンプリングされたパラメータを格納
+  if(rp%%keep==0){
+    #サンプリング結果の格納
+    mkeep <- rp/keep
+    THETA1[, , mkeep] <- theta1
+    THETA2[, , mkeep] <- theta2
+    MU[, , mkeep] <- mu
+    BETA[, , mkeep] <- beta0
+  
+    #トピック割当はバーンイン期間を超えたら格納する
+    if(rp%%keep==0 & rp >= burnin){
+      SEG <- SEG + Zi
+    }
+    
+    if(rp%%disp==0){
+      #サンプリング結果を確認
+      print(rp)
+      print(sum(log(rowSums(exp(LLi)))))
+      print(round(cbind(mu, Mut), 3))
+      print(round(cbind(beta0, betat0), 3))
+    }
+  }
 }
+
+
+
+matplot(t(MU[1, , ]), type="l")
+matplot(t(BETA[1, , ]), type="l")
 
