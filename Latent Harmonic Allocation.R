@@ -205,11 +205,11 @@ for(rp in 1:R){
       Li[, index_k1[i, ][j]] <- dmvnorm(Data, mu[i, ] + beta0[j, ] , Cov[, , i], log=TRUE)
     }
   }
- 
+  
   #潜在変数zの事前分布の設定
   theta1_z <- log(theta1)[d_id, index_column]
   theta2_z <- matrix(as.numeric(t(log(theta2))), nrow=f, ncol=k1*k2, byrow=T)
-
+  
   
   #潜在変数zの計算
   LLi <- theta1_z + theta2_z + Li   #潜在変数zの対数尤度
@@ -219,7 +219,7 @@ for(rp in 1:R){
   #多項分布から潜在変数をサンプリング
   Zi <- rmnom(f, 1, z_rate)
   z_vec <- as.numeric(Zi %*% 1:(k1*k2))
-
+  
   #パターンごとに潜在変数を割当
   Zi1 <- matrix(0, nrow=f, ncol=k1)
   Zi2 <- matrix(0, nrow=f, ncol=k2)
@@ -230,7 +230,7 @@ for(rp in 1:R){
   
   #混合率を更新
   r <- colSums(Zi) / f
-
+  
   
   ##多変量正規分布のパラメータと固定パラメータを更新
   #平均ベクトルを更新
@@ -290,7 +290,8 @@ for(rp in 1:R){
     THETA2[, , mkeep] <- theta2
     MU[, , mkeep] <- mu
     BETA[, , mkeep] <- beta0
-  
+    COV[, , , mkeep] <- Cov
+    
     #トピック割当はバーンイン期間を超えたら格納する
     if(rp%%keep==0 & rp >= burnin){
       SEG <- SEG + Zi
@@ -306,8 +307,39 @@ for(rp in 1:R){
   }
 }
 
+####サンプリング結果の可視化と要約####
+burnin <- 500/keep
+RS <- R/keep
+
+##サンプリング結果の可視化
+#多変量正規分布のパラメータをプロット
+matplot(t(MU[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(MU[2, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(MU[3, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(BETA[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(BETA[2, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(BETA[3, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+
+#基底分布のパラメータをプロット
+matplot(t(THETA1[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA1[2, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA1[3, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA2[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA2[2, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA2[3, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+
+##パラメータの事後平均を推定
+#多変量正規分布のパラメータの事後平均
+round(t(apply(MU[, , burnin:RS], c(1, 2), mean)), 3)   #平均ベクトル
+round(t(apply(BETA[, , burnin:RS], c(1, 2), mean)), 3)   #固定パラメータ
+for(j in 1:k1){
+  print(apply(COV[, , j, ], c(1, 2), mean))
+}
+
+#基底分布のパラメータの事後平均
+round(apply(THETA1[, , burnin:RS], c(1, 2), mean), 3)
+round(apply(THETA2[, , burnin:RS], c(1, 2), mean), 3)
 
 
-matplot(t(MU[1, , ]), type="l")
-matplot(t(BETA[1, , ]), type="l")
+
 
