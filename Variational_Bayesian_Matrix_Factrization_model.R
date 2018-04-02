@@ -90,10 +90,10 @@ B <- mvrnorm(item, rep(0.0, k), diag(0.5, k))
 ##ユーザー特徴行列のパラメータを更新
 A <- matrix(0, nrow=hh, ncol=k)
 Cov_A <- array(0, dim=c(k, k, hh))
-index_item <- item_id[index_user[[i]]]
 
 #分散成分を更新
 for(i in 1:hh){
+  index_item <- item_id[index_user[[i]]]
   Cov_sum <- apply(Cov_B[, , index_item], c(1, 2), sum)
   Cov_A[, , i] <- sigma^2 * (solve((t(B[index_item, ]) %*% B[index_item, ] + Cov_sum) + sigma^2 * solve(Ca)))
 }
