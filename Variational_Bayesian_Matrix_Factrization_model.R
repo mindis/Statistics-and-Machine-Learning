@@ -35,7 +35,6 @@ Y0 <- Y <- matrix(0, nrow=hh, ncol=item)
 for(j in 1:item){
   #評価ベクトルを生成
   y_vec <- rnorm(hh, AB[, j], 1)   #正規分布から評価ベクトルを生成
-  y_vec0 <- y_vec
   
   #欠損を生成
   deficit <- rbinom(hh, 1, beta1 * beta2[j])
@@ -43,7 +42,6 @@ for(j in 1:item){
   
   #評価ベクトルを代入
   Y[, j] <- y_vec
-  Y0[, j] <- y_vec0
 }
 
 ##IDと評価ベクトルを設定
@@ -75,6 +73,12 @@ for(j in 1:item){
 }
 
 ####変分ベイズ法でパラメータを推定####
+##アルゴリズムの設定
+LL1 <- -100000000   #対数尤度の初期値
+tol <- 1
+iter <- 1
+dl <- 100
+
 ##事前分布の設定
 sigma <- 1
 Ca <- diag(1, k)
@@ -86,40 +90,59 @@ Cov_B <- array(diag(1, k), dim=c(k, k, item))
 A <- mvrnorm(hh, rep(0.0, k), diag(0.5, k))
 B <- mvrnorm(item, rep(0.0, k), diag(0.5, k))
 
+
 ####変分ベイズ法でパラメータを更新####
-##ユーザー特徴行列のパラメータを更新
-A <- matrix(0, nrow=hh, ncol=k)
-Cov_A <- array(0, dim=c(k, k, hh))
+while(abs(dl) > tol){   #dlがtol以上なら繰り返す
 
-#分散成分を更新
-for(i in 1:hh){
-  index_item <- item_id[index_user[[i]]]
-  Cov_sum <- apply(Cov_B[, , index_item], c(1, 2), sum)
-  Cov_A[, , i] <- sigma^2 * (solve((t(B[index_item, ]) %*% B[index_item, ] + Cov_sum) + sigma^2 * solve(Ca)))
+  ##ユーザー特徴行列のパラメータを更新
+  A <- matrix(0, nrow=hh, ncol=k)
+  Cov_A <- array(0, dim=c(k, k, hh))
+  
+  #分散成分を更新
+  for(i in 1:hh){
+    index <- item_id[index_user[[i]]]
+    Cov_sum <- apply(Cov_B[, , index], c(1, 2), sum)
+    Cov_A[, , i] <- sigma^2 * (solve((t(B[index, ]) %*% B[index, ] + Cov_sum) + sigma^2 * solve(Ca)))
+  }
+  
+  #ユーザーごとに特徴ベクトルを更新
+  for(i in 1:hh){
+    A[i, ] <- sigma^-2 * Cov_A[, , i] %*% colSums(y[index_user[[i]]] * B[item_id[index_user[[i]]], ])
+  }
+  
+  ##アイテム特徴行列のパラメータを更新
+  #分散成分を更新
+  B <- matrix(0, nrow=item, ncol=k)
+  Cov_B <- array(0, dim=c(k, k, item))
+  
+  #分散成分を更新
+  for(j in 1:item){
+    index <- user_id[index_item[[j]]]
+    Cov_sum <- apply(Cov_A[, , index], c(1, 2), sum)
+    Cov_B[, , j] <- sigma^2 * solve((t(A[index, ]) %*% A[index, ] + Cov_sum) + sigma^2 * solve(Cb))
+  }
+  
+  #アイテムごとに特徴ベクトルを更新
+  for(j in 1:item){
+    B[j, ] <- sigma^-2 * Cov_B[, , j] %*% colSums(y[index_item[[j]]] * A[user_id[index_item[[j]]], ])
+  }
+  
+  ##ハイパーパラメータを更新
+  #パラメータの事前分布を更新
+  Ca <- diag((colSums(A^2) + diag(apply(Cov_A, c(1, 2), sum))) / hh)
+  Cb <- diag((colSums(B^2) + diag(apply(Cov_B, c(1, 2), sum))) / item)
+  
+  #標準偏差を更新
+  score <- rowSums(A[user_id, ] * B[item_id, ])
+  sigma <- sqrt(sum((y - score)^2) / length(y))
+  
+  
+  ##アルゴリズムの収束判定
+  LL <- sum(dnorm(y, score, sigma, log=TRUE))   #対数尤度を更新
+  iter <- iter + 1
+  dl <- LL - LL1
+  LL1 <- LL
+  print(LL)
 }
-#ユーザーごとに特徴ベクトルを更新
-for(i in 1:hh){
-  A[i, ] <- sigma^-2 * Cov_A[, , i] %*% colSums(y[index_user[[i]]] * B[item_id[index_user[[i]]], ])
-}
 
-##アイテム特徴行列のパラメータを更新
-#分散成分を更新
-Cov_B <- sigma^2 * solve((t(A) %*% A + Cov_A) + sigma^2 + solve(Cb))
-
-#アイテムごとに特徴ベクトルを更新
-B <- matrix(0, nrow=item, ncol=k)
-for(j in 1:item){
-  B[j, ] <- sigma^-2 * Cov_B %*% colSums(y[index_item[[j]]] * A[user_id[index_item[[j]]], ]) 
-}
-
-B[, ]
-
-##ハイパーパラメータを更新
-
-Cov_A
-colSums(A^2)
-Cov_A
-
-
-t(A[1, , drop=FALSE]) %*% A[1, ]
-
+cbind(y, score)
