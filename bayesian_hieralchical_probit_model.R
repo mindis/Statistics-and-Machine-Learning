@@ -15,7 +15,7 @@ source("bdiag_m.R")
 ####データの発生####
 ##データの設定
 hh <- 2000   #ユーザー数
-pt <- 60   #観測期間数
+pt <- 90   #観測期間数
 hhpt <- hh*pt   #総レコード数
 w <- 7   #周期成分
 k1 <- 7   #パラメータ数
@@ -32,9 +32,10 @@ x <- matrix(diag(w), nrow=pt, ncol=w, byrow=T)
 week <- matrix(as.numeric(t(x)), nrow=hhpt, ncol=w, byrow=T)[, -1]
 
 #観測変数の生成
-Z1 <- log(rgamma(pt, 5, 1)) * rbinom(pt, 1, 0.25)   #降水量の対数
-Z2 <- rbeta(pt, 5, 30)   #チラシ商品の平均値引率
-Z3 <- log(rpois(pt, rgamma(pt, 25, 0.5)) / 10)   #チラシ掲載商品数の対数
+Z1 <- log(rgamma(pt, 5, 1)) * rbinom(pt, 1, 0.3)   #降水量の対数
+Z2 <- runif(pt, 0, 1)   #チラシ商品の平均値引率
+Z3 <- log(rpois(pt, rgamma(pt, 25, 0.5)))   #チラシ掲載商品数の対数
+Z3 <- Z3 - min(Z3)
 Z4 <- rbinom(pt, 1, 0.5)   #他店チラシ状況
 Zi1 <- matrix(as.numeric(t(cbind(Z1, Z2, Z3, Z4))), nrow=hhpt, ncol=4, byrow=T)
 
@@ -55,6 +56,7 @@ C_INV2 <- Z6[t_id==1]
 #回帰係数のパラメータ
 beta0 <- rnorm(hh, 0.2, 0.4)
 betaw <- mvrnorm(hh, rep(0, w-1), diag(0.1, w-1))
+colnames(betaw) <- c("betaw1", "betaw2", "betaw3", "betaw4", "betaw5", "betaw6")
 beta1 <- rnorm(hh, -0.5, 0.3)
 beta2 <- rnorm(hh, 0.6, 0.25)
 beta3 <- rnorm(hh, 0.4, 0.25)
@@ -62,6 +64,7 @@ beta4 <- rnorm(hh, -0.8, 0.2)
 beta5 <- rnorm(hh, -0.6, 0.15)
 beta6 <- rnorm(hh, -0.5, 0.15)
 beta <- betat <- cbind(beta0, betaw, beta1, beta2, beta3, beta4, beta5, beta6)
+colnames(betat) <- NULL
 
 #潜在変数のパラメータ
 delta1 <- deltat1 <- exp(rnorm(hh, -0.4, 0.25))
@@ -130,6 +133,7 @@ beta0 <- 0
 tau0 <- 1/100
 
 #変量効果の事前分布
+
 Bbar1 <- rep(0, k1)
 Bbar2 <- rep(0, k2)
 A1 <- 0.01 * diag(1, k1)
@@ -150,7 +154,8 @@ theta <- cbind(delta1, delta2, lambda1, lambda2)
 
 #階層モデルの初期値
 alpha1 <- rep(0, k1)
-alpha2 <- rep(0, k2)
+alpha2 <- colMeans(cbind(deltat1, deltat2, lambdat1, lambdat2))
+alpha2 <- rep(1, k2)
 Cov1 <- diag(0.1, k1)
 Cov2 <- diag(0.1, k2)
 Cov_inv1 <- solve(Cov1)
@@ -276,11 +281,9 @@ for(rp in 1:R){
   theta <- flag*thetan + (1-flag)*thetad   #alphaがrandを上回っていたら採択
   Zi2 <- flag[u_id, 1:(k2/2)]*Zi_n2 + (1-flag[u_id, 1:(k2/2)])*Zi_d2
   
-  
   ##回帰係数の階層モデルのパラメータをサンプリング
   #逆ウィシャート分布から分散共分散行列をサンプリング
   V_par <- V1 + t(beta) %*% beta
-  
   Sn <- nu1 + hh
   Cov1 <- bayesm::rwishart(Sn, solve(V_par))$IW
   Cov_inv1 <- solve(Cov1)
@@ -296,10 +299,6 @@ for(rp in 1:R){
   Sn <- nu2 + hh
   Cov2 <- bayesm::rwishart(Sn, solve(V_par))$IW
   Cov_inv2 <- solve(Cov2)
-  
-  #多変量正規分布から平均ベクトルをサンプリング
-  theta_mu <- hh/(hh + tau0) * colMeans(theta)
-  alpha2 <- mvrnorm(1, theta_mu, Cov2/(hh + tau0))
 
   
   ##パラメータの格納とサンプリング結果の表示
@@ -323,13 +322,15 @@ for(rp in 1:R){
     if(rp%%disp==0){
       print(rp)
       print(sum(dbinom(y, 1, pnorm(mu, 0, 1), log=TRUE)))
+      print(round(diag(Cov1), 3))
       print(round(rbind(alpha1, alphat1=colMeans(betat)), 3))
-      print(round(rbind(alpha2, alphat2=colMeans(thetat)), 3))
     }
   }
 }
 
-matplot(ALPHA1[, 12:13], type="l")
+
+####サンプリング結果の要約と可視化####
+matplot(ALPHA1, type="l")
 matplot(ALPHA2, type="l")
 
 sum(dbinom(y, 1, pnorm(mu_vec, 0, 1), log=TRUE))
