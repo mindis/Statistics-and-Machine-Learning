@@ -330,8 +330,16 @@ for(rp in 1:R){
 
 
 ####サンプリング結果の要約と可視化####
-matplot(ALPHA1, type="l")
-matplot(ALPHA2, type="l")
+RS <- R/keep
+burnin <- 2000/keep
 
-sum(dbinom(y, 1, pnorm(mu_vec, 0, 1), log=TRUE))
-round(cbind(u_id, y, pnorm(mu, 0, 1), pnorm(mu_vec, 0, 1)), 3)
+##サンプリング結果の可視化
+matplot(t(BETA[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(BETA[10, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(ALPHA1, type="l", xlab="サンプリング回数", ylab="パラメータ")
+
+##事後平均
+round(apply(BETA[, , burnin:RS], c(1, 2), mean), 3)   #個人別のbetaの事後平均
+round(colMeans(ALPHA1[burnin:RS, ]), 3)   #階層モデルの回帰係数の事後平均
+round(apply(COV1[, , burnin:RS], c(1, 2), mean), 3)   #階層モデルの分散共分散行列の事後平均
+
