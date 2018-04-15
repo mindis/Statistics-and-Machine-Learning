@@ -26,6 +26,7 @@ alpha01 <- 0.3; beta01 <- 0.9
 alpha02 <- 0.3; beta02 <- 0.85
 alpha03 <- 0.15; beta03 <- 1.5
 
+#ガンマ分布から特徴行列を生成
 W0 <- matrix(rgamma(hh*k, alpha01, beta01), nrow=hh, ncol=k)
 H0 <- matrix(rgamma(item*k, alpha02, beta02), nrow=k, ncol=item)
 C0 <- matrix(rgamma(time*k, alpha03, beta03), nrow=k, ncol=time)
@@ -56,7 +57,7 @@ LLbest
 
 ####マルコフ連鎖モンテカルロ法で非負値テンソル分解を推定####
 ##アルゴリズムの設定
-R <- 5000
+R <- 2000
 keep <- 2
 disp <- 8
 iter <- 0
@@ -88,8 +89,9 @@ for(rp in 1:R){
     WHC <- WHC + W[, j] %o% H[j, ] %o% C[j, ]
   }
   #補助変数を用いてWをサンプリング
+  W_old <- W   #1つ前のWの特徴行列を格納
   for(j in 1:k){
-    lambda <- W[, j] %o% H[j, ] %o% C[j, ] / WHC   #補助変数を更新
+    lambda <- W_old[, j] %o% H[j, ] %o% C[j, ] / WHC   #補助変数を更新
     w1 <- alpha1 + rowSums(lambda * Data)
     w2 <- beta1 + sum(H[j, ] %o% C[j, ])
     W[, j] <- rgamma(hh, w1, w2)   #ガンマ分布からWをサンプリング
@@ -103,8 +105,9 @@ for(rp in 1:R){
     WHC <- WHC + W[, j] %o% H[j, ] %o% C[j, ]
   }
   #補助変数を用いてHをサンプリング
+  H_old <- H   #1つ前のHの特徴行列を格納
   for(j in 1:k){
-    lambda <- W[, j] %o% H[j, ] %o% C[j, ] / WHC   #補助変数を更新
+    lambda <- W[, j] %o% H_old[j, ] %o% C[j, ] / WHC   #補助変数を更新
     h1 <- alpha2 + rowSums(colSums(lambda * Data))
     h2 <- beta2 + sum(W[, j] %o% C[j, ])
     H[j, ] <- rgamma(item, h1, h2)   #ガンマ分布からHをサンプリング
@@ -117,8 +120,9 @@ for(rp in 1:R){
     WHC <- WHC + W[, j] %o% H[j, ] %o% C[j, ]
   }
   #補助変数を用いてCをサンプリング
+  C_old <- C    #1つ前のCの特徴行列を格納
   for(j in 1:k){
-    lambda <- W[, j] %o% H[j, ] %o% C[j, ] / WHC   #補助変数を更新
+    lambda <- W[, j] %o% H[j, ] %o% C_old[j, ] / WHC   #補助変数を更新
     c1 <- alpha3 + colSums(colSums(lambda * Data))
     c2 <- beta3 + sum(W[, j] %o% H[j, ])
     C[j, ] <- rgamma(time, c1, c2)   #ガンマ分布からHをサンプリング
