@@ -21,31 +21,35 @@ k <- 7   #潜在変数数
 N <- d*(d-1)/2   #総サンプル数
 vec <- rep(1, k)
 
-##IDと潜在変数の設定
-#潜在変数を生成
-Z <- rmnom(d, 1, runif(k, 1, 3))
-z <- as.numeric(Z %*% 1:k)
-
-#IDを設定
+##IDを設定
 id1 <- id2 <- c()
 for(i in 1:(d-1)){
   id1 <- c(id1, rep(i, length((i+1):d)))
   id2 <- c(id2, (i+1):d)
 }
 
+##潜在変数の生成
+#ディリクレ分布からパラメータを生成
+alpha0 <- rep(0.1, k)
+theta <- thetat <- extraDistr::rdirichlet(d, alpha0)
+Z1 <- rmnom(N, 1, theta[id1, ])
+Z2 <- rmnom(N, 1, theta[id2, ])
+z1_vec <- as.numeric(Z1 %*% 1:k); z2_vec <- as.numeric(Z2 %*% 1:k)
+
+
 ##応答変数の生成
 #パラメータを生成
 cov <- covt <- 0.75
 beta <- betat <- 0.8
 alphat <- alpha <- rnorm(d, beta, cov)   #変量効果のパラメータ
-theta0 <- matrix(rnorm(k*k, 0, 0.85), nrow=k, ncol=k)   #潜在変数のパラメータ
-theta0[upper.tri(theta0)] <- 0
-theta <- theta0 + t(theta0)
-diag(theta) <- diag(theta0)
-thetat <- theta
+phi0 <- matrix(rnorm(k*k, 0, 0.85), nrow=k, ncol=k)   #潜在変数のパラメータ
+phi0[upper.tri(phi0)] <- 0
+phi <- phi0 + t(phi0)
+diag(phi) <- diag(phi0)
+phit <- phi
 
 #ポアソン分布の平均構造
-mu <- alpha[id1] + alpha[id2] + (theta[z[id1], ] * Z[id2, ]) %*% vec
+mu <- alpha[id1] + alpha[id2] + (phi[z1_vec, ] * Z2) %*% vec
 lambda <- exp(mu)
 
 
@@ -57,10 +61,10 @@ hist(y, xlab="頻度", main="アイテム間の出現頻度", col="grey", breaks=25)
 
 ####マルコフ連鎖モンテカルロ法でmixed effect poisson block modelを推定####
 ##変量効果ポアソン回帰モデルの対数尤度
-loglike <- function(alpha, theta, y, y_factorial, z, Z, vec, id1, id2){
+loglike <- function(alpha, theta, y, y_factorial, z1, Z2, vec, id1, id2){
   
   #尤度を定義する
-  lambda <- exp(alpha[id1] + alpha[id2] + (theta[z[id1], ] * Z[id2, ]) %*% vec)   #平均構造
+  lambda <- exp(alpha[id1] + alpha[id2] + (phi[z1, ] * Z2) %*% vec)   #平均構造
   LLi <- as.numeric(y*log(lambda)-lambda - lfactorial(y))   #対数尤度
   LL <- sum(LLi)   #対数尤度の和
   
@@ -93,6 +97,9 @@ theta <- thetat
 alpha <- alphat
 beta <- betat
 cov <- covt
+Zi1 <- Z1; Zi2 <- Z2
+z_vec1 <- as.numeric(Zi1 %*% 1:k)
+z_vec2 <- as.numeric(Zi2 %*% 1:k)
 
 ##初期値の設定
 #変量効果の初期値
@@ -107,25 +114,30 @@ rank_mu <- ceiling(rank(mu))
 alpha <- sort(x, decreasing=TRUE)[rank_mu]   #変量効果の初期値
 
 #潜在変数のパラメータ
-theta0 <- matrix(rnorm(k*k, 0, 0.3), nrow=k, ncol=k)   #潜在変数のパラメータ
-theta0[upper.tri(theta0)] <- 0
-theta <- theta0 + t(theta0)
+phi0 <- matrix(rnorm(k*k, 0, 0.3), nrow=k, ncol=k)   #潜在変数のパラメータ
+phi0[upper.tri(phi0)] <- 0
+phi <- phi0 + t(phi0)
 
 #潜在変数の初期値
-Zi <- rmnom(d, 1, rep(1/k, k))
-z_vec <- as.numeric(Zi %*% 1:k)
+theta <- extraDistr::rdirichlet(d, rep(2.0, k))
+Zi1 <- rmnom(N, 1, theta[id1, ])
+Zi2 <- rmnom(N, 1, theta[id2, ])
+z1_vec <- as.numeric(Zi1 %*% 1:k); z2_vec <- as.numeric(Zi2 %*% 1:k)
 
 
 ##定数を計算
 y_factorial <- lfactorial(y)
 Y_factorial <- matrix(y_factorial, nrow=N, ncol=k*k)
-upper_tri <- matrix(as.logical(upper.tri(theta) + diag(1, k)), nrow=k, ncol=k)
+upper_tri <- matrix(as.logical(upper.tri(phi) + diag(1, k)), nrow=k, ncol=k)
 vec <- rep(1, k)
 
 ##インデックスを設定
 item_list <- list()
+seg_list1 <- seg_list2 <- list()
 for(i in 1:d){
   item_list[[i]] <- which(id1==i | id2==i)
+  seg_list1[[i]] <- as.numeric(id1[item_list[[i]]]!=i)
+  seg_list2[[i]] <- as.numeric(id2[item_list[[i]]]!=i)
 }
 
 
@@ -140,8 +152,8 @@ er_new <- alphan - beta
 er_old <- alphad - beta
 
 #対数尤度と対数事前分布を設定
-lognew0 <- loglike(alpha, theta, y, y_factorial, z_vec, Zi, vec, id1, id2)$LLi
-logold0 <- loglike(alpha, theta, y, y_factorial, z_vec, Zi, vec, id1, id2)$LLi
+lognew0 <- loglike(alpha, phi, y, y_factorial, z1_vec, Zi2, vec, id1, id2)$LLi
+logold0 <- loglike(alpha, phi, y, y_factorial, z1_vec, Zi2, vec, id1, id2)$LLi
 logpnew <- -0.5 * (er_new^2 / cov)
 logpold <- -0.5 * (er_old^2 / cov)
  
@@ -163,31 +175,31 @@ alpha <- flag*alphan + (1-flag)*alphad   #alphaがrandを上回っていたら採択
 
 
 ##ギブスサンプリングで潜在変数をサンプリング
+#多項分布から潜在変数をサンプリング
+seg_list[[1]]
 
-item_list[[1]]
-theta
-item_list[[1]] 
-
-
-alpha[id1] + alpha[id2]
-item_list[[1]]
-id2
-
-
-Z_mu <- matrix(theta[(upper.tri(theta) + diag(k))==1], nrow=N, ncol=k*(k-1)/2 + k, byrow=T)
-lambda <- exp(matrix(alpha[id1] + alpha[id2], nrow=N, ncol=k*(k-1)/2 + k) + Z_mu)
-LLi <- y*log(lambda)-lambda - y_factorial   #対数尤度
-LLi
-i <- 31
-z_par <- exp(LLi - rowMaxs(LLi))
-round(z_par / rowSums(z_par), 3)[i, ]
-y[i]
-theta[(upper.tri(theta) + diag(k))==1]  
-
-
-rmnom(1, 1, z_par / sum(z_par)) %*% z_index
-(Z %*% 1:k)[i, ]
-
-
-z_index <- rep(1:k, rep(k, k))
+for(i in 1:d){
+  i <- 1
+  #インデックスを抽出
+  index1 <- item_list[[i]]
+  z1_allocation <- seg_list1[[i]]
+  z2_allocation <- seg_list2[[i]]
+  
+  #ポアソン分布の平均構造
+  Zi_pairs <- Zi1[index1, ] * z1_allocation + Zi2[index1, ] * z2_allocation   #対となる潜在変数
+  Zi_mu <- phi[as.numeric(Zi_pairs %*% 1:k), ]
+  lambda <- exp(matrix(alpha[id1[index1]] + alpha[id2[index1]], nrow=length(index1), ncol=k) + Zi_mu)
+  
+  #対数尤度と潜在変数の割当確率
+  LLi <- y[index1]*log(lambda)-lambda - y_factorial[index1]   #対数尤度
+  z_par <- exp(LLi - rowMaxs(LLi)) * matrix(theta[i, ], nrow=length(index1), ncol=k, byrow=T)
+  z_rate <- z_par / rowSums(z_par)
+  
+  #多項分布より潜在変数をサンプリング
+  Zi[i, ] <- rmnom(1, 1, z_rate)
+  id1
+  id2
+}
+colSums(Zi)
+colSums(Z)        
 
