@@ -12,13 +12,13 @@ library(dplyr)
 library(ggplot2)
 library(lattice)
 
-#set.seed(25897)
+#set.seed(5897)
 
 ####データの発生####
 ##データの設定
-k <- 10   #基底数
-hh <- 2000   #ユーザー数
-item <- 1000   #アイテム数
+k <- 15   #基底数
+hh <- 5000   #ユーザー数
+item <- 1500   #アイテム数
 
 ##パラメータの設定
 sigma <- 1
@@ -30,7 +30,8 @@ beta2 <- rbeta(item, 5.0, 6.0)   #アイテム購買確率
 
 ##モデルに基づき応答変数を生成
 AB <- A %*% t(B)   #期待値
-Y0 <- Y <- matrix(0, nrow=hh, ncol=item)
+Y <- matrix(0, nrow=hh, ncol=item)
+Z <- matrix(0, nrow=hh, ncol=item)
 
 for(j in 1:item){
   #評価ベクトルを生成
@@ -38,28 +39,30 @@ for(j in 1:item){
   
   #欠損を生成
   deficit <- rbinom(hh, 1, beta1 * beta2[j])
-  y_vec[deficit==0] <- NA   #欠損セルにNAを代入
+  Z[, j] <- deficit   #欠損を代入
   
   #評価ベクトルを代入
   Y[, j] <- y_vec
 }
 
 ##IDと評価ベクトルを設定
-N <- length(Y[is.na(Y)==FALSE])
+N <- length(Z[Z==1])
 user_id0 <- rep(1:hh, rep(item, hh))
 item_id0 <- rep(1:item, hh)
 
 #評価がある要素のみ抽出
-index_user <- which(is.na(as.numeric(t(Y)))==FALSE)
+index_user <- which(as.numeric(t(Z))==1)
 user_id <- user_id0[index_user]
 item_id <- item_id0[index_user]
-y0 <- as.numeric(t(Y))[index_user]
+y_vec <- as.numeric(t(Y))
 
 #評価ベクトルを1～5の間の離散値に収める
 score_mu <- 3   #平均スコア
-y <- as.numeric(round(scale(y0) + score_mu))   #平均3の整数値評価ベクトル
-y[y < 1] <- 1
-y[y > 5] <- 5
+y0 <- as.numeric(round(scale(y_vec) + score_mu))   #平均3の整数値評価ベクトル
+y0[y0 < 1] <- 1
+y0[y0 > 5] <- 5
+y <- y0[index_user]   #欠損のある評価ベクトル
+Y <- matrix(y0, nrow=hh, ncol=item, byrow=T)   #評価ベクトルの完全データ
 
 
 ##インデックスの作成
@@ -145,4 +148,19 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   print(LL)
 }
 
-cbind(y, score)
+##完全データに対する二乗誤差を推定
+#評価ベクトルと欠損ベクトルを設定
+z_vec <- as.numeric(t(Z))
+y_vec <- as.numeric(t(Y))
+mu_vec <- as.numeric(t(A %*% t(B)))
+
+#観測データの二乗誤差
+er_obz <- sum((y_vec[z_vec==1] - mu_vec[z_vec==1])^2)
+er_obz / sum(z_vec==1)
+
+#欠損データの二乗誤差
+er_na <- sum((y_vec[z_vec==0] - mu_vec[z_vec==0])^2)
+er_na / sum(z_vec==0)
+
+er_obz
+cbind(z_vec, y_vec, round(mu_vec, 2))
