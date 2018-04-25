@@ -1,5 +1,5 @@
 #####Four Levels Pachinko Allocation Model#####
-options(warn=2)
+options(warn=0)
 library(MASS)
 library(lda)
 library(RMeCab)
@@ -14,7 +14,6 @@ library(plyr)
 library(ggplot2)
 
 #set.seed(93441)
-
 ####データの発生####
 ##データの設定
 L <- 2
