@@ -104,7 +104,10 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   #分散成分を更新
   for(i in 1:hh){
     index <- item_id[index_user[[i]]]
-    Cov_sum <- apply(Cov_B[, , index], c(1, 2), sum)
+    Cov_sum <- matrix(0, k, k)
+    for(j in 1:length(index)){
+      Cov_sum <- Cov_sum + Cov_B[, , index[j]]
+    }
     Cov_A[, , i] <- sigma^2 * (solve((t(B[index, ]) %*% B[index, ] + Cov_sum) + sigma^2 * solve(Ca)))
   }
   
@@ -121,7 +124,10 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   #分散成分を更新
   for(j in 1:item){
     index <- user_id[index_item[[j]]]
-    Cov_sum <- apply(Cov_A[, , index], c(1, 2), sum)
+    Cov_sum <- matrix(0, k, k)
+    for(l in 1:length(index)){
+      Cov_sum <- Cov_sum + Cov_A[, , index[l]]
+    }
     Cov_B[, , j] <- sigma^2 * solve((t(A[index, ]) %*% A[index, ] + Cov_sum) + sigma^2 * solve(Cb))
   }
   
@@ -161,6 +167,4 @@ er_obz / sum(z_vec==1)
 #欠損データの二乗誤差
 er_na <- sum((y_vec[z_vec==0] - mu_vec[z_vec==0])^2)
 er_na / sum(z_vec==0)
-
-er_obz
 cbind(z_vec, y_vec, round(mu_vec, 2))
