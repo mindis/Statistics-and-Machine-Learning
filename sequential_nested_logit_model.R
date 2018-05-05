@@ -1,4 +1,5 @@
 #####逐次型ネステッドロジットモデル#####
+options(warn=0)
 library(MASS)
 library(mlogit)
 library(nnet)
@@ -11,7 +12,7 @@ library(lattice)
 #####データの発生#####
 #set.seed(8761)
 ##データの設定
-hh <- 500   #プレイヤー数
+hh <- 1000   #プレイヤー数
 pt <- 60   #観測期間
 hhpt <- hh*pt   #全サンプル数
 
@@ -138,20 +139,23 @@ r.cycle <- list(r.no, r.new1, r.new2)
 
 #UR確率アップキャラのあらかじめ発生させておく
 UR <- matrix(0, nrow=cycle*(length(r.cycle)-1), 9)
-
 ur <- rep(0, length(beta.s6))
 index.ur <- sample(1:length(beta.s6), 2)
 ur[index.ur] <- 1
 UR[1, ] <- ur
 
 #前回のURキャラとかぶらないようにしておく
-for(c in 1:(cycle*(length(r.cycle)-1))){
+for(cy in 2:(cycle*(length(r.cycle)-1))){
   for(i in 1:500){
     ur <- rep(0, length(beta.s6))
     index.ur <- sample(1:length(beta.s6), 2)
     ur[index.ur] <- 1
-    UR[c, ] <- ur
-    if(max(UR[c, ]+UR[c-1, ]) == 1) {break}  
+    UR[cy, ] <- ur
+    if(cy > 1){
+      if(max(UR[cy, ]+UR[cy-1, ])==1) {break}  
+    } else {
+      if(max(UR[cy, ])==1) {break} 
+    }
   }
 }
 
@@ -201,15 +205,12 @@ for(t in 1:pt){
   Pr.l <- exp(logit.l)/(1+exp(logit.l))   #確率を計算
   Pr[ID[, 3]==t, 1] <- Pr.l
   Y[ID[, 3]==t, 1] <- rbinom(hh, 1, Pr.l)
-  Pr.l
   X.login[ID[, 2]==275, ]
   
   #ガチャの発生
   #ログインがあった場合にのみ発生
   Pr.g <- exp(logit.g)/(1+exp(logit.g))   #確率を計算
   Pr[ID[, 3]==t, 2] <- Pr.g
-  
-  Y[ID[, 2]==i & ID[, 3]==t, 1]
   
   for(i in 1:hh){
     if(Y[ID[, 2]==i & ID[, 3]==t, 1]==1) {
@@ -260,6 +261,7 @@ for(t in 1:pt){
   X.buy[ID[, 3]==t+1, 2] <- ifelse(rowSums(buy.hist[, (60+t-6):(60+t)]) > 0, 1, 0)
   
   #前回のガチャからの経過日数の更新
+  options(warn=0)
   buy.last.z <- apply(buy.hist[, 1:(60+t)], 1, function(x) max(subset(1:length(x), x==1)))
   buy.last <- ifelse(is.infinite(buy.last.z)==TRUE, -rpois(1, 10), buy.last.z)
   X.buy[ID[, 3]==t+1, 3] <- log(60+1+t - buy.last)
@@ -318,16 +320,16 @@ l <- ncol(X.buy)
 #準ニュートン法で推定
 theta0 <- c(runif(k+l+2, -1, 1), 0.4)   #初期値を設定
 res <- optim(theta0, loglike, gr=NULL, y=Y, X.login=X.login[, -ncol(X.login)], X.buy=X.buy, k=k, l=l, 
-             method="BFGS", hessian=TRUE, control=list(fnscale=-1))
+             method="BFGS", hessian=TRUE, control=list(fnscale=-1, trace=TRUE))
 
 ####推定結果の確認と要約####
 ##推定されたパラメータと統計量の推定値
 round(b <- res$par, 3)   #推定されたパラメータ
 round(res$value, 3)   #最大化された対数尤度
 
-(tval <- b/sqrt(-diag(ginv(res$hessian))))   #t値
+(tval <- b/sqrt(abs(diag(ginv(res$hessian)))))   #t値
 round(AIC <- -2*res$value + 2*length(res$par), 3)   #AIC
-round(BIC <- -2*res$value + log(n)*length(b), 3)   #BIC
+round(BIC <- -2*res$value + log(nrow(X))*length(b), 3)   #BIC
 
 #推定値と真の係数の比較
 round(cbind(res$par, c(alpha.s0, alpha.s[-length(alpha.s)], beta.s0, beta.s, alpha.s[length(alpha.s)])), 3)
