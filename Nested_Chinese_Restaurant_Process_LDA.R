@@ -1,5 +1,5 @@
 #####Nested Chinese Restaurant Process LDA#####
-options(warn=2)
+options(warn=0)
 library(MASS)
 library(lda)
 library(RMeCab)
@@ -22,9 +22,12 @@ k1 <- kt1 <- 1   #レベル1の階層数
 k2 <- kt2 <- 4   #レベル2の階層数
 k3 <- kt3 <- rtpois(k2, 3, a=1, b=Inf)   #レベル3の階層数
 k <- sum(c(k1, k2, k3))   #総トピック数
-d <- 2000   #文書数
+d <- 4000   #文書数
 v <- 1000   #語彙数
-w <- rpois(d, rgamma(d, 85, 0.5))   #単語数
+index_v1 <- 1:200; v1 <- length(index_v1)
+index_v2 <- 201:550; v2 <- length(index_v2)
+index_v3 <- 551:v; v3 <- length(index_v3)
+w <- rpois(d, rgamma(d, 50, 0.5))   #単語数
 f <- sum(w)   #単語数
 
 #IDを設定
@@ -41,7 +44,9 @@ for(rp in 1:1000){
   for(j in 1:k2){
     alpha3[[j]] <- alphat3[[j]] <- rep(3.0, k3[j])
   }
-  beta <- betat <- rep(0.085, v)
+  beta1 <- betat1 <- c(rep(3.0, v1), rep(0.005, v2), rep(0.005, v3))
+  beta2 <- betat2 <- c(rep(0.005, v1), rep(0.3, v2), rep(0.005, v3))
+  beta3 <- betat3 <- c(rep(0.005, v1), rep(0.005, v2), rep(0.1, v3))
   
   #ディレクリ分布からパラメータを生成
   theta1 <- thetat1 <- extraDistr::rdirichlet(d, alpha1)
@@ -50,11 +55,11 @@ for(rp in 1:1000){
   for(j in 1:k2){
     theta3[[j]] <- thetat3[[j]] <- as.numeric(extraDistr::rdirichlet(1, alpha3[[j]]))
   }
-  phi1 <- phit1 <- as.numeric(extraDistr::rdirichlet(k1, beta))
-  phi2 <- phit2 <- extraDistr::rdirichlet(k2, beta)
+  phi1 <- phit1 <- as.numeric(extraDistr::rdirichlet(k1, beta1))
+  phi2 <- phit2 <- extraDistr::rdirichlet(k2, beta2)
   phi3 <- phit3 <- list()
   for(j in 1:k2){
-    phi3[[j]] <- phit3[[j]] <- extraDistr::rdirichlet(k3[j], beta)
+    phi3[[j]] <- phit3[[j]] <- extraDistr::rdirichlet(k3[j], beta3)
   }
   phi <- phit <- rbind(phi1, phi2, do.call(rbind, phi3))
   
@@ -131,62 +136,67 @@ keep <- 2
 iter <- 0
 burnin <- 1000/keep
 disp <- 10
-
+g <- 25
+sensor <- 1
 
 ##事前分布の設定
 alpha1 <- 1
 alpha2 <- 1
-alpha3 <- 0.1
+alpha3 <- 1
 beta1 <- 1   #CRPの事前分布
 beta2 <- 1
 
 ##パラメータの真値
 #トピック数の真値
 k1 <- kt1; k2 <- kt2; k3 <- kt3
+index_c <- rep(1:k2, k3)
 
 #トピックモデルのパラメータの真値
 theta <- thetat1
-phi1 <- phit1; phi2 <- phit2; phi3 <- phit3
-Zi2 <- Z2
-Zi1 <- rmnom(d, 1, rep(1/sum(k3), sum(k3)))
-Zi12 <- matrix(0, nrow=d, ncol=k2)
-cumsum_k3 <- cumsum(k3)
-index_z1 <- list()
-for(j in 1:length(k3)){
-  if(j==1){
-    index_z1[[j]] <- 1:cumsum_k3[j]
-  } else {
-    index_z1[[j]] <- (cumsum_k3[j-1]+1):cumsum_k3[j]
-  }
-  Zi12[, j] <- rowSums(Zi1[, index_z1[[j]]])
+phi1 <- (phit1 + 10^-100) / sum(phit1 + 10^-100)
+phi2 <- (phit2 + 10^-100) / rowSums(phit2 + 10^-100)
+phi3 <- (do.call(rbind, phit3) + 10^-100) / rowSums(do.call(rbind, phit3) + 10^-100) 
+Zi12 <- matrix(as.numeric(table(1:d, Z1[, 2])), nrow=d, ncol=k2)
+Zi1 <- matrix(0, nrow=d, ncol=sum(k3))
+for(j in 1:k2){
+  Zi1[, index_c==j] <- Zi12[, j] * matrix(as.numeric(table(1:d, Z1[, 3])), nrow=d, ncol=max(k3))[, 1:k3[j]]
 }
+ZT2 <- Zi2 <- Z2
+ZT1 <- Zi1
+
+#ベストの対数尤度
+LLi <- cbind(phit1[word_vec], rowSums(t(phit2)[word_vec, ] * Zi12[d_id, ]), 
+             rowSums(t(do.call(rbind, phit3))[word_vec, ] * Zi1[d_id, ]))
+LLbest <- sum(log(rowSums(LLi * Zi2)))
+
 
 #トピック数の初期値
-k1 <- 1; k2 <- 2; k3 <- rep(1, k2)
+k1 <- 1; k2 <- 3; k3 <- rep(1, k2)
 
 #パラメータの初期値
 theta <- extraDistr::rdirichlet(d, rep(1, L))
-phi1 <- extraDistr::rdirichlet(1, rep(10.0, v))
-phi2 <- extraDistr::rdirichlet(k2, rep(10.0, v))
-phi3 <- list()
-for(j in 1:k2){
-  phi3[[j]] <- extraDistr::rdirichlet(k3[j], rep(10.0, v))
-}
+phi1 <- as.numeric(extraDistr::rdirichlet(1, rep(100.0, v)))
+phi2 <- extraDistr::rdirichlet(k2, rep(100.0, v))
+phi3 <- extraDistr::rdirichlet(sum(k3), rep(100.0, v))
 
-#トピック割当の初期値
+#ノード割当とレベル割当の初期値
 Zi1 <- rmnom(d, 1, rep(1/sum(k3), sum(k3)))
-Zi12 <- matrix(0, nrow=d, ncol=k2)
-cumsum_k3 <- cumsum(k3)
-index_z1 <- list()
-for(j in 1:length(k3)){
-  if(j==1){
-    index_z1[[j]] <- 1:cumsum_k3[j]
-  } else {
-    index_z1[[j]] <- (cumsum_k3[j-1]+1):cumsum_k3[j]
-  }
-  Zi12[, j] <- rowSums(Zi1[, index_z1[[j]], drop=FALSE])
-}
 Zi2 <- rmnom(f, 1, rep(1/L, L))
+
+##パラメータの格納用配列
+max_seg1 <- 15
+max_seg2 <- 50
+PHI1 <- matrix(0, nrow=R/keep, ncol=v)
+PHI2 <- array(0, dim=c(max_seg1, v, R/keep))
+PHI3 <- array(0, dim=c(max_seg2, v, R/keep))
+THETA <- array(0, dim=c(d, L, R/keep))
+SEG1 <- matrix(0, nrow=d, ncol=max_seg2)
+SEG2 <- matrix(0, nrow=f, ncol=L)
+
+#基底分布の設定
+G0 <- rep(0.5, v)
+G0 <- colSums(sparse_data)/v + 1
+
 
 ##インデックスを作成
 doc_vec <- doc_list <- list()
@@ -199,139 +209,107 @@ for(i in 1:d){
 ####ギブスサンプリングでパラメータをサンプリング####
 for(rp in 1:R){
   
+  ##レベル1のパスの対数尤度
+  if(rp > burnin){
+    g <- 3
+  }
+  LLho1 <-  (sparse_data * Zi2[, 1]) %*% log(phi1)
+  
   ##レベル2のパスの対数尤度
   #新しい潜在変数のパラメータを結合
   index_d <- sample(1:d, 1)
-  #par01 <- extraDistr::rdirichlet(1, colSums((sparse_data)[doc_list[[index_d]], ]) + alpha1)
-  par01 <- extraDistr::rdirichlet(1, rep(5.0, v))
+  par01 <- extraDistr::rdirichlet(g, G0)
   phi2_new <- rbind(phi2, par01)
   
   #文書ごとに対数尤度を設定
-  LLho2 <- as.matrix(t((sparse_data * Zi2[, 2]) %*% t(log(phi2_new))))
-  LLi2_T <- matrix(0, ncol=d, nrow=nrow(phi2_new))
-  for(i in 1:d){
-    LLi2_T[, i] <- LLho2[, doc_list[[i]]] %*% doc_vec[[i]]
-  }
-  LLi2 <- t(LLi2_T)
-  Li2 <- exp(LLi2 - rowMaxs(LLi2))   #尤度に変換
-
+  LLho2 <- (sparse_data * Zi2[, 2]) %*% t(log(phi2_new))
+  LLho2 <- LLho2[, c(1:k2, which.max(colSums(LLho2[, -(1:k2)]))+length(1:k2))]
   
   ##レベル3のパスの対数尤度
-  LLi3 <- list()
-  LLi_z <- cbind()
-  par02 <- extraDistr::rdirichlet(1, colSums((sparse_data)[doc_list[[index_d]], ]) + alpha1)
+  #パスのルートインデックスを作成
+  index_c <- rep(1:(k2+1), c(k3+1, 1))
+  new_c <- c()
+  for(j in 1:(k2+1)){
+    new_c <- c(new_c, max(which(index_c==j)))
+  }
+  #新しい潜在変数のパラメータを結合
+  phi3_new <- matrix(0, nrow=v, length(index_c))
+  phi3_new[, -new_c] <- t(phi3)
   
-  #レベル2のテーブルごとにレベル3のパスの対数尤度を設定
-  for(j in 1:(length(phi3)+1)){
-    
-    #新しい潜在変数のパラメータを結合
-    if(j < (length(phi3)+1)){
-      phi3_new <- rbind(phi3[[j]], par02)
+  #文書ごとに対数尤度を設定
+  LLho3 <- matrix(0, nrow=f, ncol=length(index_c))
+  for(j in 1:(k2+1)){
+    if(j < (k2+1)){
+      index <- index_c==j
+      phi_new <- cbind(phi3_new[, index][, -sum(index)], t(extraDistr::rdirichlet(g, G0)))
+      LLho0 <- (sparse_data * Zi2[, 3]) %*% log(phi_new)
+      LLho3[, index] <- as.matrix(LLho0[, c(1:k3[j], which.max(colSums(LLho0[, -(1:k3[j])]))+k3[j])])
+  
     } else {
-      phi3_new <- par01
+  
+      index <- index_c==j
+      phi_new <- t(extraDistr::rdirichlet(g, G0))
+      LLho0 <- (sparse_data * Zi2[, 3]) %*% log(phi_new)
+      LLho3[, index] <- LLho0[, which.max(colSums(LLho0))]
     }
-    
-    #文書ごとに対数尤度を設定
-    LLho3 <- as.matrix(t((sparse_data * Zi2[, 3]) %*% t(log(phi3_new))))
-    LLi3_T <- matrix(0, nrow=nrow(phi3_new), ncol=d)
-    for(i in 1:d){
-      LLi3_T[, i] <- LLho3[, doc_list[[i]]] %*% doc_vec[[i]]
-    }
-    LLi3[[j]] <- t(LLi3_T)
-    LLi_z <- cbind(LLi_z, LLi3[[j]] + LLi2[, j])   #対数尤度の和
   }
-  Li_z <- exp(LLi_z - rowMaxs(LLi_z))   #尤度に変換
+  
+  ##nCPRからパス変数をサンプリング
+  #文書ごとにレベルごとの対数尤度の和をとる
+  LLho <- as.matrix(t(LLho1 + LLho2[, index_c] + LLho3))
+  LLi0 <- matrix(0, nrow=d, ncol=length(index_c))
+  for(i in 1:d){
+    LLi0[i, ] <- LLho[, doc_list[[i]]] %*% doc_vec[[i]]
+  }
+  LLi <- exp(LLi0 - rowMaxs(LLi0))   #尤度に変換
 
-  
-  ##CRPの事前分布を設定
-  #既存のテーブルと新しいテーブルのインデックスを定義
-  index_exit <- c()
-  for(j in 1:length(index_z1)){
-    if(j==1){
-      index_exit <- c(index_exit, index_z1[[j]])
-    } else {
-      index_exit <- c(index_exit, index_z1[[j]]+1)
-    }
-  }
-  
-  #CRPを計算
-  gamma0 <- matrix(0, nrow=d, ncol=ncol(LLi_z))
-  gamma0[, index_exit] <- matrix(colSums(Zi1), nrow=d, ncol=length(index_exit), byrow=T) - Zi1; gamma0[, -index_exit] <- beta1
-  gamma1 <- Li_z * gamma0/(d-1-beta1)
-  
-  #潜在変数zの割当確率の推定とZのサンプリング
-  z1_rate <- gamma1 / rowSums(gamma1)
-  Zi01 <- rmnom(d, 1, z1_rate)
+  #nCRPのパラメータを設定
+  N <- matrix(beta1, nrow=d, ncol=length(index_c))
+  N[, -new_c] <- matrix(colSums(Zi1), nrow=d, ncol=ncol(Zi1), byrow=T) - Zi1
+  gamma0 <- N / (d + beta1 - 1)   #nCPRの事前分布
 
-  ##テーブル定義を更新
-  #既存テーブルと新規テーブルの生成と消滅のインデックスを定義
-  index_list <- index_z1
-  Zi1_index <- (colSums(Zi01) >= 5) * 1:ncol(Zi01)
+  #パス変数の割当確率からパスをサンプリング
+  gamma <- gamma0 * LLi   #パス割当の潜在確率
+  Zi0 <- rmnom(d, 1, gamma / rowSums(gamma))   #多項分布からパスをサンプリング
+  
+  #生成が一定以下のパスを削除
+  if(rp > burnin){
+    sensor <- 25
+  } else {
+    sensor <- 1
+  }
+  index_z1 <- colSums(Zi0) >= sensor
+  Zi1 <- Zi0[, index_z1]; Zi1_T <- t(Zi1); index_c <- index_c[index_z1]
+  k2 <- length(unique(index_c)); k3 <- as.numeric(table(index_c))
 
-  for(j in 1:k2){
-    if(length(index_z1[[j]])==0){
-      next
-    }
-  
-    if(j==1){
-      index <- c(index_list[[j]], max(index_list[[j]])+1)
-      index_z1[[j]] <- subset(Zi1_index[index], Zi1_index[index] %in% index)
-      index_z1[[j]] <- 1:length(index_z1[[1]])
-    } else {
-      index <- c(j-1+index_list[[j]], j-1+max(index_list[[j]])+1)
-      index_z1[[j]] <- subset(Zi1_index[index], Zi1_index[index] %in% index)
-      if(length(index_z1[[j]])==0){
-        index_z1[[j]] <- NULL
-        next
-      }
-      index_z1[[j]] <- min(index_z1[[j]]):(min(index_z1[[j]])+(length(index_z1[[j]])-1))
-      
-      if(min(index_z1[[j]]) - max(index_z1[[j-1]]) != 1){
-        x <- (max(index_z1[[j-1]]) + 1):(max(index_z1[[j-1]]) + 100)
-        index_z1[[j]] <- x[1:length(index_z1[[j]])]
-      }
-    }
+  ##単語分布のパラメータをサンプリング
+  if(rp > burnin){
+    alpha3 <- 0.1
   }
-  if(Zi1_index[length(Zi1_index)] > 0){
-    index_z1[[k2+1]] <- max(index_z1[[k2]])+1
-  }
-  k2 <- length(index_z1)
-  
-
-  #ノードから消滅したテーブルを削除
-  Zi1 <- Zi01[, Zi1_index > 0]
-  k3 <- rep(0, k2)
-  Zi12 <- matrix(0, nrow=d, ncol=k2)
-  for(j in 1:k2){
-    k3[j] <- length(index_z1[[j]])
-    Zi12[, j] <- rowSums(Zi1[, index_z1[[j]], drop=FALSE])
-  }
-  
-  ##パラメータを更新
   #レベル1の単語分布をサンプリング
   vsum11 <- colSums(sparse_data * Zi2[, 1]) + alpha3
   phi1 <- as.numeric(extraDistr::rdirichlet(1, vsum11))
   
   #レベル2の単語分布をサンプリング
-  vsum12 <- as.matrix(t(Zi12[d_id, ]) %*% (sparse_data * Zi2[, 2])) + alpha3
-  phi2 <- extraDistr::rdirichlet(nrow(vsum12), vsum12)
-  
-  #レベル3の単語分布をサンプリング
-  phi3 <- list()
+  phi2 <- matrix(0, nrow=k2, ncol=v)
+  Zi12 <- matrix(0, nrow=d, ncol=k2)
   for(j in 1:k2){
-    vsum13 <- as.matrix(t(Zi1[d_id, index_z1[[j]], drop=FALSE]) %*% (sparse_data * Zi2[, 3]) + alpha3)
-    phi3[[j]] <- extraDistr::rdirichlet(nrow(vsum13), vsum13)
+    Zi12[, j] <- rowSums(Zi1[, index_c==j, drop=FALSE])
+    vsum12 <- colSums((Zi12[d_id, j] * Zi2[, 2]) * sparse_data) + alpha3
+    phi2[j, ] <- extraDistr::rdirichlet(1, vsum12)
   }
+
+  #レベル3の単語分布をサンプリング
+  vsum13 <- as.matrix(t(Zi1[d_id, ]) %*% (sparse_data * Zi2[, 3]) + alpha3)
+  phi3 <- extraDistr::rdirichlet(nrow(vsum13), vsum13)
   
+
   ##トピック割当をサンプリング
   #トピック割当の尤度を設定
   par1 <- phi1[word_vec]   
   par2 <- rowSums(t(phi2)[word_vec, , drop=FALSE] * Zi12[d_id, ])
-  par3 <- matrix(0, nrow=f, ncol=k2)
-  for(j in 1:k2){
-    par3[, j] <- rowSums(t(phi3[[j]])[word_vec, , drop=FALSE] * Zi1[d_id, index_z1[[j]], drop=FALSE])
-  }
-  z_par <- theta[d_id, ] * cbind(par1, par2, rowSums(par3))   #レベルごとのトピック尤度
+  par3 <- rowSums(t(phi3)[word_vec, , drop=FALSE] * Zi1[d_id, ])
+  z_par <- theta[d_id, ] * cbind(par1, par2, par3)   #レベルごとのトピック尤度
   
   #多項分布からトピック割当をサンプリング
   z_rate <- z_par / rowSums(z_par)   #レベル割当確率
@@ -339,35 +317,43 @@ for(rp in 1:R){
   Zi2_T <- t(Zi2)
   
   ##トピック分布を更新
-  #ディレクリ分布のパラメータ
+  #ディレクリ分布からトピック分布をサンプリング
   wsum0 <- matrix(0, nrow=d, ncol=L)
   for(i in 1:d){
     wsum0[i, ] <- Zi2_T[, doc_list[[i]]] %*% doc_vec[[i]]
   }
-  wsum <- wsum0 + alpha2 
+  wsum <- wsum0 + alpha2   #ディリクレ分布のパラメータ
+  theta <- extraDistr::rdirichlet(d, wsum)   #パラメータをサンプリング
   
-  #ディレクリ分布からパラメータをサンプリング
-  theta <- extraDistr::rdirichlet(d, wsum)
   
   ##パラメータの格納とサンプリング結果の表示
   #サンプリングされたパラメータを格納
   if(rp%%keep==0){
     #サンプリング結果の格納
     mkeep <- rp/keep
+    mkeep <- 1
+    PHI1[mkeep, ] <- phi1
+    PHI2[1:nrow(phi2), , mkeep] <- phi2
+    PHI3[1:nrow(phi3), , mkeep] <- phi3
+    THETA[, , mkeep] <- theta
+  } 
+
+  #トピック割当はバーンイン期間を超えたら格納する
+  if(rp%%keep==0 & rp >= burnin){
+    SEG1[, 1:ncol(Zi1)] <- SEG1[, 1:ncol(Zi1)] + Zi1
+    SEG2 <- SEG2 + Zi2
+  }
     
-    #トピック割当はバーンイン期間を超えたら格納する
-    if(rp%%keep==0 & rp >= burnin){
-    }
-    
-    if(rp%%disp==0){
-      #サンプリング結果を確認
-      print(rp)
-      print(c(k1, k2, k3))
-      print(c(kt1, kt2, kt3))
-      print(colSums(Zi1))
-      print(round(cbind(theta[1:10, ], thetat1[1:10, ]), 3))
-      print(round(rbind(phi2[1:nrow(phi2), 1:20], phit2[, 1:20]), 3))
-    }
+  if(rp%%disp==0){
+    #サンプリング結果を確認
+    print(rp)
+    print(c(k2, k3))
+    print(c(kt2, kt3))
+    print(colSums(Zi1))
+    print(c(sum(log(rowSums(z_par))), LLbest))
   }
 }
 
+sum(as.numeric(Zi2 %*% 1:3) == as.numeric(Z2 %*% 1:3))
+colSums(Zi2)
+colSums(Z2)
