@@ -13,11 +13,11 @@ library(ggplot2)
 library(lattice)
 
 #set.seed(78594)
- 
+
 ####データの発生####
 #データの設定
 hh <- 3000   #ユーザー数
-category <- 200   #カテゴリー数
+category <- 1000   #カテゴリー数
 k <- 10   #潜在変数数
 
 ##非負値行列因子分解の仮定に従いデータを生成
@@ -27,6 +27,7 @@ alpha02 <- 0.15; beta02 <- 0.8
 W0 <- matrix(rgamma(hh*k, alpha01, beta01), nrow=hh, ncol=k)
 H0 <- matrix(rgamma(category*k, alpha02, beta02), nrow=k, ncol=category)
 WH <- W0 %*% H0
+
 
 #ポアソン分布よりデータを生成
 Data <- matrix(0, nrow=hh, ncol=category)
@@ -41,9 +42,10 @@ sparse_data <- as(Data, "CsparseMatrix")   #スパース行列の作成
 
 ####マルコフ連鎖モンテカルロ法でNMFを推定####
 ##アルゴリズムの設定
-R <- 10000
+R <- 5000
 keep <- 4
 iter <- 0
+disp <- 10
 
 ##事前分布の設定
 alpha1 <- 0.01; beta1 <- 0.01
@@ -76,6 +78,7 @@ for(rp in 1:R){
     W[, j] <- rgamma(hh, w1, w2)   
   }
   W <- W / matrix(colSums(W), nrow=hh, ncol=k, byrow=T) * hh/5   #各列ベクトルを正規化
+  rowSums(Data)
   
   ##補助変数lambdaを更新
   lambda <- array(0, dim=c(hh, category, k))
@@ -83,19 +86,22 @@ for(rp in 1:R){
   for(j in 1:k){
     lambda[, , j] <- W[, j] %*% t(H[j, ]) / WH
   }
-
+  
   ##ガンマ分布よりHをサンプリング
   for(j in 1:k){
     h1 <- alpha2 + colSums(lambda[, , j] * Data)
     h2 <- beta2 + sum(W[, j])
     H[j, ] <- rgamma(category, h1, h2)  
   }
-
+  
   ##サンプリング結果の保存と表示
   if(rp%%keep==0){
     mkeep <- rp/keep
     W_array[, , mkeep] <- W[, 1:k]
     H_array[, , mkeep ] <- H[1:k, ]
+  }
+  
+  if(rp%%disp==0){
     print(rp)
     print(c(sum(dpois(Data, W %*% H, log=T)), LL))
     print(round(cbind(W[1:10, 1:k], W0[1:10, 1:k]), 3))
@@ -149,4 +155,5 @@ Predict <- matrix(0, nrow=hh, ncol=category*2)
 index <- rep(0:1, category)
 Predict[, index==0] <- round(WH_mu, 3)
 Predict[, index==1] <- Data
+
 
