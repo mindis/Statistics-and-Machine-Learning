@@ -328,7 +328,6 @@ for(rp in 1:R){
   if(rp%%keep==0){
     #ƒTƒ“ƒvƒŠƒ“ƒOŒ‹‰Ê‚ÌŠi”[
     mkeep <- rp/keep
-    mkeep <- 1
     PHI1[, , mkeep] <- phi1
     PHI2[, , mkeep] <- phi2
     THETA[, , mkeep] <- theta
