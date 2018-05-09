@@ -148,6 +148,12 @@ sparse_data_T <- t(sparse_data)
 rm(word_list); rm(wd_list); rm(z2_list)
 gc(); gc()
 
+#スイッチング変数の真値
+ZT1 <- c()
+for(i in 1:d){
+  ZT1 <- c(ZT1, Z1[[i]][, 1])
+}
+
 
 #####マルコフ連鎖モンテカルロ法でDLDAを推定####
 ##単語ごとに尤度と負担率を計算する関数
@@ -359,7 +365,51 @@ for(rp in 1:R){
   }
 }
 
+####サンプリング結果の可視化と要約####
+burnin <- 2000/keep
+RS <- R/keep
+
+##サンプリング結果の可視化
+#トピック分布の可視化
+matplot(t(THETA[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA[10, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA[100, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA[1000, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+
+#単語分布の可視化
+matplot(t(PHI1[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI1[3, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI1[5, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI1[7, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI2[2, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI2[4, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI2[6, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI2[8, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+
+##サンプリング結果の事後分布
+#トピック分布の事後平均
+round(cbind(apply(THETA[, , burnin:RS], c(1, 2), mean), thetat), 3)
+round(apply(THETA[, , burnin:RS], c(1, 2), sd), 3)
+
+#単語分布の事後平均
+round(cbind(t(apply(PHI1[, , burnin:RS], c(1, 2), mean)), t(phit1)), 3)
+round(t(apply(PHI1[, , burnin:RS], c(1, 2), sd)), 3)
+round(cbind(t(apply(PHI2[, , burnin:RS], c(1, 2), mean)), t(phit2)), 3)
+round(t(apply(PHI2[, , burnin:RS], c(1, 2), sd)), 3)
 
 
+
+##潜在変数のサンプリング結果の事後分布
+seg11_rate <- SEG11 / max(SEG11); seg12_rate <- SEG12 / max(SEG11)
+seg21_rate <- SEG12 / max(SEG11)
+seg2_rate <- SEG2 / rowSums(SEG2)
+seg11_rate[is.nan(seg11_rate)] <- 0; seg12_rate[is.nan(seg12_rate)] <- 0
+seg21_rate[is.nan(seg21_rate)] <- 0
+seg2_rate[is.nan(seg2_rate)] <- 0
+
+#トピック割当結果を比較
+round(cbind(SEG11, seg11_rate, ZT1), 3)
+round(cbind(rowSums(SEG12), seg12_rate), 3)
+round(cbind(rowSums(SEG2), seg2_rate, Z2), 3)
 
 
