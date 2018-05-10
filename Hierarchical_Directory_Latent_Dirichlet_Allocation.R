@@ -408,3 +408,58 @@ for(rp in 1:R){
   }
 }
 
+####サンプリング結果の可視化と要約####
+burnin <- 2000/keep
+RS <- R/keep
+
+##サンプリング結果の可視化
+#トピック分布の可視化
+matplot(t(THETA1[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA1[10, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA1[100, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA1[1000, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA2[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA2[10, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA2[25, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(THETA2[50, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+
+#単語分布の可視化
+matplot(t(PHI1[1, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI1[3, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI1[5, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI1[7, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI2[2, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI2[4, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI2[6, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+matplot(t(PHI2[8, , ]), type="l", xlab="サンプリング回数", ylab="パラメータ")
+
+##サンプリング結果の事後分布
+#トピック分布の事後平均
+round(cbind(apply(THETA1[, , burnin:RS], c(1, 2), mean), thetat1), 3)
+round(apply(THETA1[, , burnin:RS], c(1, 2), sd), 3)
+round(cbind(apply(THETA2[, , burnin:RS], c(1, 2), mean), thetat2), 3)
+round(apply(THETA2[, , burnin:RS], c(1, 2), sd), 3)
+
+#単語分布の事後平均
+round(cbind(t(apply(PHI1[, , burnin:RS], c(1, 2), mean)), t(phit1)), 3)
+round(t(apply(PHI1[, , burnin:RS], c(1, 2), sd)), 3)
+round(cbind(t(apply(PHI2[, , burnin:RS], c(1, 2), mean)), t(phit2)), 3)
+round(t(apply(PHI2[, , burnin:RS], c(1, 2), sd)), 3)
+
+
+
+##潜在変数のサンプリング結果の事後分布
+seg11_rate <- SEG11 / max(SEG11); seg12_rate <- SEG12 / max(SEG11)
+seg21_rate <- SEG21 / max(rowSums(SEG21))
+seg22_rate <- SEG22 / max(rowSums(SEG22))
+
+seg11_rate[is.nan(seg11_rate)] <- 0; seg12_rate[is.nan(seg12_rate)] <- 0
+seg21_rate[is.nan(seg21_rate)] <- 0
+seg22_rate[is.nan(seg2_rate)] <- 0
+
+#トピック割当結果を比較
+round(cbind(SEG11, seg11_rate), 3)
+round(cbind(rowSums(SEG12), seg12_rate), 3)
+round(cbind(rowSums(SEG21), seg21_rate), 3)
+round(cbind(rowSums(SEG22), seg22_rate), 3)
+
