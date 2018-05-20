@@ -5,6 +5,7 @@ library(MCMCpack)
 library(gtools)
 library(extraDistr)
 library(reshape2)
+library(matrixStats)
 library(qrmtools)
 library(slfm)
 library(caret)
@@ -19,8 +20,8 @@ library(lattice)
 #データの設定
 N <- 5000   #ユーザー数
 K <- 2000   #アイテム数
-seg_u <- 5   #ユーザーのセグメント数
-seg_i <- 4   #アイテムのセグメント数
+seg_u <- 8   #ユーザーのセグメント数
+seg_i <- 6   #アイテムのセグメント数
 
 ##パラメータとセグメントを発生させる
 #ユーザーセグメントを発生
@@ -79,6 +80,7 @@ iter <- 0
 sbeta <- 1.5
 
 ##事前分布の設定
+alpha1 <- alpha2 <- 1
 tau <- c(1, 1)   #ベータ分布の事前分布
 alpha1 <- rep(1, seg_u)   #ユーザーセグメントのディクレリ事前分布
 alpha2 <- rep(1, seg_i)   #アイテムセグメントのディクレリ事前分布
@@ -129,6 +131,10 @@ LLi2 <- matrix(0, nrow=K, ncol=seg_i)
 index1 <- list()
 index2 <- list()
 
+##データの設定
+u_vec <- rep(1, seg_u)
+i_vec <- rep(1, seg_i)
+
 
 ####マルコフ連鎖モンテカルロ法でパラメータをサンプリング####
 for(rp in 1:R){
@@ -139,48 +145,38 @@ for(rp in 1:R){
   log_theta0 <- log(1-oldtheta)
   
   #セグメントごとの二項分布の対数尤度を計算
-  LLi1 <- sparse_data1 %*% t(log_theta1[, z2]) + sparse_data0 %*% t(log_theta0[, z2])
-  
-  #logsumexpの尤度を計算
-  LLi_max <- matrix(apply(LLi1, 1, max), nrow=N, ncol=seg_u)
-  r_matrix <- matrix(r1, nrow=N, ncol=seg_u, byrow=T)
-  
-  #割当確率のパラメータを設定
-  expl <- r_matrix * exp(LLi1 - LLi_max)
-  expl_log <- log(expl)
-  expl_max <- matrix(log(max(expl[1, ])), nrow=N, ncol=seg_u)
-  z1_rate <- exp(expl_log - (log(rowSums(exp(expl_log - expl_max))) + expl_max))   #セグメント割当確率
+  LLi1 <- as.matrix(sparse_data1 %*% t(log_theta1[, z2]) + sparse_data0 %*% t(log_theta0[, z2]))
+
+  #セグメント割当確率のパラメータを設定
+  r_matrix <- matrix(r1, nrow=N, ncol=seg_u, byrow=T)   #混合率
+  expl <- r_matrix * exp(LLi1 - rowMaxs(LLi1))
+  z1_rate <- expl / rowSums(expl)   #セグメント割当確率
   
   #多項分布からセグメント割当を生成
-  Z1 <- rmnom(N, 1, z1_rate)
-  z1 <- as.numeric(Z1 %*% 1:seg_u)
+  Zi1 <- rmnom(N, 1, z1_rate)
+  z1 <- as.numeric(Zi1 %*% 1:seg_u)
   
   #混合率を更新
-  z_sums <- colSums(Z1) + 1
-  r1 <- z_sums / sum(z_sums)
+  z_sums <- colSums(Zi1) + alpha1
+  r1 <- as.numeric(extraDistr::rdirichlet(1, z_sums))
   
   
   ##アイテムのセグメント割当を生成
   #セグメントごとの二項分布の対数尤度を計算
-  LLi2 <- sparse_data_T1 %*% log_theta1[z1, ] + sparse_data_T0 %*% log_theta0[z1, ]
+  LLi2 <- as.matrix(sparse_data_T1 %*% log_theta1[z1, ] + sparse_data_T0 %*% log_theta0[z1, ])
   
-  #logsumexpの尤度を計算
-  LLi_max <- matrix(apply(LLi2, 1, max), nrow=K, ncol=seg_i)
-  r_matrix <- matrix(r2, nrow=K, ncol=seg_i, byrow=T)
-  
-  #割当確率のパラメータを設定
-  expl <- r_matrix * exp(LLi2 - LLi_max)
-  expl_log <- log(expl)
-  expl_max <- matrix(log(max(expl[1, ])), nrow=K, ncol=seg_i)
-  z2_rate <- exp(expl_log - (log(rowSums(exp(expl_log - expl_max))) + expl_max))   #セグメント割当確率
+  #セグメント割当確率のパラメータを設定
+  r_matrix <- matrix(r2, nrow=K, ncol=seg_i, byrow=T)   #混合率
+  expl <- r_matrix * exp(LLi2 - rowMaxs(as.matrix(LLi2)))
+  z2_rate <- expl / rowSums(expl)   #セグメント割当確率
   
   #多項分布からセグメント割当を生成
-  Z2 <- rmnom(K, 1, z2_rate)
-  z2 <- as.numeric(Z2 %*% 1:seg_i)
+  Zi2 <- rmnom(K, 1, z2_rate)
+  z2 <- as.numeric(Zi2 %*% 1:seg_i)
   
   #混合率を更新
-  z_sums <- colSums(Z2) + 1
-  r2 <- z_sums / sum(z_sums)
+  z_sums <- colSums(Zi2) + alpha2
+  r2 <- as.numeric(extraDistr::rdirichlet(1, z_sums))
   
   
   ##ベータ分布からパラメータをサンプリング
@@ -211,7 +207,9 @@ for(rp in 1:R){
     SEG2[mkeep, ] <- z2
     
     if(rp%%disp==0){
+      LL <- sum((LLi1 * Zi1) %*% u_vec)   #対数尤度
       print(rp)
+      print(LL)
       print(round(rbind(r1, mix1), 3))
       print(round(rbind(r2, mix2), 3))
       print(round(cbind(oldtheta, theta0), 3))
