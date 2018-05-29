@@ -68,37 +68,51 @@ item <- 2000   #アイテム数
 context <- 200   #コンテキスト数
 N0 <- hh*item
 
-##IDの設定
-#ユーザーとアイテムIDを設定
-user_id0 <- rep(1:hh, rep(item, hh))   #ユーザーID
-item_id0 <- rep(1:item, hh)   #アイテムID
 
-#コンテキストIDを設定
-alpha <- 2.5
-G0 <- as.numeric(extraDistr::rdirichlet(1, rep(alpha, context)))*context/(alpha*2)
-context_list <- list()
+##欠損ベクトルとIDを設定
+#IDを仮設定
+item_id0 <- rep(1:item, rep(context, item))
+context_id0 <- rep(1:context, item)
+n <- length(item_id0)
+
+#要素ごとの出現確率
+beta1 <- rbeta(hh, 1.0, 20.0)
+beta2 <- rbeta(item, 3.0, 16.0)
+beta3 <- rbeta(context, 1.0, 8.0)
+beta_vec2 <- beta2[item_id0]
+beta_vec3 <- beta3[context_id0]
+
+#ユーザーごとにIDを作成
+user_id_list <- item_id_list <- context_id_list <- list()
 for(i in 1:hh){
   if(i%%100==0){
     print(i)
   }
-  prob <- as.numeric(extraDistr::rdirichlet(1, G0))
-  context_list[[i]] <- as.numeric(rmnom(item, 1, prob) %*% 1:context)
+  #欠損ベクトルを生成
+  prob <- beta1[i] * beta_vec2 * beta_vec3
+  deficit <- rbinom(n, 1, prob)
+  index_z <- which(deficit==1)
+  
+  #IDを設定
+  user_id_list[[i]] <- rep(i, n)[index_z]
+  item_id_list[[i]] <- item_id0[index_z]
+  context_id_list[[i]] <- context_id0[index_z]
 }
-context_id0 <- unlist(context_list)
-storage.mode(context_id0) <- "integer"
-plyr::count(context_id0)
-rm(context_list)
+#リストを変換
+user_id <- unlist(user_id_list)
+item_id <- unlist(item_id_list)
+context_id <- unlist(context_id_list)
+N <- length(user_id)
 
 #ユーザー×コンテキストのID
-uw_index <- paste(user_id0, context_id0, sep="")
-uw_id0 <- left_join(data.frame(id=uw_index, no_vec=1:length(uw_index)),
-                    data.frame(id=unique(uw_index), no=1:length(unique(uw_index))), by="id")$no
+uw_index <- paste(user_id, context_id, sep="")
+uw_id <- left_join(data.frame(id=uw_index, no_vec=1:length(uw_index)),
+                   data.frame(id=unique(uw_index), no=1:length(unique(uw_index))), by="id")$no
 
 #アイテム×コンテキストのID
-vw_index <- paste(item_id0, context_id0, sep="")
-vw_id0 <- left_join(data.frame(id=vw_index, no_vec=1:length(vw_index)),
-                    data.frame(id=unique(vw_index), no=1:length(unique(vw_index))), by="id")$no
-table(uw_id0[user_id0==1])
+vw_index <- paste(item_id, context_id, sep="")
+vw_id <- left_join(data.frame(id=vw_index, no_vec=1:length(vw_index)),
+                   data.frame(id=unique(vw_index), no=1:length(unique(vw_index))), by="id")$no
 
 ##応答変数が妥当になるまでパラメータの生成を繰り返す
 for(rp in 1:1000){
@@ -106,13 +120,13 @@ for(rp in 1:1000){
 
   ##素性ベクトルを生成
   k1 <- 2; k2 <- 3; k3 <- 4
-  x1 <- matrix(runif(hh*item*k1, 0, 1), nrow=hh*item, ncol=k1)
-  x2 <- matrix(0, nrow=hh*item, ncol=k2)
+  x1 <- matrix(runif(N*k1, 0, 1), nrow=N, ncol=k1)
+  x2 <- matrix(0, nrow=N, ncol=k2)
   for(j in 1:k2){
     pr <- runif(1, 0.25, 0.55)
-    x2[, j] <- rbinom(hh*item, 1, pr)
+    x2[, j] <- rbinom(N, 1, pr)
   }
-  x3 <- rmnom(hh*item, 1, runif(k3, 0.2, 1.25)); x3 <- x3[, -which.min(colSums(x3))]
+  x3 <- rmnom(N, 1, runif(k3, 0.2, 1.25)); x3 <- x3[, -which.min(colSums(x3))]
   x0 <- cbind(x1, x2, x3)   #データを結合
   
   
@@ -218,55 +232,27 @@ for(rp in 1:1000){
   ##コンテキスト依存のユーザーおよびアイテムバイアスのパラメータを生成
   #コンテキスト依存の変量効果
   tau_uw <- 0.5; tau_vw <- 0.5
-  alpha_uw <- rnorm(unique(uw_id0), 0, tau_uw)
-  alpha_vw <- rnorm(unique(vw_id0), 0, tau_vw)
+  alpha_uw <- rnorm(unique(uw_id), 0, tau_uw)
+  alpha_vw <- rnorm(unique(vw_id), 0, tau_vw)
   
   #コンテキスト依存バイアス平滑化パラメータ
-  theta_uw <- alpha_uw[uw_id0] + theta_u[user_id0] * theta_w1[context_id0] 
-  theta_vw <- alpha_vw[vw_id0] + theta_v[item_id0] * theta_w2[context_id0] 
+  theta_uw <- alpha_uw[uw_id] + theta_u[user_id] * theta_w1[context_id] 
+  theta_vw <- alpha_vw[vw_id] + theta_v[item_id] * theta_w2[context_id] 
   
   
   ##プロビットモデルから応答変数を生成
   #潜在効用の生成
   mu <- x0 %*% beta + theta_uw + theta_vw
-  U <- rnorm(N0, mu, 1)
+  U <- rnorm(N, mu, 1)
   
   #応答変数を生成
-  y0 <- as.numeric(U > 0)
-  if(mean(y0) > 0.25 & mean(y0) < 0.4) break   #break条件
+  y <- as.numeric(U > 0)
+  if(mean(y) > 0.25 & mean(y) < 0.4) break   #break条件
 }
 
-##
+#####モンテカルロEMアルゴリズムでBSHPモデルを推定####
 
-
-
-
-##欠損ベクトルを生成
-#欠損有無のベータ分布のパラメータを設定
-beta1 <- rbeta(hh, 8.5, 10.0)   #ユーザー購買確率
-beta2 <- rbeta(item, 6.5, 8.0)   #アイテム購買確率
-beta3 <- rbeta(context, 6.0, 7.0)   #コンテキスト購買確率
-
-#インデックスを設定
-index_item <- rep(1:item, rep(context, item))
-index_context <- rep(1:context, item)
-n <- length(index_item)
-
-#ベルヌーイ分布から欠損を生成
-Z_list <- list()
-for(i in 1:hh){
-  if(i%%100==0){
-    print(i)
-  }
-  prob <- beta1[i] * beta2[index_item] * beta3[index_context]
-  Z_list[[i]] <- rbinom(n, 1, prob)
-}
-z_vec <- unlist(Z_list)
-mean(z_vec)
-sum(z_vec)
-
-
-
+unique(uw_id)
 
 
 
