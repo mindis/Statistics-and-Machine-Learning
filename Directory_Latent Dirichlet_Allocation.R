@@ -19,10 +19,10 @@ library(ggplot2)
 k <- 10   #トピック数
 dir1 <- 5   #上位ディレクトリ数
 dir2 <- 20   #下位ディレクトリ数
-d <- 3500   #文書数
+d <- 15000   #文書数
 v11 <- 150   #ディレクトリあたりの語彙数
 v12 <- dir1*v11   #ディレクトリ構造に関係のある語彙数
-v2 <- 400   #ディレクトリ構造に関係のない語彙数
+v2 <- 500   #ディレクトリ構造に関係のない語彙数
 v <- v12 + v2   #総語彙数
 index_v11 <- matrix(1:v12, nrow=dir1, ncol=v11, byrow=T)
 dir_v <- matrix(1:v12, nrow=dir1, ncol=v11, byrow=T)   #ディレクトリの単語構造
@@ -31,10 +31,11 @@ f <- sum(w)   #総単語数
 
 ##IDの設定
 d_id <- rep(1:d, w)
-t_id <- c()
+t_id_list <- list()
 for(i in 1:d){
-  t_id <- c(t_id, 1:w[i])
+  t_id_list[[i]] <- 1:w[i]
 }
+t_id <- unlist(t_id_list)
 
 ##ディレクトリの割当を設定
 #上位と下位のディレクトリ割当を設定
@@ -143,17 +144,17 @@ for(rp in 1:1000){
 wd <- unlist(wd_list)
 Z2 <- do.call(rbind, z2_list)
 z2_vec <- as.numeric(Z2 %*% 1:k)
-sparse_data <- as(do.call(rbind, word_list), "CsparseMatrix") 
+sparse_data <- sparseMatrix(1:f, wd, dims=c(f, v))
 sparse_data_T <- t(sparse_data)
 rm(word_list); rm(wd_list); rm(z2_list)
 gc(); gc()
 
 #スイッチング変数の真値
-ZT1 <- c()
+ZT1_list <- list()
 for(i in 1:d){
-  ZT1 <- c(ZT1, Z1[[i]][, 1])
+  ZT1_list[[i]] <- Z1[[i]][, 1]
 }
-
+ZT1 <- unlist(ZT1_list)
 
 #####マルコフ連鎖モンテカルロ法でDLDAを推定####
 ##単語ごとに尤度と負担率を計算する関数
