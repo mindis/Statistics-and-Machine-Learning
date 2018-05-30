@@ -76,9 +76,9 @@ context_id0 <- rep(1:context, item)
 n <- length(item_id0)
 
 #要素ごとの出現確率
-beta1 <- rbeta(hh, 1.0, 20.0)
-beta2 <- rbeta(item, 3.0, 16.0)
-beta3 <- rbeta(context, 1.0, 8.0)
+beta1 <- rbeta(hh, 3.0, 36.0)
+beta2 <- rbeta(item, 2.5, 16.0)
+beta3 <- rbeta(context, 0.5, 6.0)
 beta_vec2 <- beta2[item_id0]
 beta_vec3 <- beta3[context_id0]
 
@@ -104,13 +104,14 @@ item_id <- unlist(item_id_list)
 context_id <- unlist(context_id_list)
 N <- length(user_id)
 
+
 #ユーザー×コンテキストのID
-uw_index <- paste(user_id, context_id, sep="")
+uw_index <- paste(user_id, context_id, sep="-")
 uw_id <- left_join(data.frame(id=uw_index, no_vec=1:length(uw_index)),
                    data.frame(id=unique(uw_index), no=1:length(unique(uw_index))), by="id")$no
 
 #アイテム×コンテキストのID
-vw_index <- paste(item_id, context_id, sep="")
+vw_index <- paste(item_id, context_id, sep="-")
 vw_id <- left_join(data.frame(id=vw_index, no_vec=1:length(vw_index)),
                    data.frame(id=unique(vw_index), no=1:length(unique(vw_index))), by="id")$no
 
@@ -188,7 +189,7 @@ for(rp in 1:1000){
   alpha_ut <- alpha_u
   
   #回帰モデルからユーザー個別の回帰パラメータを生成
-  theta_u <- as.numeric(u %*% alpha_u + rnorm(hh, 0, tau_u))
+  theta_ut <- theta_u <- as.numeric(u %*% alpha_u + rnorm(hh, 0, tau_u))
   
   
   ##アイテムベースの階層モデルのパラメータ
@@ -205,8 +206,8 @@ for(rp in 1:1000){
   }
   alpha_vt <- alpha_v
   
-  #回帰モデルからユーザー個別の回帰パラメータを生成
-  theta_v <- as.numeric(v %*% alpha_v + rnorm(item, 0, tau_v))
+  #回帰モデルからアイテム個別の回帰パラメータを生成
+  theta_vt <- theta_v <- as.numeric(v %*% alpha_v + rnorm(item, 0, tau_v))
   
   
   ##コンテキストベースの階層モデルのパラメータ
@@ -224,20 +225,20 @@ for(rp in 1:1000){
   }
   alpha_wt <- alpha_w
   
-  #回帰モデルからユーザー個別の回帰パラメータを生成
-  theta_w <- w %*% alpha_w + mvrnorm(context, rep(0, kw), tau_w^2 * diag(kw))
-  theta_w1 <- theta_w[, 1]
-  theta_w2 <- theta_w[, 2]
+  #回帰モデルからコンテキスト個別の回帰パラメータを生成
+  theta_wt <- theta_w <- w %*% alpha_w + mvrnorm(context, rep(0, kw), tau_w^2 * diag(kw))
+  theta_wt1 <- theta_w1 <- theta_w[, 1]
+  theta_wt2 <- theta_w2 <- theta_w[, 2]
   
   ##コンテキスト依存のユーザーおよびアイテムバイアスのパラメータを生成
   #コンテキスト依存の変量効果
-  tau_uw <- 0.5; tau_vw <- 0.5
-  alpha_uw <- rnorm(unique(uw_id), 0, tau_uw)
-  alpha_vw <- rnorm(unique(vw_id), 0, tau_vw)
+  tau_uwt <- tau_uw <- 0.5; tau_vwt <- tau_vw <- 0.5
+  alpha_uwt <- alpha_uw <- rnorm(unique(uw_id), 0, tau_uw)
+  alpha_vwt <- alpha_vw <- rnorm(unique(vw_id), 0, tau_vw)
   
   #コンテキスト依存バイアス平滑化パラメータ
-  theta_uw <- alpha_uw[uw_id] + theta_u[user_id] * theta_w1[context_id] 
-  theta_vw <- alpha_vw[vw_id] + theta_v[item_id] * theta_w2[context_id] 
+  theta_uwt <- theta_uw <- alpha_uw[uw_id] + theta_u[user_id] * theta_w1[context_id] 
+  theta_vwt <- theta_vw <- alpha_vw[vw_id] + theta_v[item_id] * theta_w2[context_id] 
   
   
   ##プロビットモデルから応答変数を生成
@@ -251,10 +252,149 @@ for(rp in 1:1000){
 }
 
 #####モンテカルロEMアルゴリズムでBSHPモデルを推定####
+##切断正規分布の乱数を発生させる関数
+rtnorm <- function(mu, sigma, a, b){
+  FA <- pnorm(a, mu, sigma)
+  FB <- pnorm(b, mu, sigma)
+  return(qnorm(runif(length(mu))*(FB-FA)+FA, mu, sigma))
+}
 
-unique(uw_id)
+##アルゴリズムの設定
+LL1 <- -100000000   #対数尤度の初期値
+tol <- 1
+iter <- 1
+dl <- 100
+L <- 500   #モンテカルロサンプリング数
+
+##初期値の設定
+
+##パラメータの真値
+#素性ベクトルの回帰係数
+sigma <- 1.0
+beta <- betat  
+
+#変量効果のパラメータ
+theta_u <- theta_ut   #ユーザーの変量効果
+theta_v <- theta_vt   #アイテムの変量効果
+theta_w <- theta_wt   #コンテキストの変量効果
+alpha_uw <- alpha_uwt   #コンテキスト依存のユーザーバイアス
+alpha_vw <- alpha_vwt   #コンテキスト依存のユーザーバイアス
+theta_uw <- theta_uwt   #コンテキスト依存のユーザーの変量効果
+theta_vw <- theta_vwt   #コンテキスト依存のアイテムの変量効果
+
+#階層モデルのパラメータを生成
+alpha_u <- alpha_ut   #ユーザーの階層モデルの回帰係数
+tau_v <- tau_vt   #アイテムの階層モデルの標準偏差
+alpha_v <- alpha_vt   #アイテムの階層モデルの回帰係数
+tau_w <- tau_wt   #コンテキストの階層モデルの標準偏差
+alpha_w <- alpha_wt   #コンテキストの階層モデルの標準偏差
+tau_uw <- tau_uwt   #コンテキスト依存のユーザーバイアスの標準偏差
+tau_vw <- tau_vwt   #コンテキスト依存のユーザーバイアスの標準偏差
 
 
+##インデックスを作成
+#ユーザーインデックス
+user_index <- list()
+for(i in 1:hh){
+  user_index[[i]] <- which(user_id==i)
+}
+#アイテムインデックス
+item_index <- list()
+for(j in 1:item){
+  item_index[[j]] <- which(item_id==j)
+}
+#コンテキストインデックス
+context_index <- list()
+for(j in 1:context){
+  context_index[[j]] <- which(context_id==j)
+}
+
+#コンテキスト依存ユーザーインデックス
+uw_index <- list()
+n_uw <- rep(0, length(unique(uw_id)))
+for(i in 1:hh){
+  if(i%%100==0){
+    print(i)
+  }
+  id <- uw_id[user_index[[i]]]
+  min_id <- min(id); max_id <- max(id)
+  for(j in min_id:max_id){
+    uw_index[[j]] <- user_index[[i]][id==j]
+    n_uw[j] <- length(uw_index[[j]])
+  }
+}
+N_uw <- length(n_uw)
+
+#コンテキスト依存アイテムインデックス
+vw_index <- list()
+n_vw <- rep(0, length(unique(vw_id)))
+for(i in 1:item){
+  if(i%%100==0){
+    print(i)
+  }
+  id <- vw_id[item_index[[i]]]
+  unique_id <- unique(id)
+  for(j in 1:length(unique_id)){
+    index <- unique_id[j]
+    vw_index[[index]] <- item_index[[i]][id==index]
+    n_vw[index] <- length(vw_index[[index]])
+  }
+}
+N_vw <- length(n_vw)
+
+##切断領域を定義
+a <- ifelse(y==0, -100, 0)
+b <- ifelse(y==1, 100, 0)
 
 
+####モンテカルロEMアルゴリズムをパラメータを推定####
+##切断正規分布から潜在効用を生成
+beta_mu <- as.numeric(x0 %*% beta)
+mu <- beta_mu + theta_uw + theta_vw   #潜在効用の期待値
+U <- rtnorm(mu, sigma, a, b)   #潜在効用を生成
 
+###モンテカルロEステップで潜在変数をサンプリング
+##コンテキスト依存のユーザー変量効果を推定
+#データの設定
+uw_er <- U - beta_mu - theta_vw   #誤差を設定
+
+#事前分布のパラメータ
+theta_u_vec <- theta_u[user_id] 
+theta_w1_vec <- theta_w1[context_id] 
+theta_vec <- theta_u_vec * theta_w1_vec 
+
+#事後分布のパラメータを設定
+uw_mu <- rep(0, N_uw)
+for(i in 1:N_uw){
+  uw_mu[i] <- mean(uw_er[uw_index[[i]]])
+}
+weights <- tau_uw^2 / (sigma/n_uw + tau_uw^2)   #重み係数
+weights*uw_mu
+(1-weights)*theta_vec
+
+
+(1-weights)
+
+sigma
+
+#素性ベクトルの回帰係数
+sigma <- 1.0
+beta <- betat  
+
+#変量効果のパラメータ
+theta_u <- theta_ut   #ユーザーの変量効果
+theta_v <- theta_vt   #アイテムの変量効果
+theta_w <- theta_wt   #コンテキストの変量効果
+alpha_uw <- alpha_uwt   #コンテキスト依存のユーザーバイアス
+alpha_vw <- alpha_vwt   #コンテキスト依存のユーザーバイアス
+theta_uw <- theta_uwt   #コンテキスト依存のユーザーの変量効果
+theta_vw <- theta_vwt   #コンテキスト依存のアイテムの変量効果
+
+#階層モデルのパラメータを生成
+alpha_u <- alpha_ut   #ユーザーの階層モデルの回帰係数
+tau_v <- tau_vt   #アイテムの階層モデルの標準偏差
+alpha_v <- alpha_vt   #アイテムの階層モデルの回帰係数
+tau_w <- tau_wt   #コンテキストの階層モデルの標準偏差
+alpha_w <- alpha_wt   #コンテキストの階層モデルの標準偏差
+tau_uw <- tau_uwt   #コンテキスト依存のユーザーバイアスの標準偏差
+tau_vw <- tau_vwt   #コンテキスト依存のユーザーバイアスの標準偏差
