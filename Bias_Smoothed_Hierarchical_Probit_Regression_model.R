@@ -232,7 +232,7 @@ for(rp in 1:1000){
   
   ##コンテキスト依存のユーザーおよびアイテムバイアスのパラメータを生成
   #コンテキスト依存の変量効果
-  tau_uwt <- tau_uw <- 0.5; tau_vwt <- tau_vw <- 0.5
+  tau_uwt <- tau_uw <- 0.4; tau_vwt <- tau_vw <- 0.4
   alpha_uwt <- alpha_uw <- rnorm(unique(uw_id), 0, tau_uw)
   alpha_vwt <- alpha_vw <- rnorm(unique(vw_id), 0, tau_vw)
   
@@ -266,6 +266,76 @@ iter <- 1
 dl <- 100
 L <- 500   #モンテカルロサンプリング数
 
+##インデックスを作成
+#コンテキスト依存ユーザーインデックス
+n_uw <- rep(0, length(unique(uw_id)))
+uw_index <- list()
+context_u <- rep(0, length(n_uw))
+context_w1 <- rep(0, length(n_uw))
+
+for(i in 1:hh){
+  if(i%%100==0){
+    print(i)
+  }
+  id <- uw_id[user_index[[i]]]
+  min_id <- min(id); max_id <- max(id)
+  for(j in min_id:max_id){
+    uw_index[[j]] <- user_index[[i]][id==j]
+    context_u[j] <- user_id[uw_index[[j]]][1]
+    context_w1[j] <- context_id[uw_index[[j]]][1]
+    n_uw[j] <- length(uw_index[[j]])
+  }
+}
+N_uw <- length(n_uw)
+
+#コンテキスト依存アイテムインデックス
+n_vw <- rep(0, length(unique(vw_id)))
+vw_index <- list()
+context_v <- rep(0, length(n_vw))
+context_w2 <- rep(0, length(n_vw))
+
+for(i in 1:item){
+  if(i%%100==0){
+    print(i)
+  }
+  id <- vw_id[item_index[[i]]]
+  unique_id <- unique(id)
+  for(j in 1:length(unique_id)){
+    index <- unique_id[j]
+    vw_index[[index]] <- item_index[[i]][id==index]
+    context_v[index] <- item_id[vw_index[[index]]][1]
+    context_w2[index] <- context_id[vw_index[[index]]][1]
+    n_vw[index] <- length(vw_index[[index]])
+  }
+}
+N_vw <- length(n_vw)
+
+
+##階層モデルのインデックス
+#ユーザーインデックス
+user_index <- list()
+user_n <- rep(0, hh)
+for(i in 1:hh){
+  user_index[[i]] <- which(context_u==i)
+  user_n[i] <- length(user_index[[i]])
+}
+#アイテムインデックス
+item_index <- list()
+item_n <- list()
+for(j in 1:item){
+  item_index[[j]] <- which(context_v==j)
+  item_n[j] <- length(item_index[[j]])
+}
+#コンテキストインデックス
+context_index1 <- context_index2 <- list()
+context_n1 <- context_n2 <- rep(0, context)
+for(j in 1:context){
+  context_index1[[j]] <- which(context_w1==j)
+  context_index2[[j]] <- which(context_w2==j)
+  context_n1[j] <- length(context_index1[[j]])
+  context_n2[j] <- length(context_index2[[j]])
+}
+
 ##初期値の設定
 
 ##パラメータの真値
@@ -291,56 +361,17 @@ alpha_w <- alpha_wt   #コンテキストの階層モデルの標準偏差
 tau_uw <- tau_uwt   #コンテキスト依存のユーザーバイアスの標準偏差
 tau_vw <- tau_vwt   #コンテキスト依存のユーザーバイアスの標準偏差
 
+#モデルの変量効果
+theta_uw <- rep(0, N_uw)
+theta_vw <- rep(0, N_vw)
+for(i in 1:N_uw){
+  theta_uw[i] <- theta_uwt[uw_index[[i]]][1]
+}
+for(i in 1:N_vw){
+  theta_vw[i] <- theta_vwt[vw_index[[i]]][1]
+}
+theta_vwt0 <- theta_vw; theta_uwt0 <- theta_uw
 
-##インデックスを作成
-#ユーザーインデックス
-user_index <- list()
-for(i in 1:hh){
-  user_index[[i]] <- which(user_id==i)
-}
-#アイテムインデックス
-item_index <- list()
-for(j in 1:item){
-  item_index[[j]] <- which(item_id==j)
-}
-#コンテキストインデックス
-context_index <- list()
-for(j in 1:context){
-  context_index[[j]] <- which(context_id==j)
-}
-
-#コンテキスト依存ユーザーインデックス
-uw_index <- list()
-n_uw <- rep(0, length(unique(uw_id)))
-for(i in 1:hh){
-  if(i%%100==0){
-    print(i)
-  }
-  id <- uw_id[user_index[[i]]]
-  min_id <- min(id); max_id <- max(id)
-  for(j in min_id:max_id){
-    uw_index[[j]] <- user_index[[i]][id==j]
-    n_uw[j] <- length(uw_index[[j]])
-  }
-}
-N_uw <- length(n_uw)
-
-#コンテキスト依存アイテムインデックス
-vw_index <- list()
-n_vw <- rep(0, length(unique(vw_id)))
-for(i in 1:item){
-  if(i%%100==0){
-    print(i)
-  }
-  id <- vw_id[item_index[[i]]]
-  unique_id <- unique(id)
-  for(j in 1:length(unique_id)){
-    index <- unique_id[j]
-    vw_index[[index]] <- item_index[[i]][id==index]
-    n_vw[index] <- length(vw_index[[index]])
-  }
-}
-N_vw <- length(n_vw)
 
 ##切断領域を定義
 a <- ifelse(y==0, -100, 0)
@@ -349,18 +380,20 @@ b <- ifelse(y==1, 100, 0)
 
 ####モンテカルロEMアルゴリズムをパラメータを推定####
 ##切断正規分布から潜在効用を生成
+theta_uw_vec <- theta_uw[uw_id]
+theta_vw_vec <- theta_vw[vw_id]
 beta_mu <- as.numeric(x0 %*% beta)
-mu <- beta_mu + theta_uw + theta_vw   #潜在効用の期待値
+mu <- beta_mu + theta_uw_vec + theta_vw_vec   #潜在効用の期待値
 U <- rtnorm(mu, sigma, a, b)   #潜在効用を生成
 
 ###モンテカルロEステップで潜在変数をサンプリング
 ##コンテキスト依存のユーザー変量効果を推定
 #データの設定
-uw_er <- U - beta_mu - theta_vw   #誤差を設定
+uw_er <- U - beta_mu - theta_vw_vec   #誤差を設定
 
-#事前分布のパラメータ
-theta_u_vec <- theta_u[user_id] 
-theta_w1_vec <- theta_w1[context_id] 
+#階層モデルのパラメータ
+theta_u_vec <- theta_u[context_u] 
+theta_w1_vec <- theta_w1[context_w1] 
 theta_vec <- theta_u_vec * theta_w1_vec 
 
 #事後分布のパラメータを設定
@@ -368,33 +401,66 @@ uw_mu <- rep(0, N_uw)
 for(i in 1:N_uw){
   uw_mu[i] <- mean(uw_er[uw_index[[i]]])
 }
-weights <- tau_uw^2 / (sigma/n_uw + tau_uw^2)   #重み係数
-weights*uw_mu
-(1-weights)*theta_vec
+weights <- tau_uw^2 / (sigma/n_uw + tau_uw^2)    #重み係数
+mu_par <- weights*uw_mu + (1-weights)*theta_vec   #事後分布の平均
+
+#正規分布より事後分布をサンプリング
+theta_uw <- rnorm(N_uw, mu_par, weights/n_uw)
+theta_uw_vec <- theta_uw[uw_id]
 
 
-(1-weights)
+##コンテキスト依存のアイテム変量効果を推定
+#データの設定
+vw_er <- U - beta_mu - theta_uw_vec   #誤差を設定
 
-sigma
+#階層モデルのパラメータ
+theta_v_vec <- theta_v[context_v] 
+theta_w2_vec <- theta_w2[context_w2] 
+theta_vec <- theta_v_vec * theta_w2_vec 
 
-#素性ベクトルの回帰係数
-sigma <- 1.0
-beta <- betat  
+#事後分布のパラメータを設定
+vw_mu <- rep(0, N_vw)
+for(i in 1:N_vw){
+  vw_mu[i] <- mean(vw_er[vw_index[[i]]])
+}
+weights <- tau_vw^2 / (sigma/n_vw + tau_vw^2)   #重み係数
+mu_par <- weights*vw_mu + (1-weights)*theta_vec   #事後分布の平均
 
-#変量効果のパラメータ
-theta_u <- theta_ut   #ユーザーの変量効果
-theta_v <- theta_vt   #アイテムの変量効果
-theta_w <- theta_wt   #コンテキストの変量効果
-alpha_uw <- alpha_uwt   #コンテキスト依存のユーザーバイアス
-alpha_vw <- alpha_vwt   #コンテキスト依存のユーザーバイアス
-theta_uw <- theta_uwt   #コンテキスト依存のユーザーの変量効果
-theta_vw <- theta_vwt   #コンテキスト依存のアイテムの変量効果
+cbind(1/(n_vw/sigma + 1/tau_vw^2), weights/n_vw)
 
-#階層モデルのパラメータを生成
-alpha_u <- alpha_ut   #ユーザーの階層モデルの回帰係数
-tau_v <- tau_vt   #アイテムの階層モデルの標準偏差
-alpha_v <- alpha_vt   #アイテムの階層モデルの回帰係数
-tau_w <- tau_wt   #コンテキストの階層モデルの標準偏差
-alpha_w <- alpha_wt   #コンテキストの階層モデルの標準偏差
-tau_uw <- tau_uwt   #コンテキスト依存のユーザーバイアスの標準偏差
-tau_vw <- tau_vwt   #コンテキスト依存のユーザーバイアスの標準偏差
+#正規分布より事後分布をサンプリング
+theta_vw <- rnorm(N_vw, mu_par, weights/n_vw)
+theta_vw_vec <- theta_vw[vw_id]
+
+
+##ユーザー変量効果を推定
+#ユーザーごとに事後分布のパラメータを設定
+inv_tau_u <- 1/tau_u^2
+mu_par <- rep(0, hh)
+sigma_par <- rep(0, hh)
+
+for(i in 1:hh){
+  index <- context_w1[user_index[[i]]]
+  X <- theta_w1[index]
+  Xy <- tau_uw^2 * (t(X) %*% theta_uw[user_index[[i]]])
+  XXV <- tau_uw^2 * (t(X) %*% X) + inv_tau_u
+  sigma_par[i] <- inv_XXV <- 1/XXV
+  mu_par[i] <- inv_XXV %*% (Xy + inv_tau_u %*% theta_u[i])
+}
+#正規分布から事後分布をサンプリング
+rnorm(hh, mu_par, sqrt(sigma_par))
+
+max(sqrt(sigma_par))
+t(X) %*% X
+X
+theta_u[i]
+
+tau_uw^-2
+
+theta_vw[user_index[[i]]]
+
+
+sd(theta_vw)
+
+
+
