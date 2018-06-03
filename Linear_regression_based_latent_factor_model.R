@@ -287,9 +287,12 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   weights <- sigma_u^2 / (sigma^2/n1 + sigma_u^2)   #重み係数
   mu_par <- weights*u_mu + (1-weights)*theta_mu11   #事後分布の平均
   
-  #正規分布より事後分布をサンプリング
-  theta_u1 <- rowMeans(matrix(rnorm(hh*L, mu_par, weights*sigma^2/n1), nrow=hh, ncol=L))
   
+  #正規分布より事後分布をサンプリング
+  theta_u_data <- matrix(rnorm(hh*L, mu_par, sqrt(1 / (1/sigma_u^2 + n1/sigma^2))), nrow=hh, ncol=L)
+  theta_u1 <- rowMeans(theta_u_data)
+  u1_vars <- rowVars(theta_u_data)
+
   
   ##アイテムのランダム効果をサンプリング
   #データの設定
@@ -304,44 +307,55 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   mu_par <- weights*i_mu + (1-weights)*theta_mu21   #事後分布の平均
   
   #正規分布より事後分布をサンプリング
-  theta_v1 <- rowMeans(matrix(rnorm(item*L, mu_par, weights*sigma^2/n2), nrow=item, ncol=L))
-  
-  
+  theta_v1_data <- matrix(rnorm(item*L, mu_par, sqrt(1 / (1/sigma_v^2 + n2/sigma^2))), nrow=item, ncol=L)
+  theta_v1 <- rowMeans(theta_v1_data)
+  v1_vars <- rowVars(theta_v1_data)
+
+
   ##ユーザー特徴行列のパラメータをサンプリング
   #データの設定
   uv_er <- as.numeric(y - beta_mu - theta_u1[user_id] - theta_v1[item_id])
   theta_v2_T <- t(theta_v2)
+  theta_u2 <- matrix(0, nrow=hh, ncol=k)
+  u2_vars <- matrix(0, nrow=k, ncol=k)
   
   #ユーザーごとに特徴ベクトルをサンプリング
   for(i in 1:hh){
     
     #特徴ベクトルの事後分布のパラメータ
     index <- item_id[user_list[[i]]]   #アイテムインデックス
-    Xy <- sigma^-2 * (t(theta_v2_T[index, ]) %*% uv_er[user_list[[i]]])
-    XXV <- sigma^-2 * (t(theta_v2_T[index, ]) %*% theta_v2_T[index, ]) + inv_Cov_u
+    Xy <- t(theta_v2_T[index, , drop=FALSE]) %*% uv_er[user_list[[i]]]
+    XXV <- (t(theta_v2_T[index, , drop=FALSE]) %*% theta_v2_T[index, , drop=FALSE]) + inv_Cov_u
     inv_XXV <- solve(XXV)
     mu <- inv_XXV %*% (Xy + inv_Cov_u %*% theta_mu12[i, ])   #事後分布の平均
     
     #多変量正規分布からユーザー特徴ベクトルをサンプリング
-    theta_u2[i, ] <- colMeans(mvrnorm(L, mu, inv_XXV))   #モンテカルロ平均
+    theta_u2_data <- mvrnorm(L, mu, sigma^2*inv_XXV)
+    theta_u2[i, ] <- colMeans(theta_u2_data)   #モンテカルロ平均
+    u2_vars <- u2_vars + var(theta_u2_data)
   }
+
   
   ##アイテム特徴行列のパラメータをサンプリング
   #アイテムごとに特徴ベクトルをサンプリング
+  theta_v2 <- matrix(0, nrow=k, ncol=item)
+  v2_vars <- matrix(0, nrow=k, ncol=k)
   for(j in 1:item){
     
     #特徴ベクトルの事後分布のパラメータ
     index <- user_id[item_list[[j]]]   #アイテムインデックス
-    Xy <- sigma^-2 * (t(theta_u2[index, ]) %*% uv_er[item_list[[j]]])
-    XXV <- sigma^-2 * (t(theta_u2[index, ]) %*% theta_u2[index, ]) + inv_Cov_v
+    Xy <- t(theta_u2[index, , drop=FALSE]) %*% uv_er[item_list[[j]]]
+    XXV <- (t(theta_u2[index, , drop=FALSE]) %*% theta_u2[index, , drop=FALSE]) + inv_Cov_v
     inv_XXV <- solve(XXV)
     mu <- inv_XXV %*% (Xy + inv_Cov_v %*% theta_mu22[, j])   #事後分布の平均
     
     #多変量正規分布からアイテム特徴ベクトルをサンプリング
-    theta_v2[, j] <- colMeans(mvrnorm(L, mu, inv_XXV))   #モンテカルロ平均
+    theta_v2_data <- mvrnorm(L, mu, sigma^2*inv_XXV)
+    theta_v2[, j] <- colMeans(theta_v2_data)   #モンテカルロ平均
+    v2_vars <- v2_vars + var(theta_v2_data)
   }
   
-  
+
   ###Mステップで完全データの尤度を最大化
   #行列分解のパラメータ
   uv <- as.numeric(t(theta_u2 %*% theta_v2))[index_z1]
@@ -360,23 +374,23 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   #ユーザーのランダム効果の階層モデルのパラメータを更新
   alpha_u[, 1] <- inv_uu %*% t(u) %*% theta_u1
   theta_mu11 <- as.numeric(u %*% alpha_u[, 1])
-  sigma_u <- sd(theta_u1 - theta_mu11)
+  sigma_u <- sqrt((sum(u1_vars) + sum((theta_u1 - theta_mu11)^2)) / hh)
+
   
   #アイテムのランダム効果の階層モデルのパラメータを更新
   alpha_v[, 1] <- inv_vv %*% t(v) %*% theta_v1
   theta_mu21 <- as.numeric(v %*% alpha_v[, 1])
-  sigma_v <- sd(theta_v1 - theta_mu21)
-  
+  sigma_v <- sqrt((sum(v1_vars) + sum((theta_v1 - theta_mu21)^2)) / item)
   
   #ユーザー特徴行列の階層モデルのパラメータを更新
   alpha_u[, -1] <- inv_uu %*% t(u) %*% theta_u2
   theta_mu12 <- u %*% alpha_u[, -1]
-  Cov_u <- var(theta_u2 - theta_mu12)
+  Cov_u <- (u2_vars + t(theta_u2 - theta_mu12) %*% (theta_u2 - theta_mu12)) / hh
   
   #アイテム特徴行列の階層モデルのパラメータを更新
   alpha_v[, -1] <- inv_vv %*% t(v) %*% t(theta_v2)
   theta_mu22 <- t(v %*% alpha_v[, -1])
-  Cov_v <- var(t(theta_v2 - theta_mu22))
+  Cov_v <- (v2_vars + (theta_v2 - theta_mu22) %*% t(theta_v2 - theta_mu22)) / item
   
   
   ##アルゴリズムの収束判定
@@ -387,6 +401,7 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   LL1 <- LL
   print(LL)
 }
+
 
 ####推定結果の確認と適合度####
 ##比較対象モデルの対数尤度
