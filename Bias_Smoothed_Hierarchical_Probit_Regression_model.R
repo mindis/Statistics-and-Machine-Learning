@@ -126,7 +126,7 @@ vw_id <- left_join(data.frame(id=vw_index, no_vec=1:length(vw_index)),
 ##応答変数が妥当になるまでパラメータの生成を繰り返す
 for(rp in 1:1000){
   print(rp)
-
+  
   ##素性ベクトルを生成
   k1 <- 2; k2 <- 3; k3 <- 4
   x1 <- matrix(runif(N*k1, 0, 1), nrow=N, ncol=k1)
@@ -260,7 +260,7 @@ for(rp in 1:1000){
   if(mean(y) > 0.3 & mean(y) < 0.4) break   #break条件
 }
 
-#####モンテカルロEMアルゴリズムでBSHPモデルを推定####
+#####マルコフ連鎖モンテカルロ法でBSHPモデルを推定####
 ##切断正規分布の乱数を発生させる関数
 rtnorm <- function(mu, sigma, a, b, L){
   FA <- pnorm(a, mu, sigma)
@@ -272,13 +272,13 @@ rtnorm <- function(mu, sigma, a, b, L){
   return(par)
 }
 
-  
 ##アルゴリズムの設定
 LL1 <- -100000000   #対数尤度の初期値
-tol <- 1
-iter <- 1
-dl <- 100
-L <- 250   #モンテカルロサンプリング数
+R <- 2000
+keep <- 2  
+iter <- 0
+burnin <- 500/keep
+disp <- 5
 
 ##インデックスを作成
 user_index <- list()
@@ -380,6 +380,37 @@ inv_vv <- solve(vv)
 ww <- t(w) %*% w
 inv_ww <- solve(ww)
 
+
+##事前分布を設定
+#逆ガンマ分布の事前分布
+s0 <- 1
+v0 <- 1
+
+#素性回帰ベクトルの事前分布
+tau1 <- diag(100, ncol(x))
+tau_inv1 <- solve(tau1)
+mu1 <- rep(0, ncol(x))
+
+#ユーザーの階層モデルの事前分布
+tau2 <- diag(100, ncol(u))
+tau_inv2 <- solve(tau2)
+mu2 <- rep(0, ncol(u))
+s01 <- 100; v01 <- 1
+
+#アイテムの階層モデルの事前分布
+tau3 <- diag(100, ncol(v))
+tau_inv3 <- solve(tau3)
+mu3 <- rep(0, ncol(v))
+s02 <- 1; v02 <- 1
+ 
+#コンテキストの階層モデルの事前分布
+Deltabar <- matrix(rep(0, 2*ncol(w)), nrow=ncol(w), ncol=2)   #階層モデルの回帰係数の事前分布の分散
+ADelta <- 0.01 * diag(rep(1, ncol(w)))   #階層モデルの回帰係数の事前分布の分散
+nu <- 1   #逆ウィシャート分布の自由度
+V <- nu * diag(rep(1, 2)) #逆ウィシャート分布のパラメータ
+s03 <- 1; v03 <- 1
+
+
 ##切断領域を定義
 index_y1 <- which(y==1)
 index_y0 <- which(y==0)
@@ -441,7 +472,7 @@ beta <- solve(t(x) %*% x) %*% t(x) %*% y
 
 #階層モデルのパラメータを生成
 tau_u <- tau_v <- tau_w <- tau_uw <- tau_vw <- 0.75
-tau_w <- 0.4
+tau_w <- 0.3
 alpha_u <- runif(ncol(u), -0.25, 0.25)   #ユーザーの階層モデルの回帰係数
 alpha_v <- runif(ncol(v), -0.25, 0.25)   #アイテムの階層モデルの回帰係数差
 alpha_w <- matrix(runif(ncol(w)*2, -0.25, 0.25), nrow=ncol(w), ncol=2)   #コンテキストの階層モデルの回帰係数
@@ -460,7 +491,6 @@ theta_vw <- rnorm(N_vw, 0, tau_vw)
 theta_uw_vec <- theta_uw[uw_id]
 theta_vw_vec <- theta_vw[vw_id]
 
-
 #変量効果のパラメータをベクトル化
 theta_u_vec <- theta_u[context_u]
 theta_w1_vec <- theta_w1[context_w1]
@@ -468,33 +498,40 @@ theta_v_vec <- theta_v[context_v]
 theta_w2_vec <- theta_w2[context_w2]
 
 
+##パラメータの格納用配列
+BETA <- matrix(0, nrow=R/keep, ncol=ncol(x))
+ALPHA_U <- matrix(0, nrow=R/keep, ncol=ncol(u))
+ALPHA_V <- matrix(0, nrow=R/keep, ncol=ncol(v))
+ALPHA_W <- matrix(0, nrow=R/keep, ncol=ncol(w)*2)
+THETA_UW <- rep(0, N_uw)
+THETA_VW <- rep(0, N_vw)
+THETA_U <- matrix(0, nrow=R/keep, ncol=hh)
+THETA_V <- matrix(0, nrow=R/keep, ncol=item)
+THETA_W <- matrix(0, nrow=R/keep, ncol=context*2)
+COV <- matrix(0, nrow=R/keep, ncol=length(c(tau_uw, tau_vw, tau_u, tau_v, tau_w)))
+rkeep <- c()
+
+
 ##対数尤度の基準値
 beta_mu <- as.numeric(x %*% beta)
 mu <- beta_mu + theta_uw_vec + theta_vw_vec   #潜在効用の期待値
 prob <- pnorm(mu, 0, sigma)   #購買確率
-LL <- sum(y[index_y1]*log(prob[index_y1])) + sum((1-y[index_y0])*log(1-prob[index_y0]))   #対数尤度
+LL1 <- sum(y[index_y1]*log(prob[index_y1])) + sum((1-y[index_y0])*log(1-prob[index_y0]))   #対数尤度
 LLst <- sum(y*log(mean(y)) + (1-y)*log(1-mean(y)))
-print(c(LL, LLst))
+print(c(LL1, LLst))
 
 
-##アルゴリズムの設定
-LL1 <- -100000000   #対数尤度の初期値
-tol <- 1
-iter <- 1
-dl <- 100
-L <- 200   #モンテカルロサンプリング数
 
-####モンテカルロEMアルゴリズムをパラメータを推定####
-while(abs(dl) > tol){   #dlがtol以上なら繰り返す
-  if(dl < 0) break
-    
+####ギブスサンプリングでパラメータをサンプリング####
+for(rp in 1:R){
+  
   ##切断正規分布から潜在効用を生成
   beta_mu <- as.numeric(x %*% beta)
   mu <- beta_mu + theta_uw_vec + theta_vw_vec   #潜在効用の期待値
   U <- as.numeric(rtnorm(mu, sigma, a, b, 1))   #潜在効用を生成
   
-  ###モンテカルロEステップで潜在変数をサンプリング
-  ##コンテキスト依存のユーザー変量効果を推定
+  ###変量効果のパラメータをサンプリング
+  ##コンテキスト依存のユーザー変量効果の期待値をサンプリング
   #データの設定
   uw_er <- U - beta_mu - theta_vw_vec   #誤差を設定
   
@@ -509,16 +546,19 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   weights <- tau_uw^2 / (sigma^2/n_uw + tau_uw^2)    #重み係数
   mu_par <- weights*uw_mu + (1-weights)*theta_vec   #事後分布の平均
   tau <- sqrt(1 / (1/tau_uw^2 + n_uw/sigma^2))
-
   
   #正規分布より事後分布をサンプリング
-  theta_uw_data <- matrix(rnorm(N_uw*L, mu_par, tau), nrow=N_uw, ncol=L)
-  theta_uw <- rowMeans(theta_uw_data)
-  uw_vars <- rowVars(theta_uw_data)
+  theta_uw <- rnorm(N_uw, mu_par, tau)
   theta_uw_vec <- theta_uw[uw_id]
   
+  ##コンテキスト依存のユーザー変量効果の分散をサンプリング
+  #逆ガンマ分布より分散をサンプリング
+  s1 <- s0 + sum((theta_uw - theta_vec)^2)
+  v1 <- v0 + N_uw
+  tau_uw <- sqrt(1/(rgamma(1, v1/2, s1/2)))
   
-  ##コンテキスト依存のアイテム変量効果を推定
+
+  ##コンテキスト依存のアイテム変量効果をサンプリング
   #データの設定
   vw_er <- U - beta_mu - theta_uw_vec   #誤差を設定
   
@@ -535,13 +575,17 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   tau <- sqrt(1 / (1/tau_vw^2 + n_vw/sigma^2))
   
   #正規分布より事後分布をサンプリング
-  theta_vw_data <- matrix(rnorm(N_vw*L, mu_par, tau), nrow=N_vw, ncol=L)
-  theta_vw <- rowMeans(theta_vw_data)
-  vw_vars <- rowVars(theta_vw_data)
+  theta_vw <- rnorm(N_vw, mu_par, tau)
   theta_vw_vec <- theta_vw[vw_id]
   
+  ##コンテキスト依存のユーザー変量効果の分散をサンプリング
+  #逆ガンマ分布より分散をサンプリング
+  s1 <- s0 + sum((theta_vw - theta_vec)^2)
+  v1 <- v0 + N_vw
+  tau_vw <- sqrt(1/(rgamma(1, v1/2, s1/2)))
+
   
-  ##ユーザー変量効果を推定
+  ##ユーザー変量効果をサンプリング
   #ユーザーごとに事後分布のパラメータを設定
   inv_tau_u <- 1/tau_u^2
   mu_par <- rep(0, hh)
@@ -558,10 +602,7 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   }
   
   #正規分布から事後分布をサンプリング
-  theta_u_data <- matrix(rnorm(hh*L, mu_par, sqrt(sigma_par)), nrow=hh, ncol=L)
-  theta_u <- rowMeans(theta_u_data)
-  u_vars <- rowVars(theta_u_data)
-  rowVars(theta_u_data)
+  theta_u <- rnorm(hh, mu_par, sqrt(sigma_par))
   
   
   ##アイテム変量効果を推定
@@ -580,12 +621,10 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
     mu_par[i] <- inv_XXV %*% (Xy + inv_tau_v %*% v_mu[i])
   }
   #正規分布から事後分布をサンプリング
-  theta_v_data <- matrix(rnorm(item*L, mu_par, sqrt(sigma_par)), nrow=item, ncol=L)
-  theta_v <- rowMeans(theta_v_data)
-  v_vars <- rowVars(theta_v_data)
+  theta_v <- rnorm(item, mu_par, sqrt(sigma_par))
   
   
-  ##コンテキスト変量効果を推定
+  ##コンテキスト変量効果をサンプリング
   #コンテキストごとに事後分布のパラメータを設定
   inv_tau_w <- 1/tau_w^2
   mu_par <- matrix(0, nrow=context, ncol=2)
@@ -605,58 +644,110 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
     mu_par[i, 2] <- inv_XXV2 %*% (Xy2 + inv_tau_w %*% w_mu[i, 2])
   }
   
-  
   #正規分布から事後分布をサンプリング
-  theta_w1_data <- matrix(rnorm(context*L, mu_par[, 1], sqrt(sigma_par[, 1])), nrow=context, ncol=L)
-  theta_w2_data <- matrix(rnorm(context*L, mu_par[, 2], sqrt(sigma_par[, 2])), nrow=context, ncol=L)
-  theta_w1 <- rowMeans(theta_w1_data); theta_w2 <- rowMeans(theta_w2_data)
-  w1_vars <- rowVars(theta_w1_data); w2_vars <- rowVars(theta_w2_data)
+  theta_w1 <- rnorm(context, mu_par[, 1], sqrt(sigma_par[, 1]))
+  theta_w2 <- rnorm(context, mu_par[, 2], sqrt(sigma_par[, 2]))
   theta_w <- cbind(theta_w1, theta_w2)
   
   
-  ###Mステップで完全データの尤度を最大化
-  ##回帰パラメータを更新
-  #素性ベクトルのパラメータを更新
-  u_er <- U - theta_uw_vec - theta_vw_vec   #応答変数の設定
-  beta <- as.numeric(inv_xx %*% t(x) %*% u_er)   #最小二乗法で素性ベクトルを更新
-  beta_mu <- as.numeric(x %*% beta)   #素性ベクトルの平均構造
-  
-  #階層モデルのパラメータを更新
-  alpha_u <- as.numeric(inv_uu %*% t(u) %*% theta_u)   #ユーザーの階層モデルのパラメータ 
-  alpha_v <- as.numeric(inv_vv %*% t(v) %*% theta_v)   #アイテムの階層モデルのパラメータ
-  alpha_w <- inv_ww %*% t(w) %*% theta_w   #コンテキストの階層モデルのパラメータ
-  
-  
-  ##階層モデルの分散を更新
-  #コンテキスト依存のユーザー変量効果の標準偏差
+  ##パラメータを観測ベクトルのレコード数に変換
   theta_u_vec <- theta_u[context_u]
   theta_w1_vec <- theta_w1[context_w1]
-  tau_uw <- sqrt((sum(uw_vars) + sum((theta_uw - theta_u_vec*theta_w1_vec)^2)) / N_uw)
-  
-  #コンテキスト依存のアイテム変量効果の標準偏差
   theta_v_vec <- theta_v[context_v]
   theta_w2_vec <- theta_w2[context_w2]
-  tau_vw <- sqrt((sum(vw_vars) + sum((theta_vw - theta_v_vec*theta_w2_vec)^2)) / N_vw)
   
-  #階層モデルの標準偏差の更新
-  u_mu <- as.numeric(u %*% alpha_u)
-  v_mu <- as.numeric(v %*% alpha_v)
+  
+  ###素性回帰モデルと階層モデルのパラメータをサンプリング
+  ##回帰パラメータをサンプリング
+  #回帰ベクトルのパラメータ
+  u_er <- U - theta_uw_vec - theta_vw_vec   #応答変数の設定
+  inv_XXV <- solve(xx + tau_inv1)
+  Xy <- t(x) %*% u_er
+  mu_par <- inv_XXV %*% (Xy + tau_inv1 %*% mu1)
+  
+  #正規分布から回帰ベクトルをサンプリング
+  beta <- mvrnorm(1, mu_par, sigma^2*inv_XXV)
+  beta_mu <- as.numeric(x %*% beta)   #素性ベクトルの平均構造
+  
+  
+  ##ユーザーの階層モデルのパラメータをサンプリング
+  ##回帰パラメータをサンプリング
+  #回帰ベクトルのパラメータ
+  inv_XXV <- solve(uu + tau_inv2)
+  Xy <- t(u) %*% theta_u
+  mu_par <- inv_XXV %*% (Xy + tau_inv2 %*% mu2)
+  
+  #正規分布から回帰ベクトルをサンプリング
+  alpha_u <- mvrnorm(1, mu_par, tau_u^2*inv_XXV)
+  u_mu <- as.numeric(u %*% alpha_u)   #素性ベクトルの平均構造
+  
+  ##ユーザー変量効果の分散をサンプリング
+  #逆ガンマ分布より分散をサンプリング
+  s1 <- s01 + sum((theta_u - u_mu)^2)
+  v1 <- v01 + hh
+  tau_u <- sqrt(1/(rgamma(1, v1/2, s1/2)))
+  
+
+  ##アイテムの階層モデルのパラメータをサンプリング
+  ##回帰パラメータをサンプリング
+  #回帰ベクトルのパラメータ
+  inv_XXV <- solve(vv + tau_inv3)
+  Xy <- t(v) %*% theta_v
+  mu_par <- inv_XXV %*% (Xy + tau_inv3 %*% mu3)
+  
+  #正規分布から回帰ベクトルをサンプリング
+  alpha_v <- mvrnorm(1, mu_par, tau_v^2*inv_XXV)
+  v_mu <- as.numeric(v %*% alpha_v)   #素性ベクトルの平均構造
+  
+  ##アイテム変量効果の分散をサンプリング
+  #逆ガンマ分布より分散をサンプリング
+  s1 <- s02 + sum((theta_v - v_mu)^2)
+  v1 <- v02 + item
+  tau_v <- sqrt(1/(rgamma(1, v1/2, s1/2)))
+  
+  
+  ##コンテキストの階層モデルのパラメータをサンプリング
+  #多変量回帰モデルから回帰ベクトルをサンプリング
+  out <- rmultireg(theta_w, w, Deltabar, ADelta, nu, V)
+  alpha_w <- out$B
   w_mu <- w %*% alpha_w
-  tau_u <- sqrt((sum(u_vars) + sum((theta_u - u_mu)^2)) / hh)
-  tau_v <- sqrt((sum(v_vars) + sum((theta_v - v_mu)^2)) / item)
-  #tau_w <- sqrt((sum(w1_vars + w2_vars) + sum((as.numeric(theta_w) - as.numeric(w_mu))^2)) / (2*context))
 
-
-  ##アルゴリズムの収束判定
-  Mu <- beta_mu + theta_uw_vec + theta_vw_vec   #完全データの平均構造
-  prob <- pnorm(Mu, 0, sigma)   #購買確率
-  LL <- sum(y[index_y1]*log(prob[index_y1])) + sum((1-y[index_y0])*log(1-prob[index_y0]))   #対数尤度
-  iter <- iter + 1
-  dl <- LL - LL1
-  LL1 <- LL
-  print(c(LL, LLst))
-  print(round(c(tau_u, tau_v, tau_w, tau_uw, tau_vw), 3))
+  
+  ##サンプリング結果を保存と結果の表示
+  if(rp%%keep==0){
+    #サンプリング結果の格納
+    mkeep <- rp/keep
+    BETA[mkeep, ] <- beta
+    ALPHA_U[mkeep, ] <- alpha_u
+    ALPHA_V[mkeep, ] <- alpha_v
+    ALPHA_W[mkeep, ] <- as.numeric(alpha_w)
+    THETA_U[mkeep, ] <- theta_u
+    THETA_V[mkeep, ] <- theta_v
+    THETA_W[mkeep, ] <- as.numeric(theta_w)
+    COV[mkeep, ] <- c(tau_uw, tau_vw, tau_u, tau_v, tau_w)
+  }
+  
+  #コンテキスト依存変量効果はバーンイン期間を超えたら格納する
+  if(rp%%keep==0 & rp >= burnin){
+    rkeep <- c(rkeep, rp)
+    THETA_UW <- THETA_UW + theta_uw
+    THETA_VW <- THETA_VW + theta_vw
+  }
+    
+  if(rp%%disp==0){
+    #対数尤度を推定
+    Mu <- beta_mu + theta_uw_vec + theta_vw_vec   #完全データの平均構造
+    prob <- pnorm(Mu, 0, sigma)   #購買確率
+    LL <- sum(y[index_y1]*log(prob[index_y1])) + sum((1-y[index_y0])*log(1-prob[index_y0]))   #対数尤度
+    
+    #サンプリング結果の表示
+    print(rp)
+    print(c(LL, LL1, LLst))
+    print(round(c(tau_u, tau_v, tau_w, tau_uw, tau_vw), 3))
+    print(round(rbind(beta, betat), 3))
+  }
 }
+
 
 tau_u
 tau_v
