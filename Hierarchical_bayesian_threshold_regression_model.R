@@ -65,7 +65,7 @@ covmatrix <- function(col, corM, lower, upper){
 ####データの発生####
 #データの設定
 hh <- 2000  
-pt <- rpois(hh, rgamma(hh, 20, 0.5))
+pt <- rpois(hh, rgamma(hh, 25, 0.5))
 hhpt <- sum(pt)
 
 #IDの設定
@@ -85,8 +85,8 @@ for(j in 1:k2){
   x2[, j] <- rbinom(hhpt, 1, pr)
 }
 x3 <- rmnom(hhpt, 1, runif(k3, 0.2, 1.25)); x3 <- x3[, -which.min(colSums(x3))]
-P <- rpois(hhpt, 3.25)
-C <- rpois(hhpt, 3.0)
+P <- rpois(hhpt, 2.5)
+C <- rpois(hhpt, 2.25)
 x <- cbind(1, x1, x2, x3, P, C)   #データを結合
 
 #階層モデルの説明変数の生成
@@ -109,13 +109,38 @@ k2 <- ncol(u)
 
 #階層モデルの回帰パラメータを生成
 theta1 <- array(0, dim=c(k2, k1, 4))
-theta2 <- array(0, dim=c(k2, k1, 2))
-theta3 <- array(0, dim=c(k2, k1, 2))
+Cov1 <- array(0, dim=c(k1, k1, 4))
 for(j in 1:4){
   theta1[, 1, j] <- c(runif(1, 4.0, 5.25), runif(k2-1, -0.5, 0.5))
   theta1[, 2:(k1-2), j] <- rbind(runif(k1-3, -0.4, 0.4), matrix(runif((k1-3)*(k2-1), -0.4, 0.4), nrow=k2-1, ncol=k1-3))
   theta1[, (k1-1):k1, j] <- rbind(runif(2, -0.35, 0.35), matrix(runif(2*(k2-1), -0.35, 0.35), nrow=k2-1, ncol=2))
+  Cov1[, , j] <- diag(c(runif(1, 0.3, 0.5), runif(k1-3, 0.1, 0.2), runif(2, 0.05, 0.1)))
 }
 
-beta <- u %*% theta1[, , 1]
-hist(rowSums(x * beta[user_id, ]))
+#個人別パラメータを生成
+beta <- array(0, dim=c(hh, k1, 4))
+for(j in 1:4){
+  beta[, , j] <- u %*% theta1[, , j] + mvrnorm(hh, rep(0, k1), Cov1[, , j])
+}
+
+#閾値モデルの回帰パラメータを生成
+theta2 <- theta3 <- matrix(0, nrow=k2, ncol=2)
+for(j in 1:2){
+  theta2[, j] <- c(runif(1, 0.3, 0.45), runif(k2-1, -0.3, 0.35))
+  theta3[, j] <- c(runif(1, 1.5, 2.0), runif(k2-1, -0.3, 0.4))
+}
+Cov2 <- diag(runif(2, 0.3, 0.4))
+Cov3 <- diag(runif(2, 0.1, 0.3))
+
+#閾値を生成      
+logit <- u %*% theta2 + mvrnorm(hh, rep(0, 2), Cov2)
+lambda <- u %*% theta3 + mvrnorm(hh, rep(0, 2), Cov3)
+prob <- exp(logit) / (1 + exp(logit))
+thres <- exp(lambda)
+
+
+##ストック変数を生成
+Z1
+
+
+
