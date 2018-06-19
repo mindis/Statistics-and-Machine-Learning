@@ -180,6 +180,35 @@ iter <- 0
 burnin <- 1000/keep
 disp <- 10
 
+
+##初期値を設定
+#多項分布の密度関数の対数尤度の定数
+const <- lfactorial(w) - rowSums(lfactorial(WX))
+
+#パラメータの初期値の事前分布
+alpha11 <- rep(5.0, k1)
+alpha12 <- matrix(2.5, nrow=k1, ncol=k1)
+diag(alpha12) <- 5.0
+alpha21 <- rep(5.0, k2)
+alpha22 <- matrix(2.5, nrow=k2, ncol=k2)
+diag(alpha22) <- 5.0
+alpha3 <- rep(5.0, k3)
+gamma <- rep(5.0, v)
+
+#パラメータの初期値を生成
+beta <- rep(0.2, d)
+theta11 <- rep(1/k1, k1)
+theta12 <- extraDistr::rdirichlet(k1, alpha12)
+theta21 <- extraDistr::rdirichlet(k2, alpha21)
+theta22 <- array(0, dim=c(k2, k2, k1))
+theta3 <- array(0, dim=c(k2, k3, k1))
+phi <- array(0, dim=c(k3, v, k1))
+for(j in 1:k1){
+  theta22[, , j] <- extraDistr::rdirichlet(k2, alpha22)
+  theta3[, , j] <- extraDistr::rdirichlet(k2, alpha3)
+  phi[, , j] <- extraDistr::rdirichlet(k3, gamma)
+}
+
 ##パラメータの真値
 beta <- betat
 theta11 <- thetat11
@@ -189,10 +218,52 @@ theta22 <- thetat22
 theta3 <- thetat3
 phi <- phit
 
-##初期値を設定
-#多項分布の密度関数の対数尤度の定数
-const <- lfactorial(w) - rowSums(lfactorial(WX))
+##事前分布の設定
+#ハイパーパラメータの事前分布
+s0 <- 1
+v0 <- 1
+alpha01 <- 0.1
+alpha02 <- 0.1
 
-#パラメータの初期値を設定
 
+##MCMC用インデックスを作成
+max_word <- max(t_id)
+index_t11 <- which(t_id==1)
+index_t21 <- index_t22 <- index_t23 <- list()
+for(j in 1:max_word){
+  index_t21[[j]] <- which(t_id==j)-1
+  index_t22[[j]] <- which(t_id==j)
+  index <- index_t22[[j]]+1
+  index_t23[[j]] <- index[d_id[index_t22[[j]]]==d_id[index]]
+}
+vec_k3 <- rep(1, k3)
+
+
+#対数尤度の基準値
+LLst <- sum(dmnom(WX, w, colSums(WX)/sum(WX), log=TRUE))
+
+
+####MCMCでパラメータをサンプリング####
+
+
+##トピックごとの期待尤度を推定
+LLt <- array(0, dim=c(f, k2, k1))
+phi_wd <- array(0, dim=c(f, k3, k1)) 
+for(j in 1:k1){
+  phi_wd[, , j] <- t(phi[, , j])[wd, ]
+  for(k in 1:k2){
+    LLt[, k, j] <- (matrix(theta3[k, , j], nrow=f, ncol=k3, byrow=T) * phi_wd[, , j]) %*% vec_k3 
+  }
+}
+LLt
+
+
+theta3[, , 1]
+
+theta22[, , 1]
+LLt[index_t23[[1]], , 1]
+
+
+theta21[1, ]
+theta22[, , 1]
 
