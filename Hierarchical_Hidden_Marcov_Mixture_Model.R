@@ -51,9 +51,9 @@ v0 <- 50.0
 alpha3 <- array(0.15, dim=c(k2, k3, k1))
 
 #トピックごとの単語分布のディリクレ分布の事前分布を設定
-gamma <- matrix(0.001, nrow=k1, ncol=v)
+gamma <- matrix(0.0001, nrow=k1, ncol=v)
 for(j in 1:k1){
-  gamma[j, v1[j]:v2[j]] <- 0.125
+  gamma[j, v1[j]:v2[j]] <- 0.1
 }
 
 ##すべての単語が生成されるまでループ
@@ -78,13 +78,17 @@ for(rp in 1:1000){
   theta3 <- array(0, dim=c(k2, k3, k1))
   for(j in 1:k1){
     theta3[, , j] <- extraDistr::rdirichlet(k2, alpha3[, , j])
+    
   }
   thetat3 <- theta3
   
   #ディリクレ分布から単語分布を生成
   phi <- array(0, dim=c(k3, v, k1))
   for(j in 1:k1){
-    phi[, , j] <- extraDistr::rdirichlet(k3, gamma[j, ])
+    repeat {
+      phi[, , j] <- extraDistr::rdirichlet(k3, gamma[j, ])
+      if(min(colMaxs(phi[, v1[j]:v2[j], j])) > 0.0004) break
+    }
   }
   phit <- phi
   
@@ -180,35 +184,6 @@ iter <- 0
 burnin <- 1000/keep
 disp <- 10
 
-
-##初期値を設定
-#多項分布の密度関数の対数尤度の定数
-const <- lfactorial(w) - rowSums(lfactorial(WX))
-
-#パラメータの初期値の事前分布
-alpha11 <- rep(5.0, k1)
-alpha12 <- matrix(2.5, nrow=k1, ncol=k1)
-diag(alpha12) <- 5.0
-alpha21 <- rep(5.0, k2)
-alpha22 <- matrix(2.5, nrow=k2, ncol=k2)
-diag(alpha22) <- 5.0
-alpha3 <- rep(5.0, k3)
-gamma <- rep(5.0, v)
-
-#パラメータの初期値を生成
-beta <- rep(0.2, d)
-theta11 <- rep(1/k1, k1)
-theta12 <- extraDistr::rdirichlet(k1, alpha12)
-theta21 <- extraDistr::rdirichlet(k2, alpha21)
-theta22 <- array(0, dim=c(k2, k2, k1))
-theta3 <- array(0, dim=c(k2, k3, k1))
-phi <- array(0, dim=c(k3, v, k1))
-for(j in 1:k1){
-  theta22[, , j] <- extraDistr::rdirichlet(k2, alpha22)
-  theta3[, , j] <- extraDistr::rdirichlet(k2, alpha3)
-  phi[, , j] <- extraDistr::rdirichlet(k3, gamma)
-}
-
 ##パラメータの真値
 beta <- betat
 theta11 <- thetat11
@@ -218,15 +193,59 @@ theta22 <- thetat22
 theta3 <- thetat3
 phi <- phit
 
+
+##初期値を設定
+#多項分布の密度関数の対数尤度の定数
+const <- lfactorial(w) - rowSums(lfactorial(WX))
+
+#パラメータの初期値の事前分布
+alpha11 <- rep(100.0, k1)
+alpha12 <- matrix(100.0, nrow=k1, ncol=k1)
+diag(alpha12) <- 10^-100
+alpha21 <- rep(100.0, k2)
+alpha22 <- matrix(100, nrow=k2, ncol=k2)
+diag(alpha22) <- 100.0
+alpha3 <- rep(100.0, k3)
+gamma <- rep(100.0, v)
+
+#パラメータの初期値を生成
+beta <- rep(0.5, d)
+theta11 <- rep(1/k1, k1)
+theta12 <- extraDistr::rdirichlet(k1, alpha12)
+theta21 <- extraDistr::rdirichlet(k1, alpha21)
+theta22 <- array(0, dim=c(k2, k2, k1))
+theta3 <- array(0, dim=c(k2, k3, k1))
+phi <- array(0, dim=c(k3, v, k1))
+for(j in 1:k1){
+  theta22[, , j] <- extraDistr::rdirichlet(k2, alpha22)
+  theta3[, , j] <- extraDistr::rdirichlet(k2, alpha3)
+  phi[, , j] <- extraDistr::rdirichlet(k3, gamma)
+}
+
+
 ##事前分布の設定
 #ハイパーパラメータの事前分布
-s0 <- 1
-v0 <- 1
-alpha01 <- 0.1
-alpha02 <- 0.1
+s0 <- 0.5
+v0 <- 0.5
+beta01 <- 1.0
+beta02 <- 10^-50
+alpha01 <- 1.0
+alpha02 <- 1.0
 
+##パラメータの保存用配列
+BETA <- matrix(0, nrow=R/keep, ncol=d)
+THETA11 <- matrix(0, nrow=R/keep, k1)
+THETA12 <- array(0, dim=c(k1, k1, R/keep))
+THETA21 <- array(0, dim=c(k1, k2, R/keep))
+THETA22 <- array(0, dim=c(k2, k2, k1, R/keep))
+PHI <- array(0, dim=c(k3, v, k1, R/keep))
+SEG1 <- rep(0, f)
+SEG21 <- matrix(0, nrow=f, ncol=k1)
+SEG22 <- matrix(0, nrow=f, ncol=k2)
+SEG3 <- matrix(0, nrow=f, ncol=k3)
 
 ##MCMC用インデックスを作成
+#単語順序のインデックス
 max_word <- max(t_id)
 index_t11 <- which(t_id==1)
 index_t21 <- index_t22 <- index_t23 <- list()
@@ -238,146 +257,249 @@ for(j in 1:max_word){
   index_t23[[j]] <- index[d_id[index_t22[[j]]]==d_id[index]]
   n_vec[j] <- length(index_t22[[j]])
 }
-vec_k1 <- rep(1, k1)
-vec_k2 <- rep(1, k2)
-vec_k3 <- rep(1, k3)
+vec_k1 <- rep(1, k1); vec_k2 <- rep(1, k2); vec_k3 <- rep(1, k3)
 
+#文書および単語のインデックス
+doc_list <- doc_vec <- list()
+wd_list <- wd_vec <- list()
+for(i in 1:d){
+  doc_list[[i]] <- which(d_id==i)
+  doc_vec[[i]] <- rep(1, length(doc_list[[i]]))
+}
+for(j in 1:v){
+  wd_list[[j]] <- which(wd==j)
+  wd_vec[[j]] <- rep(1, length(wd_list[[j]]))
+}
 
 #対数尤度の基準値
-LLst <- sum(dmnom(WX, w, colSums(WX)/sum(WX), log=TRUE))
+LLst <- sum(sparse_data %*% log(colSums(sparse_data) / sum(sparse_data)))
+Z21_freq <- as.numeric((plyr::count(Z21))$freq)
 
 
 ####MCMCでパラメータをサンプリング####
-
-##配列の設定
-rf21 <- matrix(0, nrow=k1, ncol=k1)
-rf22 <- array(0, dim=c(k2, k2, k1))
-Zi1 <- rep(0, f)
-Zi21 <- matrix(0, nrow=f, ncol=k1)
-z21_vec <- rep(0, f)
-Zi22 <-  matrix(0, nrow=f, ncol=k2)
-z22_vec <- rep(0, f)
-
-
-##トピックごとの期待尤度を推定
-LLt <- array(0, dim=c(f, k2, k1))
-phi_wd <- array(0, dim=c(f, k3, k1)) 
-for(j in 1:k1){
-  phi_wd[, , j] <- t(phi[, , j])[wd, ]
-  for(k in 1:k2){
-    LLt[, k, j] <- (matrix(theta3[k, , j], nrow=f, ncol=k3, byrow=T) * phi_wd[, , j]) %*% vec_k3 
+for(rp in 1:R){
+  
+  ##配列の設定
+  rf21 <- matrix(0, nrow=k1, ncol=k1)
+  rf22 <- array(0, dim=c(k2, k2, k1))
+  Zi1 <- rep(0, f)
+  Zi21 <- matrix(0, nrow=f, ncol=k1); Zi22 <-  matrix(0, nrow=f, ncol=k2)
+  z21_vec <- z22_vec <- rep(0, f)
+  
+  ##トピックごとの期待尤度を推定
+  LLt <- array(0, dim=c(f, k2, k1))
+  phi_wd <- array(0, dim=c(f, k3, k1)) 
+  for(j in 1:k1){
+    phi_wd[, , j] <- t(phi[, , j])[wd, ]
+    for(k in 1:k2){
+      LLt[, k, j] <- (matrix(theta3[k, , j], nrow=f, ncol=k3, byrow=T) * phi_wd[, , j]) %*% vec_k3 
+    }
   }
-}
-
-for(pd in 1:max_word){
-  if(pd==1){
-    ##1単語目の潜在状態を生成
-    ##上位階層の潜在状態を生成
-    #対数尤度を上位階層のの期待尤度に変換
-    LLt21 <- LLt[index_t11, , ]
-    n <- length(index_t11)
-    par <- matrix(0, nrow=n[pd], ncol=k1)
-    for(j in 1:k1){
-      par[, j] <- (matrix(theta21[j, ], nrow=n, ncol=k2, byrow=T) * LLt21[, , j]) %*% vec_k2
-    }
-    
-    #多項分布から上位階層の状態を生成
-    r <- matrix(theta11, nrow=n, ncol=k1, byrow=T)
-    par_rate <- r*par / rowSums(r*par)   #潜在変数の割当確率
-    Zi21[index_t11, ] <- rmnom(n, 1, par_rate)   #多項分布から状態を生成
-    z21_vec[index_t11] <- as.numeric(Zi21[index_t11, ] %*% 1:k1)
-    
-    
-    ##下位階層の潜在状態を生成
-    #上位階層の状態に応じて尤度計算
-    zi21 <- Zi21[index_t11, ]
-    par <- matrix(0, nrow=n, ncol=k2)
-    for(j in 1:k1){
-      par <- par + LLt21[, , j] * zi21[, j]
-    }
-    
-    #多項分布から下位階層の状態を生成
-    r <- theta21[z21_vec[index_t11], ]
-    par_rate <- r*par / (rowSums(r*par))   #潜在変数の割当確率
-    Zi22[index_t11, ] <- rmnom(n, 1, par_rate)   #多項分布から状態を生成
-    z22_vec[index_t11] <- as.numeric(Zi22[index_t11, ] %*% 1:k2)
-    
-    } else {
-      
-    ##2単語目以降のマルコフ推移に基づき潜在状態を生成
-    ##潜在状態が切り替わるかどうかを生成
-    #データの設定
-    index1 <- index_t21[[pd]]
-    index2 <- index_t22[[pd]]
-    n <- length(index2)
-    zi21_j <- Zi21[index1, , drop=FALSE]
-    zi22_j <- Zi22[index1, , drop=FALSE]
-    
-    #期待尤度を計算
-    LLt21 <- LLt[index2, , , drop=FALSE]
-    LLt22 <- matrix(0, nrow=n, ncol=k2)
-    par <- matrix(0, nrow=n, ncol=k1)
-    for(j in 1:k1){
-      theta22_r <- theta22[zi22_j, , j]
-      par[, j] <- (LLt21[, , j]*theta22_r) %*% vec_k2
-      LLt22 <- LLt22 + LLt21[, , j]*zi21_j[, j]*theta22_r
-    }
-    
-    #上位階層の潜在状態切換え変数を生成
-    par1 <- par0 <- rep(0, n)
-    for(j in 1:k1){
-      par1 <- par1 + par[, j]*zi21_j[, j]
-      par0 <- par0 + matrix(theta12[j, -j], nrow=n, ncol=k1-1, byrow=T)*par[, -j]*zi21_j[, j]
-    }
-    r <- beta[d_id[index2]]   #混合率
-    beta_par0 <- r * rowSums(par0)
-    beta_rate <- beta_par0 / ((1-r)*par1+beta_par0)   #切換え変数の割当確率
-    Zi1[index2] <- rbinom(n, 1, beta_rate)   #ベルヌーイ分布から切換え変数を生成
-    index_z1 <- which(Zi1[index2]==1)
-    
-    
-    ##切換え変数を条件として上位階層を生成
-    if(length(index_z1)==0){
-      Zi21[index2, ] <- Zi21[index1, ]
-      z21_vec[index2] <- z21_vec[index1]
-    } else {
-      r <- theta12[z21_vec[index1], ]
-      Zi21[index2, ] <- Zi21[index1, ]; z21_vec[index2] <- z21_vec[index1]   #1期前の潜在状態を繰り返す
-      par_rate <- r*par / rowSums(r*par)   #潜在状態の割当確率
-      
-      if(nrow(par_rate)==1){
-        Zi21[index2, ] <- rmnom(length(index_z1), 1, par_rate[index_z1, ])   #多項分布から潜在状態を生成
-        z21_vec[index2] <- as.numeric(Zi21[index2, ] %*% 1:k1)
-      } else {
-        Zi21[index2, ][index_z1, ] <- rmnom(length(index_z1), 1, par_rate[index_z1, ])   #多項分布から潜在状態を生成
-        z21_vec[index2][index_z1] <- as.numeric(Zi21[index2, ][index_z1, ] %*% 1:k1)
+  
+  for(pd in 1:max_word){
+    if(pd==1){
+      ##1単語目の潜在状態を生成
+      ##上位階層の潜在状態を生成
+      #対数尤度を上位階層のの期待尤度に変換
+      LLt21 <- LLt[index_t11, , ]
+      n <- length(index_t11)
+      par <- matrix(0, nrow=n[pd], ncol=k1)
+      for(j in 1:k1){
+        par[, j] <- (matrix(theta21[j, ], nrow=n, ncol=k2, byrow=T) * LLt21[, , j]) %*% vec_k2
       }
-      #上位階層のマルコフ推移行列を更新
-      rf21 <- rf21 + t(Zi21[index1, , drop=FALSE]) %*% (Zi21[index2, , drop=FALSE] * Zi1[index2])
-    }
-    
-    ##下位階層の潜在状態を生成
-    #上位階層の状態に応じて尤度計算
-    par <- matrix(0, nrow=n, ncol=k2)
-    for(j in 1:k1){
-      index <- which(Zi21[index2, j]==1)
-      if(length(index)==0) next
-      LLt22 <- LLt[index2, , , drop=FALSE]
-      par[index, ] <- theta22[z22_vec[index1][index], , j] * LLt22[, , j, drop=FALSE][index, , 1]
-    }
-    
-    #多項分布から下位階層の状態を生成
-    par_rate <- par / rowSums(par)   #潜在変数の割当確率
-    Zi22[index2, ] <- rmnom(n, 1, par_rate)   #多項分布から潜在状態を生成 
-    z22_vec[index2] <- as.numeric(Zi22[index2, ] %*% 1:k2)
-    
-    #マルコフ推移行列を更新
-    for(j in 1:k1){
-    rf22[, , j] <- rf22[, , j] + t(Zi22[index1, , drop=FALSE]) %*% 
-      (Zi22[index2, , drop=FALSE] * Zi21[index2, j] * (1-Zi1[index2]))
+      
+      #多項分布から上位階層の状態を生成
+      r <- matrix(theta11, nrow=n, ncol=k1, byrow=T)
+      par_rate <- r*par / rowSums(r*par)   #潜在変数の割当確率
+      Zi21[index_t11, ] <- rmnom(n, 1, par_rate)   #多項分布から状態を生成
+      z21_vec[index_t11] <- as.numeric(Zi21[index_t11, ] %*% 1:k1)
+      
+      
+      ##下位階層の潜在状態を生成
+      #上位階層の状態に応じて尤度計算
+      zi21 <- Zi21[index_t11, ]
+      par <- matrix(0, nrow=n, ncol=k2)
+      for(j in 1:k1){
+        par <- par + LLt21[, , j] * zi21[, j]
+      }
+      
+      #多項分布から下位階層の状態を生成
+      r <- theta21[z21_vec[index_t11], ]
+      par_rate <- r*par / (rowSums(r*par))   #潜在変数の割当確率
+      Zi22[index_t11, ] <- rmnom(n, 1, par_rate)   #多項分布から状態を生成
+      z22_vec[index_t11] <- as.numeric(Zi22[index_t11, ] %*% 1:k2)
+      
+      } else {
+        
+      ##2単語目以降のマルコフ推移に基づき潜在状態を生成
+      ##潜在状態が切り替わるかどうかを生成
+      #データの設定
+      index1 <- index_t21[[pd]]
+      index2 <- index_t22[[pd]]
+      zi21_j <- Zi21[index1, , drop=FALSE]
+      zi22_j <- Zi22[index1, , drop=FALSE]
+      n <- length(index2)
+      
+      #期待尤度を計算
+      LLt21 <- LLt[index2, , , drop=FALSE]
+      LLt22 <- matrix(0, nrow=n, ncol=k2)
+      par <- matrix(0, nrow=n, ncol=k1)
+      for(j in 1:k1){
+        theta22_r <- theta22[zi22_j, , j]
+        par[, j] <- (LLt21[, , j]*theta22_r) %*% vec_k2
+        LLt22 <- LLt22 + LLt21[, , j]*zi21_j[, j]*theta22_r
+      }
+      
+      #上位階層の潜在状態切換え変数を生成
+      par1 <- par0 <- rep(0, n)
+      for(j in 1:k1){
+        par1 <- par1 + par[, j]*zi21_j[, j]
+        par0 <- par0 + matrix(theta12[j, -j], nrow=n, ncol=k1-1, byrow=T)*par[, -j]*zi21_j[, j]
+      }
+      r <- beta[d_id[index2]]   #混合率
+      beta_par0 <- r * rowSums(par0)
+      beta_rate <- beta_par0 / ((1-r)*par1+beta_par0)   #切換え変数の割当確率
+      Zi1[index2] <- rbinom(n, 1, beta_rate)   #ベルヌーイ分布から切換え変数を生成
+      index_z1 <- which(Zi1[index2]==1)
+      
+      
+      ##切換え変数を条件として上位階層を生成
+      if(length(index_z1)==0){
+        Zi21[index2, ] <- Zi21[index1, ]
+        z21_vec[index2] <- z21_vec[index1]
+        
+      } else {
+        
+        r <- theta12[z21_vec[index1], ]
+        Zi21[index2, ] <- Zi21[index1, ]; z21_vec[index2] <- z21_vec[index1]   #1期前の潜在状態を繰り返す
+        par_rate <- r*par / rowSums(r*par)   #潜在状態の割当確率
+        
+        if(nrow(par_rate)==1){
+          Zi21[index2, ] <- rmnom(length(index_z1), 1, par_rate[index_z1, ])   #多項分布から潜在状態を生成
+          z21_vec[index2] <- as.numeric(Zi21[index2, ] %*% 1:k1)
+        } else {
+          Zi21[index2, ][index_z1, ] <- rmnom(length(index_z1), 1, par_rate[index_z1, ])   #多項分布から潜在状態を生成
+          z21_vec[index2][index_z1] <- as.numeric(Zi21[index2, ][index_z1, ] %*% 1:k1)
+        }
+        #上位階層のマルコフ推移行列を更新
+        rf21 <- rf21 + t(Zi21[index1, , drop=FALSE]) %*% (Zi21[index2, , drop=FALSE] * Zi1[index2])
+      }
+      
+      ##下位階層の潜在状態を生成
+      #上位階層の状態に応じて尤度計算
+      par <- matrix(0, nrow=n, ncol=k2)
+      for(j in 1:k1){
+        index <- which(Zi21[index2, j]==1)
+        index_z21 <- index[index %in% index_z1]; index_z22 <- index[!index %in% index_z1]
+        if(length(index)==0) next
+        LLt22 <- LLt[index2, , , drop=FALSE]
+        
+        #切換え変数に応じた尤度計算
+        if(length(index_z21) > 0 ){
+          par[index_z21, ] <- matrix(theta21[j, ], nrow=length(index_z21), ncol=k2, byrow=T) * 
+            LLt22[index_z21, , j, drop=FALSE][, , 1]
+        }
+        if(length(index_z22) > 0){
+          par[index_z22, ] <- theta22[z22_vec[index1][index_z22], , j] * LLt22[index_z22, , j, drop=FALSE][, , 1]
+        }
+      }
+      
+      #多項分布から下位階層の状態を生成
+      par_rate <- par / rowSums(par)   #潜在変数の割当確率
+      Zi22[index2, ] <- rmnom(n, 1, par_rate)   #多項分布から潜在状態を生成 
+      z22_vec[index2] <- as.numeric(Zi22[index2, ] %*% 1:k2)
+      
+      #マルコフ推移行列を更新
+      for(j in 1:k1){
+      rf22[, , j] <- rf22[, , j] + t(Zi22[index1, , drop=FALSE]) %*% 
+        (Zi22[index2, , drop=FALSE] * Zi21[index2, j] * (1-Zi1[index2]))
+      }
     }
   }
-}
+  
+  ##マルコフモデルのパラメータをサンプリング
+  #ベータ分布から混合率をサンプリング
+  par1 <- as.numeric(tapply(Zi1[-index_t11], d_id[-index_t11], sum))
+  par2 <- w-1-par1
+  beta <- rbeta(d, par1+s0, par2+v0)
+  
+  #ディリクレ分布から上位階層の混合率をサンプリング
+  wf1 <- colSums(Zi21[index_t11, ]) + alpha01
+  wf2 <- rf21 + alpha01
+  theta11 <- as.numeric(extraDistr::rdirichlet(1, wf1))
+  for(j in 1:k1){
+    theta12[j, -j] <- extraDistr::rdirichlet(1, wf2[j, -j])
+  }
+  
+  #ディリクレ分布から下位階層の混合率をサンプリング
+  for(j in 1:k1){
+    wf3 <- colSums(Zi22[index_t11, ] * Zi21[index_t11, j]) + colSums(Zi22 * Zi1 * Zi21[, j]) + alpha02
+    wf4 <- rf22[, , j] + alpha02
+    theta21[j, ] <- extraDistr::rdirichlet(1, wf3)
+    theta22[, , j] <- extraDistr::rdirichlet(k2, wf4)
+  }
+  
+  ##トピックモデルのパラメータをサンプリング
+  Zi3 <- LLho <- matrix(0, nrow=f, ncol=k3)
+  phi <- array(0, dim=c(k3, v, k1))
+  
+  for(j in 1:k1){
+    #階層ごとのトピック尤度
+    Zi3_T <- matrix(0, nrow=k3, ncol=f)
+    index_z21 <- which(Zi21[, j]==1)
+    topic_par <- theta3[z22_vec[index_z21], , j] * phi_wd[index_z21, , j]
+    LLho[index_z21, ] <- topic_par
+    
+    #多項分布からトピックをサンプリング
+    topic_rate <- topic_par / as.numeric((topic_par %*% vec_k3))   #トピックの割当確率
+    Zi <- rmnom(length(index_z21), 1, topic_rate)   #多項分布からトピックをサンプリング
+    Zi_T <- t(Zi)
+    Zi3_T[, index_z21] <- Zi_T
+    Zi3[index_z21, ] <- Zi
+    
+    #ディリクレ分布からトピック分布をサンプリング
+    for(i in k2){
+      wsum <- rowSums(Zi_T[, Zi22[index_z21, i]==1]) + beta01
+      theta3[i, , j] <- extraDistr::rdirichlet(1, wsum)
+    }
+    
+    #ディリクレ分布から単語分布をサンプリング
+    vsum <- matrix(0, nrow=k3, ncol=v)
+    for(l in 1:v){
+      vsum[, l] <- Zi3_T[, wd_list[[l]], drop=FALSE] %*% wd_vec[[l]] + beta02
+    }
+    phi[, , j] <- extraDistr::rdirichlet(k3, vsum)
+  }
 
-rf22
-rf21
+  
+  ##パラメータの格納とサンプリング結果の表示
+  #サンプリングされたパラメータを格納
+  if(rp%%keep==0){
+    #サンプリング結果の格納
+    mkeep <- rp/keep
+    BETA[mkeep, ] <- beta
+    THETA11[mkeep, ] <- theta11
+    THETA12[, , mkeep] <- theta12
+    THETA21[, , mkeep] <- theta21
+    THETA22[, , , mkeep] <- theta22
+    PHI[, , , mkeep] <- phi
+  }  
+
+  #トピック割当はバーンイン期間を超えたら格納する
+  if(rp%%keep==0 & rp >= burnin){
+    SEG1 <- SEG1 + Zi1
+    SEG21 <- SEG21 + Zi21
+    SEG22 <- SEG22 + Zi22
+    SEG3 <- SEG3 + Zi3
+  }
+  
+  if(rp%%disp==0){
+    #対数尤度を計算
+    LL <- sum(log(rowSums(LLho)))
+    
+    #サンプリング結果を確認
+    print(rp)
+    print(c(LL, LLst))
+    print(rbind(Z21_freq=colSums(Zi21), Z21_freq))
+  }
+}
