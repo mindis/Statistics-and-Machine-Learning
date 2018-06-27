@@ -18,23 +18,26 @@ library(ggplot2)
 ####データの発生####
 ##データの設定
 #木構造のトピックの設定
-m <- 3   #木の最大深さ
-k1 <- 3   #1階層目のトピック数
-k2 <- rtpois(k1, a=1, b=6, 2.5)   #2階層目のトピック数
-k3 <- c()
-for(j in 1:k1){
-  k3 <- c(k3, rtpois(k2[j], a=0, b=6, 2.0))   #3階層目のトピック数
+for(rp in 1:1000){
+  m <- 3   #木の最大深さ
+  k1 <- 3   #1階層目のトピック数
+  k2 <- rtpois(k1, a=1, b=5, 2.5)   #2階層目のトピック数
+  k3 <- c()
+  for(j in 1:k1){
+    k3 <- c(k3, rtpois(k2[j], a=0, b=4, 2.25))   #3階層目のトピック数
+  }
+  index_k3 <- cbind(c(1, cumsum(k2)[-length(k2)]+1), cumsum(k2))
+  k <- 1 + sum(c(k1, k2, k3))   #総トピック数
+  max_k <- max(c(k1, k2, k3))
+  if(k >= 30 & k < 40) break 
 }
-index_k3 <- cbind(c(1, cumsum(k2)[-length(k2)]+1), cumsum(k2))
-k <- 1 + sum(c(k1, k2, k3))   #総トピック数
-max_k <- max(c(k1, k2, k3))
 
 #文書の設定
-d <- 3000   #文書数
+d <- 3500   #文書数
 w <- rpois(d, rgamma(d, 75, 0.5))   #単語数
 f <- sum(w)   #総単語数
-v0 <- 200
-v1 <- rep(300, k1)
+v0 <- 250
+v1 <- rep(250, k1)
 v <- sum(c(v0, v1))   #総語彙数
 index_v0 <- 1:v0
 index_v1 <- cbind(c(v0+1, (v0+cumsum(v1)[-k1])+1), (v0+cumsum(v1)))
@@ -67,15 +70,16 @@ for(rp in 1:1000){
   
   ##木構造のパラメータを生成
   #ベータ分布から停止確率を生成
-  gamma1 <- 0.775
-  gamma2 <- rbeta(k1, beta1[1], beta1[2])
+  gamma1 <- gammat1 <- 0.8
+  gamma2 <- gammat2 <- rbeta(k1, beta1[1], beta1[2])
   gamma3 <- list()
   for(j in 1:k1){
     gamma3[[j]] <- rbeta(k2[j], beta1[1], beta1[2])
   }
+  gammat3 <- gamma3
   
   #ディリクリ分布から木構造のノード選択確率を生成
-  theta1 <- as.numeric(extraDistr::rdirichlet(1, beta2[1:k1]))
+  theta1 <- thetat1 <- as.numeric(extraDistr::rdirichlet(1, rep(20.0, k1)))
   theta2 <- theta3 <- list()
   for(i in 1:k1){
     theta_list <- list()
@@ -91,10 +95,11 @@ for(rp in 1:1000){
     }
     theta3[[i]] <- theta_list
   }
+  thetat2 <- theta2; thetat3 <- theta3
   
   ##単語分布を生成
-  phi0 <- as.numeric(extraDistr::rdirichlet(1, alpha1))
-  phi1 <- extraDistr::rdirichlet(k1, alpha2)
+  phi0 <- phit0 <- as.numeric(extraDistr::rdirichlet(1, alpha1))
+  phi1 <- phit1 <- extraDistr::rdirichlet(k1, alpha2)
   phi2 <- phi3 <- list()
   
   for(i in 1:k1){
@@ -107,6 +112,7 @@ for(rp in 1:1000){
     }
     phi3[[i]] <- phi_list
   }
+  phit2 <- phi2; phit3 <- phi3
   
   ##モデルに基づきデータを生成
   #データの格納用配列
@@ -188,17 +194,145 @@ for(rp in 1:1000){
     word <- rmnom(w[i], 1, phi)
     word_vec <- as.numeric(word %*% 1:v)
     
-    
     ##データの格納
     Z1_list[[i]] <- cbind(z11_vec, z12_vec, z13_vec)
     Z2_list[[i]] <- z2
     word_list[[i]] <- word_vec
     WX[i, ] <- colSums(word)
   }
-  if(min(colSums(WX)) > 0) next
+  if(min(colSums(WX)) > 0) break
 }
-min(colSums(WX))
 
-sum(colSums(WX)==0)
+#リストを変換
+wd <- unlist(word_list)
+Z1 <- do.call(rbind, Z1_list)
+Z2 <- do.call(rbind, Z2_list)
+sparse_data <- sparseMatrix(i=1:f, wd, x=rep(1, f), dims=c(f, v))
+sparse_data_T <- t(sparse_data)
 
-do.call(rbind, Z2_list)
+
+####マルコフ連鎖モンテカルロ法でTree Structured Mixture Multinomial Modelを推定####
+##アルゴリズムの設定
+R <- 5000
+keep <- 2  
+iter <- 0
+burnin <- 1000
+disp <- 10
+
+##事前分布の設定
+alpha01 <- 0.1
+alpha02 <- 0.01
+s0 <- 0.5
+v0 <- 0.5
+
+##パラメータの初期値
+#ベータ分布から停止確率を生成
+gamma1 <- 0.7
+gamma2 <- rbeta(k1, 20, 15)
+gamma3 <- list()
+for(j in 1:k1){
+  gamma3[[j]] <- rbeta(k2[j],20, 15)
+}
+
+#ディリクリ分布から木構造のノード選択確率を生成
+theta1 <- as.numeric(extraDistr::rdirichlet(1, rep(1/k1, k1)))
+theta2 <- theta3 <- list()
+for(i in 1:k1){
+  theta_list <- list()
+  theta2[[i]] <- as.numeric(extraDistr::rdirichlet(1, rep(1/k2[i], k2[i])))
+
+  for(j in 1:k2[i]){
+    x <- k3[(index_k3[i, 1]:index_k3[i, 2])][j]
+    if(x==1){
+      theta_list[[j]] <- 1
+    } else {
+      theta_list[[j]] <- as.numeric(extraDistr::rdirichlet(1, rep(1/length(1:x), length(1:x))))
+    }
+  }
+  theta3[[i]] <- theta_list
+}
+
+##単語分布を生成
+phi0 <- as.numeric(extraDistr::rdirichlet(1, rep(10.0, v)))
+phi1 <- extraDistr::rdirichlet(k1, rep(10.0, v))
+phi2 <- phi3 <- list()
+
+for(i in 1:k1){
+  phi_list <- list()
+  phi2[[i]] <- extraDistr::rdirichlet(k2[i], rep(10.0, v))
+  
+  for(j in 1:k2[i]){
+    x <- k3[(index_k3[i, 1]:index_k3[i, 2])][j]
+    phi_list[[j]] <- extraDistr::rdirichlet(x, rep(10.0, v))
+  }
+  phi3[[i]] <- phi_list
+}
+
+##パラメータの真値
+gamma1 <- gammat1
+gamma2 <- gammat2
+gamma3 <- gammat3
+theta1 <- thetat1
+theta2 <- thetat2
+theta3 <- thetat3
+phi0 <- phit0
+phi1 <- phit1
+phi2 <- phit2
+phi3 <- phit3
+
+#インデックスを作成
+doc_list <- doc_vec <- list()
+wd_list <- wd_vec <- list()
+for(i in 1:d){
+  doc_list[[i]] <- which(d_id==i)
+  doc_vec[[i]] <- rep(1, length(doc_list[[i]]))
+}
+for(j in 1:v){
+  wd_list[[j]] <- which(wd==j)
+  wd_vec[[j]] <- rep(1, length(wd_list[[j]]))
+}
+
+
+####ギブスサンプリングでパラメータをサンプリング####
+
+##木構造のノードごとの期待尤度の設定
+Lho0 <- phi0[wd]
+Lho1 <- matrix(theta1, nrow=f, ncol=k1, byrow=T) * t(phi1)[wd, ]; Li1 <- as.numeric(Lho1 %*% rep(1, k1))
+Lho2 <- list(); Li2 <- matrix(0, nrow=f, ncol=k1)
+Lho3 <- Li3 <- list()
+
+for(i in 1:k1){
+  #2階層目の期待尤度
+  Lho2[[i]] <- matrix(theta2[[i]], nrow=f, ncol=k2[i], byrow=T) * t(phi2[[i]])[wd, ]
+  Li2[, i] <- as.numeric(Lho2[[i]] %*% rep(1, k2[i]))
+  
+  #3階層目の期待尤度
+  index <- (index_k3[i, 1]:index_k3[i, 2])
+  a <- k3[index]
+  Lho3_list <- list(); Li3_data <- matrix(0, nrow=f, ncol=k2[i])
+  for(j in 1:k2[i]){
+    Lho3_list[[j]] <- matrix(theta3[[i]][[j]], nrow=f, ncol=a[j], byrow=T) * t(phi3[[i]][[j]])[wd, ]
+    Li3_data[, j] <- as.numeric(Lho3_list[[j]] %*% rep(1, a[j]))
+  }
+  Lho3[[i]] <- Lho3_list
+  Li3[[i]] <- Li3_data
+}
+
+##停止変数を生成
+Lis21 <- as.numeric((matrix(gamma2*theta1, nrow=f, ncol=k1, byrow=T) * Li2) %*% rep(1, k1))
+Lis31 <- matrix(0, nrow=f, ncol=k1)
+for(j in 1:k1){
+  Lis31[, j] <- as.numeric((matrix(gamma3[[j]]*theta2[[j]], nrow=f, k2[j], byrow=T) * Li3[[j]]) %*% rep(1, k2[j]))
+}
+Lis32 <- as.numeric((matrix(gamma2*theta1, nrow=f, ncol=k1, byrow=T) * Lis31) %*% rep(1, k1))
+
+cbind(Li1, Lis21, Lis32)
+
+1-gamma2
+gamma3
+
+theta2
+
+
+
+
