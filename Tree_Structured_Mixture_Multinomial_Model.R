@@ -16,58 +16,57 @@ library(ggplot2)
 #set.seed(2506787)
 
 ####データの発生####
-##データの設定
-#木構造のトピックの設定
-for(rp in 1:1000){
-  m <- 3   #木の最大深さ
-  k1 <- 3   #1階層目のトピック数
-  k2 <- rtpois(k1, a=1, b=5, 2.5)   #2階層目のトピック数
-  k3 <- c()
-  for(j in 1:k1){
-    k3 <- c(k3, rtpois(k2[j], a=0, b=4, 2.25))   #3階層目のトピック数
-  }
-  index_k3 <- cbind(c(1, cumsum(k2)[-length(k2)]+1), cumsum(k2))
-  k <- 1 + sum(c(k1, k2, k3))   #総トピック数
-  max_k <- max(c(k1, k2, k3))
-  if(k >= 30 & k < 40) break 
-}
-
-#文書の設定
-d <- 3500   #文書数
-w <- rpois(d, rgamma(d, 75, 0.5))   #単語数
-f <- sum(w)   #総単語数
-v0 <- 250
-v1 <- rep(250, k1)
-v <- sum(c(v0, v1))   #総語彙数
-index_v0 <- 1:v0
-index_v1 <- cbind(c(v0+1, (v0+cumsum(v1)[-k1])+1), (v0+cumsum(v1)))
-
-#IDを設定
-d_id <- rep(1:d, w)
-t_id <- c()
-for(i in 1:d){
-  t_id <- c(t_id, 1:w[i])
-}
-
-##パラメータを生成
-#単語分布の事前分布
-alpha1 <- rep(0.01, v)
-alpha21 <- alpha22 <- alpha23 <- rep(0.0025, v)
-alpha1[index_v0] <- 5.0
-alpha21[index_v1[1, 1]:index_v1[1, 2]] <- 0.1
-alpha22[index_v1[2, 1]:index_v1[2, 2]] <- 0.1
-alpha23[index_v1[3, 1]:index_v1[3, 2]] <- 0.1
-alpha2 <- rbind(alpha21, alpha22, alpha23)
-
-#トピック割当の事前分布
-beta1 <- c(30.0, 20.0)   #木の深さの事前分布
-beta2 <- rep(5.0, max(c(k1, k2, k3)))   #分岐の事前分布
-
-
 ##すべての単語が出現するまでデータの生成を続ける
 for(rp in 1:1000){
-  print(rp)
+  print(rp) 
   
+  ##データの設定
+  #木構造のトピックの設定
+  for(iter in 1:1000){
+    m <- 3   #木の最大深さ
+    k1 <- 3   #1階層目のトピック数
+    k2 <- rtpois(k1, a=1, b=5, 2.5)   #2階層目のトピック数
+    k3 <- c()
+    for(j in 1:k1){
+      k3 <- c(k3, rtpois(k2[j], a=0, b=4, 2.25))   #3階層目のトピック数
+    }
+    index_k3 <- cbind(c(1, cumsum(k2)[-length(k2)]+1), cumsum(k2))
+    k <- 1 + sum(c(k1, k2, k3))   #総トピック数
+    max_k <- max(c(k1, k2, k3))
+    if(k >= 30 & k < 40) break 
+  }
+  
+  #文書の設定
+  d <- 3500   #文書数
+  w <- rpois(d, rgamma(d, 75, 0.5))   #単語数
+  f <- sum(w)   #総単語数
+  v0 <- 250
+  v1 <- rep(250, k1)
+  v <- sum(c(v0, v1))   #総語彙数
+  index_v0 <- 1:v0
+  index_v1 <- cbind(c(v0+1, (v0+cumsum(v1)[-k1])+1), (v0+cumsum(v1)))
+  
+  #IDを設定
+  d_id <- rep(1:d, w)
+  t_id <- c()
+  for(i in 1:d){
+    t_id <- c(t_id, 1:w[i])
+  }
+  
+  ##パラメータを生成
+  #単語分布の事前分布
+  alpha1 <- rep(0.01, v)
+  alpha21 <- alpha22 <- alpha23 <- rep(0.0005, v)
+  alpha1[index_v0] <- 5.0
+  alpha21[index_v1[1, 1]:index_v1[1, 2]] <- 0.1
+  alpha22[index_v1[2, 1]:index_v1[2, 2]] <- 0.1
+  alpha23[index_v1[3, 1]:index_v1[3, 2]] <- 0.1
+  alpha2 <- rbind(alpha21, alpha22, alpha23)
+  
+  #トピック割当の事前分布
+  beta1 <- c(30.0, 20.0)   #木の深さの事前分布
+  beta2 <- rep(5.0, max(c(k1, k2, k3)))   #分岐の事前分布
+
   ##木構造のパラメータを生成
   #ベータ分布から停止確率を生成
   gamma1 <- gammat1 <- 0.8
@@ -297,14 +296,16 @@ for(j in 1:v){
 
 ##木構造のノードごとの期待尤度の設定
 Lho0 <- phi0[wd]
-Lho1 <- matrix(theta1, nrow=f, ncol=k1, byrow=T) * t(phi1)[wd, ]; Li1 <- as.numeric(Lho1 %*% rep(1, k1))
+Lho1 <- matrix(theta1, nrow=f, ncol=k1, byrow=T) * t(phi1)[wd, ]
+Lis1 <- as.numeric((matrix(1-gamma2, nrow=f, ncol=k1, byrow=T) * Lho1) %*% rep(1, k1))
 Lho2 <- list(); Li2 <- matrix(0, nrow=f, ncol=k1)
 Lho3 <- Li3 <- list()
 
 for(i in 1:k1){
   #2階層目の期待尤度
   Lho2[[i]] <- matrix(theta2[[i]], nrow=f, ncol=k2[i], byrow=T) * t(phi2[[i]])[wd, ]
-  Li2[, i] <- as.numeric(Lho2[[i]] %*% rep(1, k2[i]))
+  r <- matrix((1-gamma3[[i]]), nrow=f, ncol=length(gamma3[[i]]), byrow=T)
+  Li2[, i] <- as.numeric((r * Lho2[[i]]) %*% rep(1, k2[i]))
   
   #3階層目の期待尤度
   index <- (index_k3[i, 1]:index_k3[i, 2])
@@ -318,7 +319,8 @@ for(i in 1:k1){
   Li3[[i]] <- Li3_data
 }
 
-##停止変数を生成
+##通過変数を生成
+#通過確率の尤度を設定
 Lis21 <- as.numeric((matrix(gamma2*theta1, nrow=f, ncol=k1, byrow=T) * Li2) %*% rep(1, k1))
 Lis31 <- matrix(0, nrow=f, ncol=k1)
 for(j in 1:k1){
@@ -326,13 +328,69 @@ for(j in 1:k1){
 }
 Lis32 <- as.numeric((matrix(gamma2*theta1, nrow=f, ncol=k1, byrow=T) * Lis31) %*% rep(1, k1))
 
-cbind(Li1, Lis21, Lis32)
-
-1-gamma2
-gamma3
-
-theta2
 
 
+#1階層目の通過変数を生成
+Lis_par1 <- gamma1 * (Lis1 + Lis21 + Lis32)
+Lis_par0 <- (1-gamma1) * Lho0
+s_prob1 <- Lis_par1 / (Lis_par1 + Lis_par0)   #通過確率
+Zi11 <- rbinom(f, 1, s_prob1)   #ベルヌーイ分布から通過変数を生成
+index_z11 <- which(Zi11==1)
+
+#2階層目の通過変数を生成
+Zi12 <- s_prob2 <- rep(0, f)
+Lis_par1 <- (Lis21 + Lis32)[index_z11]
+Lis_par0 <- Lis1[index_z11]
+s_prob2[index_z11] <- Lis_par1 / (Lis_par1 + Lis_par0)   #通過確率
+Zi12[index_z11] <- rbinom(length(index_z11), 1, s_prob2[index_z11])   #ベルヌーイ分布から通過変数を生成
+index_z12 <- which(Zi12==1)
+
+#3階層目の通過変数を生成
+Zi13 <- s_prob3 <- rep(0, f)
+Lis_par1 <- (as.numeric(Lis31 %*% rep(1, k1)))[index_z12]
+Lis_par0 <- (as.numeric(Li2 %*% rep(1, k1)))[index_z12]
+s_prob3[index_z12] <- Lis_par1 / (Lis_par1 + Lis_par0)   #通過確率
+Zi13[index_z12] <- rbinom(length(index_z12), 1, s_prob3[index_z12])   #ベルヌーイ分布から通過変数を生成
+index_z13 <- which(Zi13==1)
+
+
+##通過変数を条件づけたトピックをサンプリング
+#1階層目のトピックを生成
+topic_prob1 <- matrix(0, nrow=f, ncol=k1)
+index_d10 <- index_z11[Zi12[index_z11]==0]
+index_d11 <- index_z11[Zi12[index_z11]==1]
+r <- matrix(gamma2*theta1, nrow=f, ncol=k1, byrow=T)[index_d11, ]
+par <- (r*Li2[index_d11, ]) + (r*Lis31[index_d11, ])
+topic_prob1[index_d10, ] <- Lho1[index_d10, ] / as.numeric((Lho1[index_d10, ]) %*% rep(1, k1))   #トピックの割当確率
+topic_prob1[index_d11, ] <- par / rowSums(par)
+
+#多項分布からトピックを生成
+Zi21 <- matrix(0, nrow=f, ncol=k1)
+Zi21[index_d10, ] <- rmnom(length(index_d10), 1, topic_prob1[index_d10, ])   
+Zi21[index_d11, ] <- rmnom(length(index_d11), 1, topic_prob1[index_d11, ])
+
+
+#2階層目および3階層目のトピックを生成
+i <- 1
+Zi22_list <- list()
+topic_prob2 <- matrix(0, nrow=f, ncol=k2[i])
+index_d20 <- index_z12[Zi13[index_z12]==0 & Zi21[index_z12, i]==1]
+index_d21 <- index_z12[Zi13[index_z12]==1 & Zi21[index_z12, i]==1]
+par20 <- (Lho2[[i]])[index_d20, ]
+par21 <- (matrix(gamma3[[i]]*theta2[[i]], nrow=f, k2[i], byrow=T) * Li3[[i]])[index_d21, ]
+topic_prob2[index_d20, ] <- par20 / rowSums(par20)   #トピックの割当確率
+topic_prob2[index_d21, ] <- par21 / rowSums(par21)
+
+#多項分布からトピックを生成
+Zi22 <- matrix(0, nrow=f, ncol=k2[i])
+Zi22[index_d20, ] <- rmnom(length(index_d20), 1, topic_prob2[index_d20, ])
+Zi22[index_d20, ][is.na(Zi22[index_d20, ])] <- 0
+Zi22[index_d21, ] <- rmnom(length(index_d21), 1, topic_prob2[index_d21, ])
+Zi22[index_d21, ][is.na(Zi22[index_d21, ])] <- 0
+
+j <- 1
+index_d3 <-index_z13[Zi22[index_z13, j]==1]
+index_d3
+Lho3[[i]][[j]][index_d3, ]
 
 
