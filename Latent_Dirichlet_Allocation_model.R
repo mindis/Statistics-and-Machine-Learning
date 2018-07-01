@@ -17,35 +17,42 @@ library(ggplot2)
 #set.seed(423943)
 #データの設定
 k <- 15   #トピック数
-d <- 20000   #文書数
-v <- 3000   #語彙数
-w <- rpois(d, rgamma(d, 55, 0.50))   #1文書あたりの単語数
+d <- 5000   #文書数
+v <- 1000   #語彙数
+w <- rpois(d, rgamma(d, 60, 0.50))   #1文書あたりの単語数
 f <- sum(w)
 
 #IDの設定
 d_id <- rep(1:d, w)
 
 #パラメータの設定
-alpha0 <- rep(0.1, k)   #文書のディレクリ事前分布のパラメータ
-alpha1 <- rep(0.3, v)   #単語のディレクリ事前分布のパラメータ
+alpha0 <- rep(0.15, k)   #文書のディレクリ事前分布のパラメータ
+alpha1 <- rep(0.1, v)   #単語のディレクリ事前分布のパラメータ
 
-#ディレクリ乱数の発生
-thetat <- theta <- rdirichlet(d, alpha0)   #文書のトピック分布をディレクリ乱数から発生
-phit <- phi <- rdirichlet(k, alpha1)   #単語のトピック分布をディレクリ乱数から発生
-
-#多項分布の乱数からデータを発生
-WX <- matrix(0, nrow=d, ncol=v)
-Z <- list()
-
-for(i in 1:d){
-  z <- rmnom(w[i], 1, theta[i, ])   #文書のトピック分布を発生
-  z_vec <- z %*% c(1:k)   #トピック割当をベクトル化
+##すべての単語が生成されるまで繰り返す
+for(rp in 1:1000) {
+  print(rp)
   
-  wn <- rmnom(w[i], 1, phi[z_vec, ])   #文書のトピックカラ単語を生成
-  wdn <- colSums(wn)   #単語ごとに合計して1行にまとめる
-  WX[i, ] <- wdn
-  Z[[i]] <- z
+  #ディレクリ乱数の発生
+  thetat <- theta <- rdirichlet(d, alpha0)   #文書のトピック分布をディレクリ乱数から発生
+  phit <- phi <- rdirichlet(k, alpha1)   #単語のトピック分布をディレクリ乱数から発生
+  
+  #多項分布の乱数からデータを発生
+  WX <- matrix(0, nrow=d, ncol=v)
+  Z <- list()
+  
+  for(i in 1:d){
+    z <- rmnom(w[i], 1, theta[i, ])   #文書のトピック分布を発生
+    z_vec <- z %*% c(1:k)   #トピック割当をベクトル化
+    
+    wn <- rmnom(w[i], 1, phi[z_vec, ])   #文書のトピックカラ単語を生成
+    wdn <- colSums(wn)   #単語ごとに合計して1行にまとめる
+    WX[i, ] <- wdn
+    Z[[i]] <- z
+  }
+  if(min(colSums(WX)) > 0) break
 }
+
 
 ####トピックモデル推定のためのデータと関数の準備####
 ##それぞれの文書中の単語の出現および補助情報の出現をベクトルに並べる
@@ -68,6 +75,9 @@ for(i in 1:nrow(WX)){
 #リストをベクトルに変換
 ID_d <- unlist(ID_list)
 wd <- unlist(wd_list)
+sparse_data <- sparseMatrix(i=1:f, wd, x=rep(1, f), dims=c(f, v))
+sparse_data_T <- t(sparse_data)
+
 
 ##インデックスを作成
 doc_list <- list()
@@ -156,13 +166,10 @@ for(rp in 1:R){
   wsum <- wsum0 + alpha01m 
   theta <- extraDistr::rdirichlet(d, wsum)
   
-  
   #ディクレリ分布からphiをサンプリング
-  for(j in 1:v){
-    vf0[, j] <- Zi_T[, word_list[[j]]] %*% word_vec[[j]]
-  }
-  vf <- vf0 + beta0m
+  vf <- t(sparse_data_T %*% Zi) + beta0m
   phi <- extraDistr::rdirichlet(k, vf)
+  
   
   ##パラメータの格納とサンプリング結果の表示
   #トピック割当はバーンイン期間を超えたら格納する
@@ -175,8 +182,7 @@ for(rp in 1:R){
   #サンプリング結果を確認
   if(rp%%disp==0){
     print(rp)
-    print(c(LLst, sum(log(rowSums(word_par$Bur)))))
-    print(round(rbind(theta[1:5, ], thetat[1:5, ]), 3))
+    print(c(sum(log(rowSums(word_par$Bur))), LLst))
     print(round(cbind(phi[, 1:10], phit[, 1:10]), 3))
   }
 }
