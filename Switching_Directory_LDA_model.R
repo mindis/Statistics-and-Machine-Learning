@@ -456,15 +456,9 @@ for(rp in 1:R){
   
   ##単語分布のパラメータをサンプリング
   #ディリクレ分布のパラメータを推定
-  wsum01 <- matrix(0, nrow=k1, ncol=v)
-  wsum02 <- matrix(0, nrow=k2, ncol=v)
-  for(j in 1:v){
-    wsum01[, j] <- Zi21_T[, wd_list[[j]], drop=FALSE] %*% wd_vec[[j]]
-    wsum02[, j] <- Zi22_T[, wd_list[[j]], drop=FALSE] %*% wd_vec[[j]]
-  }
-  wsum1 <- wsum01 + alpha02
-  wsum2 <- wsum02 + alpha02
-  wsum3 <- t(sparse_data_T %*% Zi23) + alpha02
+  wsum1 <- (Zi21_T %*% sparse_data) + alpha02
+  wsum2 <- (Zi22_T %*% sparse_data) + alpha02
+  wsum3 <- (Zi23_T %*% sparse_data) + alpha02
   
   #ディリクレ分布からパラメータをサンプリング
   phi1 <- extraDistr::rdirichlet(k1, wsum1)
