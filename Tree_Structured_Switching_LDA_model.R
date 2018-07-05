@@ -82,12 +82,12 @@ for(j in 1:item){
 
 ##パラメータの事前分布を設定
 #単語分布の事前分布
-alpha11 <- c(rep(0.2, v1), rep(0.001, v2+v3))
+alpha11 <- c(rep(0.1, v1), rep(0.001, v2+v3))
 alpha12 <- c(rep(0.001, v1), rep(0.1, v2), rep(0.001, v3))
 alpha13 <- c(rep(0.001, v1+v2), rep(0.1, v3))
 
 #スイッチング変数の事前分布
-alpha2 <- rep(1.5, s)
+alpha2 <- c(1.5, 3.0, 3.0)
 
 #木構造トピック分布の事前分布
 alpha31 <- c(18.5, 15.0)   #通過確率の事前分布
@@ -153,13 +153,14 @@ for(rp in 1:1000){
     index_y1 <- which(y[, 1]==1); index_y2 <- which(y[, 2]==1); index_y3 <- which(y[, 3]==1)
     
     ##一般語のトピックと単語を生成
+    z0 <- matrix(0, nrow=w[i], ncol=k0)
     if(length(index_y1) > 0){
       #トピックを生成
-      z0 <- matrix(0, nrow=w[i], ncol=k0)
       z0[index_y1, ] <- rmnom(length(index_y1), 1, theta0)
+      z0_vec <- as.numeric(z0 %*% 1:k0)
       
       #単語を生成
-      word[index_y1, ] <- rmnom(length(index_y1), 1, phi0)
+      word[index_y1, ] <- rmnom(length(index_y1), 1, phi0[z0_vec[index_y1], ])
     }
     
     ##ユーザートピックを生成
@@ -294,6 +295,30 @@ phi21 <- phit21
 phi22 <- phit22
 
 ##データのインデックスを設定
+#インデックスを設定
+user_list <- user_vec <- list()
+item_list <- item_vec <- list()
+for(i in 1:hh){
+  user_list[[i]] <- which(u_id==i)
+  user_vec[[i]] <- rep(1, length(user_list[[i]]))
+}
+for(j in 1:item){
+  item_list[[j]] <- which(i_id==j)
+  item_vec[[j]] <- rep(1, length(item_list[[j]]))
+}
+
+#データの設定
+wsum012 <- s01 <- list()
+wsum022 <- s02 <- list()
+for(j in 1:k11){
+  wsum012[[j]] <- matrix(0, nrow=hh, ncol=k12[j])
+  s01[[j]] <- matrix(0, nrow=hh, ncol=2)
+}
+for(j in 1:k21){
+  wsum022[[j]] <- matrix(0, nrow=hh, ncol=k22[j])
+  s02[[j]] <- matrix(0, nrow=item, ncol=2)
+}
+
 vec0 <- rep(1, k0); vec11 <- rep(1, k11); vec21 <- rep(1, k21)
 
 
@@ -333,7 +358,7 @@ y_rate <- Lis_par / as.numeric(Lis_par %*% rep(1, s))   #潜在変数の割当確率
 #スイッチング変数をサンプリング
 yi <- rmnom(f, 1, y_rate)   #多項分布からサンプリング
 y_vec <- as.numeric(yi %*% 1:s)
-index_user <- which(yi[, 2]==1)
+index_general <- which(yi[, 1]==1); index_user <- which(yi[, 2]==1); index_item <- which(yi[, 3]==1)
 
 
 ##ユーザートピックの木構造を生成
@@ -365,7 +390,7 @@ for(j in 1:k11){
   #トピックノードの割当確率
   index_node <- which(Zi11[, j]==1 & g1==1)
   par <- Lho12[[j]][index_node, ]
-  par_rate <- par / as.numeric(par%*% rep(1, ncol(par)))   #潜在変数の割当確率
+  par_rate <- par / as.numeric(par %*% rep(1, ncol(par)))   #潜在変数の割当確率
   
   #多項分布からトピックノードを生成
   Zi12 <- matrix(0, nrow=f, ncol=k12[j])
@@ -378,40 +403,90 @@ for(j in 1:k11){
 ##アイテムトピックの木構造を生成
 ##上位階層のノードを生成
 #トピックノードの割当確率
-par <- ((1-gamma1[u_id[index_user], ]) * Lho11[index_user, ]) + Lis12_1[index_user, ]
-par_rate <- par / as.numeric(par %*% vec11)   #潜在変数の割当確率
+par <- ((1-gamma2[i_id[index_item], ]) * Lho21[index_item, ]) + Lis22_1[index_item, ]
+par_rate <- par / as.numeric(par %*% vec21)   #潜在変数の割当確率
 
 #多項分布からトピックノードを生成
-Zi11 <- matrix(0, nrow=f, ncol=k11)
-Zi11[index_user, ] <- rmnom(length(index_user), 1, par_rate)
-z11_vec <- as.numeric(Zi11 %*% 1:k11)
-Zi11_T <- t(Zi11)
+Zi21 <- matrix(0, nrow=f, ncol=k21)
+Zi21[index_item, ] <- rmnom(length(index_item), 1, par_rate)
+z21_vec <- as.numeric(Zi21 %*% 1:k21)
+Zi21_T <- t(Zi21)
 
 ##通過変数をサンプリング
 #通過確率を設定
-g1_rate <- Lis12_1[index_user, ] / par
-g1_rate[is.nan(g1_rate)] <- 0
+g2_rate <- Lis22_1[index_item, ] / par
+g2_rate[is.nan(g2_rate)] <- 0
 
 #ベルヌーイ分布から通過変数をサンプリング
-g1 <- rep(0, f)
-g1[index_user] <- rbinom(length(index_user), 1, as.numeric((g1_rate * Zi11[index_user, ]) %*% vec11))
+g2 <- rep(0, f)
+g2[index_item] <- rbinom(length(index_item), 1, as.numeric((g2_rate * Zi21[index_item, ]) %*% vec21))
 
 ##下位階層のノードを生成
-Zi12_T_list <- list()
-z12_vec <- matrix(0, nrow=f, ncol=k11)
+Zi22_T_list <- list()
+z22_vec <- matrix(0, nrow=f, ncol=k21)
 
-for(j in 1:k11){
+for(j in 1:k21){
   #トピックノードの割当確率
-  index_node <- which(Zi11[, j]==1 & g1==1)
-  par <- Lho12[[j]][index_node, ]
-  par_rate <- par / as.numeric(par%*% rep(1, ncol(par)))   #潜在変数の割当確率
+  index_node <- which(Zi21[, j]==1 & g2==1)
+  par <- Lho22[[j]][index_node, ]
+  par_rate <- par / as.numeric(par %*% rep(1, ncol(par)))   #潜在変数の割当確率
   
   #多項分布からトピックノードを生成
-  Zi12 <- matrix(0, nrow=f, ncol=k12[j])
-  Zi12[index_node, ] <- rmnom(length(index_node), 1, par_rate)  
-  Zi12_T_list[[j]] <- t(Zi12)
-  z12_vec[, j] <- as.numeric(Zi12 %*% 1:k12[j])
+  Zi22 <- matrix(0, nrow=f, ncol=k22[j])
+  Zi22[index_node, ] <- rmnom(length(index_node), 1, par_rate)  
+  Zi22_T_list[[j]] <- t(Zi22)
+  z22_vec[, j] <- as.numeric(Zi22 %*% 1:k22[j])
 }
 
+##一般語のトピックをサンプリング
+#トピックの割当確率
+par <- Lho0[index_general, ]
+par_rate <- par / as.numeric(par %*% vec0)   #潜在変数の割当確率
+
+#多項分布からトピックを生成
+Zi0 <- matrix(0, nrow=f, ncol=k0)
+Zi0[index_general, ] <- rmnom(length(index_general), 1, par_rate)
 
 
+
+##ユーザーのトピック分布および通過率をサンプリング
+#ディリクリ分布およびベータ分布のパラメータ
+wsum011 <- matrix(0, nrow=hh, ncol=k11)
+s01 <- array(0, dim=c(hh, 2, k11))
+for(i in 1:hh){
+  wsum011[i, ] <- Zi11_T[, user_list[[i]]] %*% user_vec[[i]]
+  for(j in 1:k11){
+    s01[i, 1, j] <- sum(Zi11[user_list[[i]], j] * g1[user_list[[i]]])
+    s01[i, 2, j] <- sum(Zi11[user_list[[i]], j])
+    wsum012[[j]][i, ] <- Zi12_T_list[[j]][, user_list[[i]]] %*% user_vec[[i]]
+  }
+}
+#トピック分布と通過率をサンプリング
+theta11 <- extraDistr::rdirichlet(k11, wsum011 + alpha01)
+for(j in 1:k11){
+  theta12[[j]] <- extraDistr::rdirichlet(hh, wsum012[[j]] + alpha01)
+  gamma1[, j] <- rbeta(hh, s01[, 1, j]+beta01, s01[, 2, j]-s01[, 1, j]+beta01)
+}
+
+round(cbind(theta12[[j]], thetat12[[j]]), 3)
+
+i <- 1
+j <- 1
+sum(Zi11[user_list[[i]], j] * g1[user_list[[i]]])
+sum(Zi11[user_list[[i]], 1])
+
+round(cbind(gamma1, gammat1), 3)
+
+theta12[[1]]
+
+
+i <- 1
+j <- 1
+x <- gammat1[, ]
+
+for(i in 1:hh){
+  for(j in 1:k11){
+    x[i, j] <- mean(g1[user_list[[i]]][Zi11[user_list[[i]], j]==1])
+  }
+}
+round(cbind(gammat1, x, gamma1), 3)
