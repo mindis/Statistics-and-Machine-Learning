@@ -317,6 +317,9 @@ for(j in 1:k21){
 }
 
 ##パラメータの格納用配列
+
+##パラメータと潜在変数の格納用配列
+#パラメータの格納用配列
 LAMBDA <- array(0, dim=c(hh, s, R/keep))
 GAMMA1 <- array(0, dim=c(hh, k11, R/keep))
 GAMMA2 <- array(0, dim=c(item, k21, R/keep))
@@ -330,6 +333,14 @@ PHI11 <- array(0, dim=c(k11, v, R/keep))
 PHI12 <- array(0, dim=c(sum(k12), v, R/keep))
 PHI21 <- array(0, dim=c(k21, v, R/keep))
 PHI22 <- array(0, dim=c(sum(k22), v, R/keep))
+
+#潜在変数の格納用配列
+Si <- matrix(0, nrow=f, ncol=s)
+SEG0 <- matrix(0, nrow=f, ncol=k0)
+SEG11 <- matrix(0, nrow=f, ncol=k11)
+SEG12 <- matrix(0, nrow=f, ncol=sum(k12))
+SEG21 <- matrix(0, nrow=f, ncol=k21)
+SEG22 <- matrix(0, nrow=f, ncol=sum(k22))
 
 ##データのインデックスを設定
 #インデックスを設定
@@ -348,7 +359,6 @@ for(j in 1:v){
   word_list[[j]] <- which(wd==j)
   word_vec[[j]] <- rep(1, length(word_list[[j]]))
 }
-
 vec0 <- rep(1, k0); vec11 <- rep(1, k11); vec21 <- rep(1, k21)
 
 #対数尤度の基準値
@@ -600,40 +610,47 @@ for(rp in 1:R){
     THETA0[mkeep, ] <- theta0
     THETA11[, , mkeep] <- theta11
     THETA12[, , mkeep] <- matrix(unlist(theta12), nrow=hh, ncol=sum(k12))
-  } 
+    THETA21[, , mkeep] <- theta21
+    THETA22[, , mkeep] <- matrix(unlist(theta22), nrow=item, ncol=sum(k22))
+    PHI0[, , mkeep] <- phi0
+    PHI11[, , mkeep] <- phi11
+    PHI12[, , mkeep] <- do.call(rbind, phi12)
+    PHI21[, , mkeep] <- phi21
+    PHI22[, , mkeep] <- do.call(rbind, phi22)
+  }  
   
-  ##パラメータの格納用配列
-  LAMBDA <- array(0, dim=c(hh, s, R/keep))
-  GAMMA1 <- array(0, dim=c(hh, k11, R/keep))
-  GAMMA2 <- array(0, dim=c(item, k21, R/keep))
-  THETA0 <- matrix(0, nrow=R/keep, ncol=k0)
-  THETA11 <- array(0, dim=c(hh, k11, R/keep))
-  THETA12 <- array(0, dim=c(hh, sum(k12), R/keep))
-  THETA21 <- array(0, dim=c(item, k21, R/keep))
-  THETA22 <- array(0, dim=c(item, sum(k22), R/keep))
-  PHI0 <- array(0, dim=c(k0, v, R/keep))
-  PHI11 <- array(0, dim=c(k11, v, R/keep))
-  PHI12 <- array(0, dim=c(sum(k12), v, R/keep))
-  PHI21 <- array(0, dim=c(k21, v, R/keep))
-  PHI22 <- array(0, dim=c(sum(k22), v, R/keep))
-  
-  ##対数尤度を計算
-  LL12_vec <- LL22_vec <- c()
-  Lho00 <- rowSums(Lho0 * yi[, 1]); LL0 <- sum(log(Lho00[Lho00!=0]))
-  Lho011 <- rowSums(Lho11[index_user, ] * (1-rowSums(g1_data[index_user, ]))); LL11 <- sum(log(Lho011[Lho011!=0]))
-  Lho021 <- rowSums(Lho21[index_item, ] * (1-rowSums(g2_data[index_item, ]))); LL21 <- sum(log(Lho021[Lho021!=0]))
-  for(j in 1:k11){
-    LL12_vec <- c(LL12_vec, sum(log(rowSums(Lho12[[j]][rowSums(t(Zi12_T_list[[j]]))==1, ]))))
+  #トピック割当はバーンイン期間を超えたら格納する
+  if(rp%%keep==0 & rp >= burnin){
+    Si <- Si + yi
+    SEG0 <- SEG0 + Zi0
+    SEG11 <- SEG11 + Zi11
+    SEG12 <- SEG12 + t(do.call(rbind, Zi12_T_list))
+    SEG21 <- SEG21 + Zi21
+    SEG22 <- SEG22 + t(do.call(rbind, Zi22_T_list))
   }
-  for(j in 1:k21){
-    LL22_vec <- c(LL22_vec, sum(log(rowSums(Lho22[[j]][rowSums(t(Zi22_T_list[[j]]))==1, ]))))
-  }
-  LL12 <- sum(LL12_vec); LL22 <- sum(LL22_vec)
-  LL <- LL0 + LL11 + LL12 + LL21 + LL22   #対数尤度の和
-  print(c(LL, LLst))
-}
 
-Lho00 <- rowSums(Lho0 * rowSums(Zi0))
-sum(log(Lho00[Lho00!=0]))
+  ##対数尤度とサンプリング結果の表示
+  if(rp%%disp==0){
+    #対数尤度の計算
+    LL12_vec <- LL22_vec <- c()
+    Lho00 <- rowSums(Lho0 * yi[, 1]); LL0 <- sum(log(Lho00[Lho00!=0]))
+    Lho011 <- rowSums(Lho11[index_user, ] * (1-rowSums(g1_data[index_user, ]))); LL11 <- sum(log(Lho011[Lho011!=0]))
+    Lho021 <- rowSums(Lho21[index_item, ] * (1-rowSums(g2_data[index_item, ]))); LL21 <- sum(log(Lho021[Lho021!=0]))
+    for(j in 1:k11){
+      LL12_vec <- c(LL12_vec, sum(log(rowSums(Lho12[[j]][rowSums(t(Zi12_T_list[[j]]))==1, ]))))
+    }
+    for(j in 1:k21){
+      LL22_vec <- c(LL22_vec, sum(log(rowSums(Lho22[[j]][rowSums(t(Zi22_T_list[[j]]))==1, ]))))
+    }
+    LL12 <- sum(LL12_vec); LL22 <- sum(LL22_vec)
+    LL <- LL0 + LL11 + LL12 + LL21 + LL22   #対数尤度の和
+    
+    #サンプリング結果の表示
+    print(rp)
+    print(c(LL, LLst))
+    print(round(rbind(theta0, thetat0), 3))
+    print(round(cbind(lambda, lambdat)[1:10, ], 3))
+  }
+}
 
 
