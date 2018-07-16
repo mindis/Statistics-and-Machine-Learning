@@ -8,6 +8,7 @@ library(Matrix)
 library(data.table)
 library(bayesm)
 library(HMM)
+library(stringr)
 library(extraDistr)
 library(reshape2)
 library(dplyr)
@@ -18,14 +19,14 @@ library(ggplot2)
 ####データの発生####
 ##データの設定
 s <- 4   #マルチモーダル数
-k1 <- 15   #一般語のトピック数
-k2 <- 20   #ディレクトリのトピック数
+k1 <- 10   #一般語のトピック数
+k2 <- 15   #ディレクトリのトピック数
 dir <- 50   #ディレクトリ数
-d <- 4000   #文書数
-v1 <- 600   #ディレクトリ構造に関係のない語彙数
-v2 <- 600    #ディレクトリ構造に関係のある語彙数
+d <- 7500   #文書数
+v1 <- 500   #ディレクトリ構造に関係のない語彙数
+v2 <- 500    #ディレクトリ構造に関係のある語彙数
 v <- v1 + v2   #総語彙数
-w <- rpois(d, rgamma(d, 65, 0.5))   #文書あたりの単語数
+w <- rpois(d, rgamma(d, 75, 0.5))   #文書あたりの単語数
 f <- sum(w)   #総単語数
 
 ##IDの設定
@@ -39,6 +40,7 @@ for(i in 1:d){
 
 ##ディレクトリの割当を設定
 dir_freq <- rtpois(d, 1.0, 0, 5)   #文書あたりのディレクトリ数
+max_freq <- max(dir_freq)
 dir_id <- rep(1:d, dir_freq)   #ディレクトリのid
 dir_n <- length(dir_id)
 dir_index <- list()
@@ -83,8 +85,8 @@ content_id <- rep(1:d, dir_freq*w)
 #ディリクレ分布の事前分布
 alpha11 <- rep(0.15, k1)
 alpha12 <- rep(0.10, k2)
-alpha21 <- c(rep(0.075, length(1:v1)), rep(0.0001, length(1:v2)))
-alpha22 <- c(rep(0.0001, length(1:v1)), rep(0.05, length(1:v2)))
+alpha21 <- c(rep(0.075, length(1:v1)), rep(0.000001, length(1:v2)))
+alpha22 <- c(rep(0.000001, length(1:v1)), rep(0.05, length(1:v2)))
 beta1 <- c(10.0, 8.0)
 
 ##すべての単語が出現するまでデータの生成を続ける
@@ -121,7 +123,7 @@ for(rp in 1:1000){
   
   for(i in 1:d){
     #多項分布から文書のスイッチング変数を生成
-    r1 <- lambda1[i]*lambda2[content_list[[i]]]; r0 <- (1-lambda1[i])*(1-lambda2[content_list[[i]]])
+    r1 <- (lambda1[i]+lambda2[content_list[[i]]]) / 2; r0 <- ((1-lambda1[i])+(1-lambda2[content_list[[i]]])) / 2
     prob <- r1 / (r1 + r0)
     z11_vec <- rbinom(w[i], 1, prob)
     index_z11 <- which(z11_vec==1)
@@ -171,6 +173,13 @@ for(rp in 1:1000){
 ##リストを変換
 wd <- unlist(wd_list)
 Z11 <- unlist(Z11_list)
+z12_list <- list()
+for(i in 1:d){
+  z <- matrix(0, nrow=w[i], ncol=max_freq)
+  z[, 1:dir_freq[i]] <- Z12_list[[i]] 
+  z12_list[[i]] <- z
+}
+Z12 <- do.call(rbind, z12_list)
 Z21 <- do.call(rbind, Z21_list)
 Z22 <- do.call(rbind, Z22_list)
 z11_vec <- Z11
@@ -186,12 +195,18 @@ gc(); gc()
 #ディレクトリの割当を設定
 dir_z <- matrix(0, nrow=d, ncol=dir)
 dir_list1 <- dir_list2 <- list()
+directory_id_list <- list()
 for(i in 1:d){
   dir_z[i, ] <- colSums(dir_data[dir_index[[i]], , drop=FALSE])
   dir_list1[[i]] <- (dir_z[i, ] * 1:dir)[dir_z[i, ] > 0]
-  dir_list2[[i]] <- matrix(dir_list1[[i]], nrow=w[i], ncol=dir_freq[i], byrow=T)
+  dir_list2[[i]] <- cbind(matrix(dir_list1[[i]], nrow=w[i], ncol=dir_freq[i], byrow=T), 
+                          matrix(0, nrow=w[i], ncol=max_freq-dir_freq[i]))
+  directory_id_list[[i]] <- rep(paste(dir_list1[[i]], collapse = ",", sep=""), w[i])
 }
+
 dir_Z <- dir_z[d_id, ]
+dir_matrix <- do.call(rbind, dir_list2)
+directory_id <- unlist(directory_id_list)
 storage.mode(dir_Z) <- "integer"
 
 #ディレクトリ数ごとにディレクトリを作成
@@ -234,7 +249,7 @@ disp <- 10
 
 ##事前分布の設定
 alpha1 <- 0.1
-alpha2 <- 0.1
+alpha2 <- 0.01
 beta1 <- 1
 beta2 <- 1
 
@@ -247,36 +262,48 @@ phi2 <- phit2
 phi2_data <- do.call(rbind, phit2)
 lambda1 <- lambdat1
 lambda2 <- lambdat2
-gamma <- gamma_list
-
+gamma <- matrix(0, nrow=d, ncol=max_freq)
+for(i in 1:d){
+  gamma[i, 1:dir_freq[i]] <- gamma_list[[i]]
+}
+gammat <- gamma
 
 ##初期値の設定
 #トピック分布の初期値
-theta1 <- extraDistr::rdirichlet(d, rep(1.0, k1))
-theta2 <- extraDistr::rdirichlet(d, rep(1.0, k2))
-phi1 <- extraDistr::rdirichlet(k1, rep(1.0, v))
-phi2 <- extraDistr::rdirichlet(k2, rep(1.0, v))
+theta1 <- extraDistr::rdirichlet(d, rep(10.0, k1))
+theta2 <- extraDistr::rdirichlet(dir, rep(10.0, k2))
+phi1 <- phi2 <- list()
+for(j in 1:s){
+  phi1[[j]] <- extraDistr::rdirichlet(k1, rep(10.0, v))
+  phi2[[j]] <- extraDistr::rdirichlet(k2, rep(10.0, v))
+}
+phi1_data <- do.call(rbind, phi1); phi2_data <- do.call(rbind, phi2)
+
 
 #スイッチング分布の初期値
-gamma <- list()
+lambda1 <- rep(0.5, d); lambda2 <- rep(0.5, s)
+gamma <- matrix(0, nrow=d, ncol=max_freq)
 for(i in 1:d){
   if(dir_freq[i]==1){
-    gamma[[i]] <- 0.5
+    gamma[i, 1] <- 1
   } else {
-    n <- dir_freq[i]+1
-    gamma[[i]] <- rep(1/n, n)
+    gamma[i, 1:dir_freq[i]] <- as.numeric(extraDistr::rdirichlet(1, rep(10.0, dir_freq[i])))
   }
 }
 
 ##パラメータの保存用配列
 THETA1 <- array(0, dim=c(d, k1, R/keep))
 THETA2 <- array(0, dim=c(dir, k2, R/keep))
-PHI1 <- array(0, dim=c(k1, v, R/keep))
-PHI2 <- array(0, dim=c(k2, v, R/keep))
+PHI1 <- array(0, dim=c(k1*s, v, R/keep))
+PHI2 <- array(0, dim=c(k2*s, v, R/keep))
+GAMMA <- array(0, dim=c(d, max_freq, R/keep))
+LAMBDA1 <- matrix(0, nrow=R/keep, ncol=d)
+LAMBDA2 <- matrix(0, nrow=R/keep, ncol=s)
 SEG11 <- rep(0, f)
-SEG12 <- matrix(0, nrow=N, ncol=dir)
+SEG12 <- matrix(0, nrow=f, ncol=max_freq)
 SEG21 <- matrix(0, nrow=f, ncol=k1)
-SEG22 <- matrix(0, nrow=N, ncol=k2)
+SEG22 <- matrix(0, nrow=f, ncol=k2)
+storage.mode(SEG11) <- "integer"
 storage.mode(SEG12) <- "integer"
 storage.mode(SEG21) <- "integer"
 storage.mode(SEG22) <- "integer"
@@ -286,7 +313,11 @@ storage.mode(SEG22) <- "integer"
 #文書と単語のインデックスを作成
 doc_list1 <- doc_list2 <- doc_vec1 <- doc_vec2 <- list()
 wd_list1 <- wd_list2 <- wd_vec1 <- wd_vec2 <- list()
+dir_list <- dir_vec <- list()
 cont_list1 <- cont_list2 <- list()
+freq_list <- list()
+directory_id0 <- paste(",", directory_id, ",", sep="")
+
 for(i in 1:d){
   doc_list1[[i]] <- which(d_id==i)
   doc_vec1[[i]] <- rep(1, length(doc_list1[[i]]))
@@ -294,6 +325,8 @@ for(i in 1:d){
 for(i in 1:dir){
   doc_list2[[i]] <- which(dir_v==i)
   doc_vec2[[i]] <- rep(1, length(doc_list2[[i]]))
+  dir_list[[i]] <- which(str_detect(directory_id0, paste(",", as.character(i), ",", sep=""))==TRUE)
+  dir_vec[[i]] <- rep(1, length(dir_list[[i]]))
 }
 for(j in 1:v){
   wd_list1[[j]] <- which(wd==j)
@@ -305,6 +338,9 @@ for(j in 1:s){
   cont_list1[[j]] <- which(content_vec==j)
   cont_list2[[j]] <- which(content_dir==j)
 }
+for(j in 1:max_freq){
+  freq_list[[j]] <- which(dir_freq==j)
+}
 
 ##対数尤度の基準値
 LLst <- sum(sparse_data %*% log(colMeans(sparse_data)))
@@ -313,7 +349,7 @@ LLst <- sum(sparse_data %*% log(colMeans(sparse_data)))
 ####ギブスサンプリングでパラメータをサンプリング####
 for(rp in 1:R){
   
-  ##単語ごとのスイッチング変数を生成
+  ##単語ごとに文書スイッチング変数を生成
   #トピックとディレクトリの期待尤度
   Lho1 <- matrix(0, nrow=f, ncol=k1); Lho2 <- matrix(0, nrow=N, ncol=k2)
   for(j in 1:s){
@@ -321,75 +357,72 @@ for(rp in 1:R){
     Lho2[cont_list2[[j]], ] <- theta2[dir_v[cont_list2[[j]]], ] * t(phi2_data[content_allocation2[j, ], ])[wd_v[cont_list2[[j]]], ]
   }
   Li1 <- as.numeric(Lho1 %*% vec1)   #トピックの期待尤度
-  LLi2 <- matrix(0, nrow=f, ncol=max_freq)   #ディレクトリの期待尤度
+  LLi0 <- matrix(0, nrow=f, ncol=max_freq)   #ディレクトリの期待尤度
   for(j in 1:max_freq){
-    LLi2[freq_index1[[j]], 1:j] <- matrix(Lho2[freq_index2[[j]], ] %*% vec2, nrow=freq_word[j], ncol=j, byrow=T)
+    LLi0[freq_index1[[j]], 1:j] <- matrix(Lho2[freq_index2[[j]], ] %*% vec2, nrow=freq_word[j], ncol=j, byrow=T)
   }
-  gamma
-  
-  #ベルヌーイ分布あるいは多項分布よりスイッチング変数を生成
-  r1 <- lambda1[d_id]*lambda2[content_vec]; r0 <- (1-lambda1[d_id])*(1-lambda2[content_vec])
-  Li2
-  
-  Zi11 <- rep(0, f)
-  Zi12 <- list()
-  Lho_list <- list()
-  
-  for(i in 1:d){
-    if(dir_freq[i]==1){
-      
-      #潜在変数zの設定
-      omega <- matrix(c(gamma[[i]], 1-gamma[[i]]), nrow=w[i], ncol=dir_freq[i]+1, byrow=T)
-      z_par <- omega * cbind(Li1[doc_list1[[i]]], Li2[doc_list1[[i]], 1:dir_freq[i]])
-      z_rate <- z_par[, 1] / rowSums(z_par)
-      Lho_list[[i]] <- z_par
-      
-      #ベルヌーイ分布よりスイッチング変数を生成
-      z1 <- rbinom(w[i], 1, z_rate)
-      Zi11[doc_list1[[i]]] <- z1   #トピックに関係のある単語
-      Zi12[[i]] <- (1-z1) * dir_list1[[i]]   #ディレクトリに関係のある単語
-      
-      #ベータ分布から混合率をサンプリング
-      z_freq <- t(z1) %*% doc_vec1[[i]]
-      gamma[[i]] <- rbeta(1, z_freq+beta1, w[i]-z_freq+beta2)
-      
-    } else {
-      
-      #潜在変数zの設定
-      omega <- matrix(gamma[[i]], nrow=w[i], ncol=dir_freq[i]+1, byrow=T)
-      z_par <- omega * cbind(Li1[doc_list1[[i]]], Li2[doc_list1[[i]], 1:dir_freq[i]])
-      z_rate <- z_par / rowSums(z_par)
-      Lho_list[[i]] <- z_par
-      
-      z1 <- rmnom(w[i], 1, z_rate)   #スイッチング変数を生成
-      Zi11[doc_list1[[i]]] <- z1[, 1]   #トピックに関係のある単語
-      Zi12[[i]] <- as.numeric(t(z1[, -1] * dir_list2[[i]]))   #ディレクトリに関係のある単語
-      
-      #ディリクレ分布から混合率をサンプリング
-      z_freq <- as.numeric(t(z1) %*% doc_vec1[[i]])
-      gamma[[i]] <- as.numeric(extraDistr::rdirichlet(1, as.numeric(t(z1) %*% doc_vec1[[i]]) + alpha1))
-    }
-  }
-  
-  #生成したスイッチング変数のインデックスを作成
+  LLi2 <- gamma[d_id, ] * LLi0
+  Li2 <- as.numeric(LLi2 %*% rep(1, max_freq))
+  rm(LLi0)
+
+  #ベルヌーイ分布よりスイッチング変数を生成
+  r1 <- (lambda1[d_id]+lambda2[content_vec]) / 2; r0 <- ((1-lambda1[d_id])+(1-lambda2[content_vec])) / 2
+  switching_prob <- r1*Li2 / (r1*Li2 + r0*Li1)
+  Zi11 <- rbinom(f, 1, switching_prob)   #スイッチング変数をサンプリング
   index_z11 <- which(Zi11==1)
-  Zi12_vec <- unlist(Zi12)
+  
+  ##単語ごとにディレクトリのスイッチング変数をサンプリング
+  switching_prob <- LLi2[index_z11, ] / as.numeric(LLi2[index_z11, ] %*% rep(1, max_freq))   #ディレクトリの割当確率
+  Zi12 <- matrix(0, nrow=f, ncol=max_freq)
+  Zi12[index_z11, ] <- rmnom(length(index_z11), 1, switching_prob)   #スイッチング変数をサンプリング
+  Zi12_T <- t(Zi12)
+  
+  ##混合率をサンプリング
+  #文書のスイッチング変数の混合率をサンプリング
+  for(i in 1:d){
+    s1 <- sum(Zi11[doc_list1[[i]]])
+    v1 <- w[i] - s1 
+    lambda1[i] <- rbeta(1, s1 + beta1, v1 + beta2)   #ベータ分布から混合率をサンプリング
+  }
+  for(j in 1:s){
+    s2 <- sum(Zi11[cont_list1[[j]]])
+    v2 <- length(cont_list1[[j]]) - s2
+    lambda2[j] <- rbeta(1, s2 + beta1, v2 + beta2)   #ベータ分布から混合率をサンプリング
+  }
+  
+  #ディレクトリのスイッチング変数の混合率をサンプリング
+  dsum0 <- matrix(0, nrow=d, ncol=max_freq)
+  for(i in 1:d){
+    if(dir_freq[i]==1) next
+    dsum0[i, ] <- Zi12_T[, doc_list1[[i]]] %*% doc_vec1[[i]]
+  }
+  for(j in 2:max_freq){
+    gamma[freq_list[[j]], 1:j] <- extraDistr::rdirichlet(length(freq_list[[j]]), dsum0[freq_list[[j]], 1:j] + alpha1)
+  }
+  gamma[freq_list[[1]], 1] <- 1 
   
   
-  ##多項分布からトピックをサンプリング
-  #一般語トピックをサンプリング
+  ##一般語トピックをサンプリング
   Zi21 <- matrix(0, nrow=f, ncol=k1)
-  z_rate <- Lho1[index_z11, ] / Li1[index_z11]   #トピックの割当確率
-  Zi21[index_z11, ] <- rmnom(length(index_z11), 1, z_rate)   #トピックをサンプリング
+  z_rate <- Lho1[-index_z11, ] / Li1[-index_z11]   #トピックの割当確率
+  Zi21[-index_z11, ] <- rmnom(f-length(index_z11), 1, z_rate)   #トピックをサンプリング
   Zi21_T <- t(Zi21)
   
-  #ディレクトリトピックをサンプリング
-  Zi22 <- matrix(0, nrow=N, ncol=k2)
-  Lho2_par <- Lho2[Zi12_vec > 0, ]
-  z_rate <- Lho2_par / as.numeric((Lho2_par %*% vec2))
-  Zi22[Zi12_vec > 0, ] <- rmnom(nrow(z_rate), 1, z_rate)
+  ##ディレクトリトピックをサンプリング
+  #ディレクトリのトピック尤度を設定
+  index <- as.numeric((Zi12 * dir_matrix) %*% rep(1, max_freq))
+  Lho2 <- matrix(0, nrow=f, ncol=k2)
+  for(j in 1:s){
+    cont_z11 <- cont_list1[[j]]*Zi11[cont_list1[[j]]]
+    Lho2[cont_z11, ] <- theta2[index[cont_list1[[j]]], ] * t(phi2_data[content_allocation2[j, ], ])[wd[cont_z11], ]
+  }
+
+  #トピックの割当確率の設定とトピックのサンプリング
+  Zi22 <- matrix(0, nrow=f, ncol=k2)
+  Lho2_par <- Lho2[index_z11, ]
+  z_rate <- Lho2_par / as.numeric((Lho2_par %*% vec2))   #トピックの割当確率
+  Zi22[index_z11, ] <- rmnom(nrow(z_rate), 1, z_rate)   #多項分布からトピックをサンプリング
   Zi22_T <- t(Zi22)
-  
   
   ##トピック分布のパラメータをサンプリング
   #一般語のトピック分布のパラメータをサンプリング
@@ -403,59 +436,65 @@ for(rp in 1:R){
   #ディレクトリのトピック分布のパラメータをサンプリング
   wsum0 <- matrix(0, nrow=dir, ncol=k2)
   for(i in 1:dir){
-    wsum0[i, ] <- Zi22_T[, doc_list2[[i]]] %*% doc_vec2[[i]]
+    x <- z21_vec[dir_list[[i]]]; x[x!=i] <- 0; x[x==i] <- 1
+    wsum0[i, ] <- Zi22_T[, dir_list[[i]], drop=FALSE] %*% dir_vec[[i]]
   }
   wsum <- wsum0 + alpha1   #ディリクレ分布のパラメータ
   theta2 <- extraDistr::rdirichlet(dir, wsum)   #パラメータをサンプリング
   
-  
   ##単語分布のパラメータをサンプリング
   #トピックおよびディレクトリの単語分布をサンプリング
-  vsum0 <- matrix(0, nrow=k1, ncol=v)
-  dsum0 <- matrix(0, nrow=k2, ncol=v)
-  for(j in 1:v){
-    vsum0[, j] <- Zi21_T[, wd_list1[[j]], drop=FALSE] %*% wd_vec1[[j]]
-    dsum0[, j] <- Zi22_T[, wd_list2[[j]], drop=FALSE] %*% wd_vec2[[j]] 
+  phi1 <- phi2 <- list()
+  for(j in 1:s){
+    #ディリクレ分布のパラメータ
+    vsum1 <- (Zi21_T[, cont_list1[[j]]] %*% sparse_data[cont_list1[[j]], ]) + alpha2
+    vsum2 <- (Zi22_T[, cont_list1[[j]]] %*% sparse_data[cont_list1[[j]], ]) + alpha2
+    
+    #ディリクレ分布からパラメータをサンプリング
+    phi1[[j]] <- extraDistr::rdirichlet(k1, vsum1)
+    phi2[[j]] <- extraDistr::rdirichlet(k2, vsum2)
   }
-  vsum <- vsum0 + alpha2  
-  dsum <- dsum0 + alpha2  
-  phi1 <- extraDistr::rdirichlet(k1, vsum)
-  phi2 <- extraDistr::rdirichlet(k2, dsum)  
-  
+  phi1_data <- do.call(rbind, phi1); phi2_data <- do.call(rbind, phi2)
+
   
   ##パラメータの格納とサンプリング結果の表示
   #サンプリングされたパラメータを格納
   if(rp%%keep==0){
     #サンプリング結果の格納
     mkeep <- rp/keep
-    PHI1[, , mkeep] <- phi1
-    PHI2[, , mkeep] <- phi2
+    PHI1[, , mkeep] <- phi1_data
+    PHI2[, , mkeep] <- phi2_data
     THETA1[, , mkeep] <- theta1
     THETA2[, , mkeep] <- theta2
+    GAMMA[, , mkeep] <- gamma
+    LAMBDA1[mkeep, ] <- lambda1
+    LAMBDA2[mkeep, ] <- lambda2
   }  
   
   #トピック割当はバーンイン期間を超えたら格納する
   if(rp%%keep==0 & rp >= burnin){
-    SEG0 <- matrix(0, nrow=N, ncol=dir)
-    for(i in 1:N){
-      if(Zi12_vec[i]==0) next
-      SEG0[i, Zi12_vec[i]] <- 1
-    }
     SEG11 <- SEG11 + Zi11
-    SEG12 <- SEG12 + SEG0
+    SEG12 <- SEG12 + Zi12
     SEG21 <- SEG21 + Zi21
     SEG22 <- SEG22 + Zi22
   }
-  
   if(rp%%disp==0){
     #対数尤度を計算
-    Lho <- sum(log(rowSums((Lho1*Zi21)[index_z11, ]))) + sum(log(rowSums((Lho2*Zi22)[Zi12_vec > 0, ])))
-    
+    index <- as.numeric((Zi12 * dir_matrix) %*% rep(1, max_freq))
+    Lho1 <- matrix(0, nrow=f, ncol=k1); Lho2 <- matrix(0, nrow=f, ncol=k2)
+    for(j in 1:s){
+      cont_z10 <- cont_list1[[j]]*(1-Zi11[cont_list1[[j]]])
+      cont_z11 <- cont_list1[[j]]*Zi11[cont_list1[[j]]]
+      Lho1[cont_z10, ] <- theta1[d_id[cont_z10], ] * t(phi1_data[content_allocation1[j, ], ])[wd[cont_z10], ]
+      Lho2[cont_z11, ] <- theta2[index[cont_list1[[j]]], ] * t(phi2_data[content_allocation2[j, ], ])[wd[cont_z11], ]
+    }
+    Lho <- sum(log(rowSums(Lho1) + rowSums(Lho2)))
+        
     #サンプリング結果を確認
     print(rp)
-    print(c(sum(Lho), LLst))
-    print(mean(Zi11))
-    print(round(cbind(phi2[, (v1-4):(v1+5)], phit2[, (v1-4):(v1+5)]), 3))
+    print(c(Lho, LLst))
+    print(c(mean(Zi11), mean(Z11)))
+    print(round(rbind(phi1[[2]][, 491:510], phit1[[2]][, 491:510]), 3))
   }
 }
 
@@ -513,4 +552,3 @@ round(cbind(SEG11, seg11_rate), 3)
 round(cbind(rowSums(SEG12), seg12_rate), 3)
 round(cbind(rowSums(SEG21), seg21_rate), 3)
 round(cbind(rowSums(SEG22), seg22_rate), 3)
-
