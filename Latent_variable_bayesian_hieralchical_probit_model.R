@@ -212,6 +212,7 @@ inv_cov <- solve(Cov)
 U <- UT
 
 ##初期値を設定
+#パラメータの初期値
 lambda <- matrix(0, nrow=item, ncol=max_dir)
 for(i in 1:item){
   if(dir_freq[i]==1){
@@ -225,6 +226,18 @@ tau1 <- tau2 <- diag(0.5, k)
 beta1 <- mvrnorm(dir, theta1, tau1)
 beta2 <- mvrnorm(dir, theta2, tau2)
 Cov <- Covt
+
+#効用の初期値
+U <- cbind(rowSums(X * beta1[dir_item[, 1], ]), rowSums(X * beta2[dir_item[, 1], ]))
+
+##パラメータの格納用配列
+THETA1 <- matrix(0, nrow=R/keep, ncol=k)
+THETA2 <- matrix(0, nrow=R/keep, ncol=k)
+TAU <- matrix(0, nrow=R/keep, ncol=s*k)
+BETA1 <- array(0, dim=c(dir, k, R/keep))
+BETA2 <- array(0, dim=c(dir, k, R/keep))
+COV <- array(0, dim=c(s, s, R/keep))
+DIR_Z <- matrix(0, nrow=f, ncol=max_dir)
 
 ##インデックスを作成
 #ディレクトリのインデックス
@@ -267,7 +280,6 @@ b0 <- ifelse(y==1, 10^-100, 0)
 for(rp in 1:R){
   ##切断正規分布から潜在効用を生成
   U1 <- U2 <- Lho <- matrix(0, nrow=f, ncol=max_dir)
-  dir_item[, i][index]
   
   #効用の平均構造
   for(i in 1:max_dir){
@@ -291,6 +303,8 @@ for(rp in 1:R){
         index_inf <- which(is.infinite(U2[index, i])==TRUE)
         U2[index, i][index_inf] <- 0
       }
+      index_z <- which(Zi[index, i]==1)
+      U[index, j][index_z] <- U1[index, i][index_z]
     }
     #多変量正規分布の尤度関数
     u <- cbind(U1[index, i], U2[index, i])
@@ -304,8 +318,6 @@ for(rp in 1:R){
   dir_prob <- par / as.numeric(par %*% rep(1, max_dir))   #ディレクトリの割当確率
   Zi[multi_index, ] <- rmnom(length(multi_index), 1, dir_prob)   #多項分布からサンプリング
   Zi_T <- t(Zi); dir_allocation <- rowSums(dir_item * Zi)
-  
-  round(cbind(dir_prob, dir_z[multi_index, ]), 3)
   
   #ディリクレ分布から潜在変数の混合率をサンプリング
   for(i in 1:item){
@@ -369,23 +381,49 @@ for(rp in 1:R){
   Sn <- nu2 + dir
   tau1 <- diag(diag(rwishart(Sn, solve(IW_R1))$IW))   #逆ウィシャート分布からtauをサンプリング
   tau2 <- diag(diag(rwishart(Sn, solve(IW_R2))$IW))
+  tau <- diag(c(diag(tau1), diag(tau2)))
   
   ##識別性の問題を回避するために分散共分散行列の対角成分を1を固定する
-  diag_cov <- diag(diag(Cov_hat)^(-1/2)) 
-  Cov <- diag_cov %*% Cov_hat %*% t(diag_cov)
+  gamma <- diag(diag(Cov_hat)^(-1/2))
+  Cov <- cov2cor(Cov_hat)
   inv_cov <- solve(Cov)
+  util_mu <- util_mu %*% gamma
+  U <- U %*% gamma
   
-  #対数尤度関数を計算
-  prob <- pnorm(util_mu, 0, 1)
-  LL <- sum(y*log(prob) + (1-y)*log(1-prob))
   
-  #サンプリング結果を表示
-  print(LL)
-  print(Cov)
-  print(round(rbind(theta1, thetat1), 3))
-  print(round(rbind(theta2, thetat2), 3))
-  print(round(rbind(diag(tau1), diag(taut1)), 3))
-  print(round(rbind(diag(tau2), diag(taut2)), 3))
+  ##パラメータの格納とサンプリング結果の表示
+  #サンプリングされたパラメータを格納
+  if(rp%%keep==0){
+    #サンプリング結果の格納
+    mkeep <- rp/keep
+    THETA1[mkeep, ] <- theta1
+    THETA2[mkeep, ] <- theta2
+    TAU[mkeep, ] <- diag(tau)
+    BETA1[, , mkeep] <- beta1
+    BETA2[, , mkeep] <- beta2
+  }
+  
+  #トピック割当はバーンイン期間を超えたら格納する
+  if(rp%%keep==0 & rp >= burnin){
+    DIR_Z <- DIR_Z <- Zi
+  }
+  
+  ##対数尤度関数の計算とサンプリング結果の確認
+  if(rp%%disp==0){
+    #対数尤度関数を計算
+    prob <- pnorm(util_mu, 0, 1)
+    prob[prob==1] <- 0.99999; prob[prob==0] <- 0.00001
+    LL <- sum(y*log(prob) + (1-y)*log(1-prob))
+  
+    #サンプリング結果を表示
+    print(rp)
+    print(LL)
+    print(Cov)
+    print(round(rbind(theta1, thetat1), 3))
+    print(round(rbind(theta2, thetat2), 3))
+    print(round(rbind(diag(tau1), diag(taut1)), 3))
+    print(round(rbind(diag(tau2), diag(taut2)), 3))
+  }
 }
 
 #定数を設定
