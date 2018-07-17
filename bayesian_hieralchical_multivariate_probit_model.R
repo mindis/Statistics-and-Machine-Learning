@@ -64,7 +64,7 @@ covmatrix <- function(col, corM, lower, upper){
 ####データの発生####
 ##データの設定
 s <- 2   #応答変数数
-dir <- 150   #ディレクトリ数
+dir <- 300   #ディレクトリ数
 item <- 10000   #アイテム数
 dir_freq <- rtpois(item, 1.0, a=0, b=5)   #アイテムごとのディレクトリ数
 max_dir <- max(dir_freq)   #ディレクトリの最大数
@@ -155,7 +155,7 @@ mvdnorm <- function(u, mu, Cov, s){
 }
 
 ##MCMCの設定
-R <- 10000
+R <- 5000
 keep <- 2  
 iter <- 0
 burnin <- 1000
@@ -178,53 +178,54 @@ theta1 <- thetat1
 theta2 <- thetat2
 tau1 <- taut1
 tau2 <- taut2
-
-diag(c(diag(taut1), diag(taut2)))
-
+tau <- diag(c(diag(taut1), diag(taut2)))
 beta1 <- betat1
 beta2 <- betat2
 Cov <- Covt
+inv_cov <- solve(Cov)
+U <- UT
 
 ##初期値を設定
-lambda <- matrix(0, nrow=item, ncol=max_dir)
-for(i in 1:item){
-  if(dir_freq[i]==1){
-    lambda[i, 1] <- 1
-  } else {
-    lambda[i, 1:dir_freq[i]] <- as.numeric(extraDistr::rdirichlet(1, rep(10.0, dir_freq[i])))
-  }
-}
+#パラメータを初期値
 theta1 <- theta2 <- rep(0, k)
 tau1 <- tau2 <- diag(0.5, k) 
+tau <- diag(c(diag(tau1), diag(tau2)))
+inv_tau <- solve(tau)
 beta1 <- mvrnorm(dir, theta1, tau1)
 beta2 <- mvrnorm(dir, theta2, tau2)
 Cov <- matrix(c(1, 0.3, 0.3, 1), nrow=s, ncol=s)
+inv_cov <- solve(Cov)
+
+#効用の初期値
+U <- cbind(rowSums(X * beta1[dir_item, ]), rowSums(X * beta2[dir_item, ]))
+
+##パラメータの格納用配列
+THETA1 <- matrix(0, nrow=R/keep, ncol=k)
+THETA2 <- matrix(0, nrow=R/keep, ncol=k)
+TAU <- matrix(0, nrow=R/keep, ncol=s*k)
+BETA1 <- array(0, dim=c(dir, k, R/keep))
+BETA2 <- array(0, dim=c(dir, k, R/keep))
+COV <- array(0, dim=c(s, s, R/keep))
 
 ##インデックスを作成
 #ディレクトリのインデックス
-dir_index <- list(); dir_list1 <- dir_list2 <- list()
+dir_index <- list()
 for(i in 1:dir){
-  data <- matrix(0, nrow=f, ncol=max_dir)
-  for(j in 1:max_dir){
-    index <- which(dir_item[, j]==i)
-    if(length(index)==0) next
-    data[index, j] <- index
-  }
-  index <- which(rowSums(data > 0) > 0)
-  dir_list1[[i]] <- data[index, ]
-  dir_list2[[i]] <- rowSums(dir_list1[[i]])
+  dir_index[[i]] <- which(dir_item==i)
 }
-
-for(j in 1:max_dir){
-  dir_index[[j]] <- which(dir_data[item_id, j] > 0)
-}
-multi_index <- which(rowSums(dir_data[item_id, ] > 0) >= 2)
-
 #アイテムのインデックス
 item_index <- item_vec <- list()
 for(i in 1:item){
   item_index[[i]] <- which(item_id==i)
   item_vec[[i]] <- rep(1, length(item_index[[i]]))
+}
+#割当のインデックス
+xx_index <- matrix(1:(s*k), nrow=k, ncol=s, byrow=T)
+
+##定数を設定
+XX_list <- list()
+for(i in 1:dir){
+  XX_list[[i]] <- t(X[dir_index[[i]], ]) %*% X[dir_index[[i]], ]
 }
 
 
@@ -238,85 +239,46 @@ b0 <- ifelse(y==1, 10^-100, 0)
 ####ギブスサンプリングでパラメータをサンプリング####
 for(rp in 1:R){
   ##切断正規分布から潜在効用を生成
-  U1 <- U2 <- Lho <- matrix(0, nrow=f, ncol=max_dir)
-  
   #効用の平均構造
-  for(i in 1:max_dir){
-    index <- dir_index[[i]]
-    target <- dir_item[, i][index]
-    mu1 <- as.numeric((X[index, ] * beta1[target, ]) %*% rep(1, k))
-    mu2 <- as.numeric((X[index, ] * beta2[target, ]) %*% rep(1, k))
-    mu <- cbind(mu1, mu2)
-    
-    #潜在効用を生成
-    for(j in 1:s){
-      MVR <- cdMVN(mu, Cov, j, U[index, ])   #条件付き分布と分散を生成
-      MVR.U <- MVR$CDmu
-      MVR.S <- sqrt(MVR$CDvar)
-      if(j==1){
-        U1[index, i] <- rtnorm(MVR.U, MVR.S, a[index, j], b[index, j])   #パラメータを生成
-        index_inf <- which(is.infinite(U1[index, i])==TRUE)
-        U1[index, i][index_inf] <- 0
-      } else {
-        U2[index, i] <- rtnorm(MVR.U, MVR.S, a[index, j], b[index, j])
-        index_inf <- which(is.infinite(U2[index, i])==TRUE)
-        U2[index, i][index_inf] <- 0
-      }
-    }
-    #多変量正規分布の尤度関数
-    u <- cbind(U1[index, i], U2[index, i])
-    Lho[index, i] <- mvdnorm(u, mu, Cov, s)
-  }
+  mu1 <- as.numeric((X * beta1[dir_item, ]) %*% rep(1, k))
+  mu2 <- as.numeric((X * beta2[dir_item, ]) %*% rep(1, k))
+  mu <- cbind(mu1, mu2)
   
-  ##潜在ディレクトリを生成
-  #多項分布から潜在変数をサンプリング
-  Zi <- matrix(0, nrow=f, ncol=max_dir); Zi[-multi_index, 1] <- 1
-  dir_prob <- Lho[multi_index, ] / as.numeric(Lho[multi_index, ] %*% rep(1, max_dir))   #ディレクトリの割当確率
-  Zi[multi_index, ] <- rmnom(length(multi_index), 1, dir_prob)   #多項分布からサンプリング
-  Zi_T <- t(Zi)
-  
-  #ディリクレ分布から潜在変数をサンプリング
-  for(i in 1:item){
-    if(dir_freq[i]==1) next
-    wsum <- (Zi_T[, item_index[[i]]] %*% item_vec[[i]])[1:dir_freq[i]] + alpha0
-    lambda[i, 1:dir_freq[i]] <- extraDistr::rdirichlet(1, wsum)
+  #潜在効用を生成
+  for(j in 1:s){
+    MVR <- cdMVN(mu, Cov, j, U)   #条件付き分布と分散を生成
+    MVR.U <- MVR$CDmu
+    MVR.S <- sqrt(MVR$CDvar)
+    U[, j] <- rtnorm(MVR.U, MVR.S, a[, j], b[, j])   #効用を生成
+    U[is.infinite(U[, j])==TRUE, j] <- 0
   }
   
   ##ディレクトリ別に回帰係数をサンプリング
-  util_mu <- U <- matrix(0, nrow=f, ncol=s)
   for(i in 1:dir){
     #データを抽出
-    for(i in 1:dir){
-      print(i)
-      index <- as.numeric((dir_list1[[i]] * Zi[dir_list2[[i]], ]) %*% rep(1, max_dir)); index <- index[index > 0]
-      u <- cbind((U1[index, ]*Zi[index, ]) %*% rep(1, max_dir), (U2[index, ]*Zi[index, ]) %*% rep(1, max_dir))
-      
-      #回帰係数のパラメータ
-      XVX <- matrix(0, nrow=s*k, ncol=s*k)
-      XVY <- matrix(0, nrow=s*k, ncol=1)
-      for(r in 1:length(index)){
-        XV <- DT_T[, , index[r]] %*% inv_cov
-        XVX <- XVX + XV %*% DT[, , index[r]]
-        XVY <- XVY + XV %*% u[r, ]
-      }
-    }
-    pmv
+    u <- U[dir_index[[i]], ]
+    x <- X[dir_index[[i]], ]
     
-    inv_tau1 <- solve(tau1); inv_tau2 <- solve(tau2)
-    inv_xxv1 <- solve(xx + inv_tau1); inv_xxv2 <- solve(xx + inv_tau2)
-    beta_mu1 <- inv_xxv1 %*% (xu[, 1] + inv_tau1 %*% theta1)   #回帰パラメータの期待値
-    beta_mu2 <- inv_xxv2 %*% (xu[, 2] + inv_tau2 %*% theta2)
+    #回帰係数のパラメータ
+    XX <- XX_list[[i]]; XU <- t(x) %*% u
+    XVX <- matrix(0, nrow=s*k, ncol=s*k); XVU <- matrix(0, nrow=s*k, ncol=1)
+    for(r in 1:k){
+      xx <- XX[r, ]
+      XVX[xx_index[r, ], ] <- rbind(as.numeric(inv_cov[, 1, drop=FALSE] %*% xx), as.numeric(inv_cov[, 2, drop=FALSE] %*% xx))
+    }
+    XVU <- as.numeric(t(XU %*% inv_cov))
+    inv_XVX <- solve(XVX + inv_tau)
+    beta_mu <- inv_XVX %*% (XVU + inv_tau %*% as.numeric(t(cbind(theta1, theta2))))   #回帰パラメータの期待値
     
     #多変量正規分布から回帰係数をサンプリング
-    beta1[i, ] <- mvrnorm(1, beta_mu1, inv_xxv1)
-    beta2[i, ] <- mvrnorm(1, beta_mu2, inv_xxv2)
+    beta_par <- matrix(mvrnorm(1, beta_mu, inv_XVX), nrow=k, ncol=s, byrow=T)
+    beta1[i, ] <- beta_par[, 1]; beta2[i, ] <- beta_par[, 2]
     
     #効用の期待値
     beta <- cbind(beta1[i, ], beta2[i, ])
-    util_mu[index, ] <- x %*% beta
-    U[index, ] <- u
   }
-  U1 <- U; util_mu1 <- util_mu
+  U1 <- U
+  util_mu1 <- util_mu <- cbind((X * beta1[dir_item, ]) %*% rep(1, k), (X * beta2[dir_item, ]) %*% rep(1, k))
   
   ##モデルの相関行列をサンプリング
   #逆ウィシャート分布のパラメータ
@@ -342,62 +304,41 @@ for(rp in 1:R){
   Sn <- nu2 + dir
   tau1 <- rwishart(Sn, solve(IW_R1))$IW   #逆ウィシャート分布からtauをサンプリング
   tau2 <- rwishart(Sn, solve(IW_R2))$IW
+  tau <- diag(c(diag(tau1), diag(tau2))); inv_tau <- solve(tau)
   
   ##識別性の問題を回避するために分散共分散行列の対角成分を1を固定する
   gamma <- diag(diag(Cov_hat)^(-1/2))
   Cov <- cov2cor(Cov_hat)
   inv_cov <- solve(Cov)
-  #util_mu <- util_mu %*% gamma
-  #U <- U %*% gamma
+  util_mu <- util_mu %*% gamma
+  U <- U %*% gamma
   
-  
-  #対数尤度関数を計算
-  prob <- pnorm(util_mu, 0, 1)
-  LL <- sum(y*log(prob) + (1-y)*log(1-prob))
-  
-  #サンプリング結果を表示
-  print(LL)
-  print(Cov)
-  print(round(rbind(theta1, thetat1), 3))
-  print(round(rbind(theta2, thetat2), 3))
-  print(round(rbind(diag(tau1), diag(taut1)), 3))
-  print(round(rbind(diag(tau2), diag(taut2)), 3))
-}
-
-i <- 1
-X[item_index[[i]], ]
-
-DT <- array(0, dim=c(s, s*k, f))
-DT_T <- array(0, dim=c(s*k, s, f))
-for(i in 1:f){
-  if(i%%10000==0){
-    print(i)
+  ##パラメータの格納とサンプリング結果の表示
+  #サンプリングされたパラメータを格納
+  if(rp%%keep==0){
+    #サンプリング結果の格納
+    mkeep <- rp/keep
+    THETA1[mkeep, ] <- theta1
+    THETA2[mkeep, ] <- theta2
+    TAU[mkeep, ] <- diag(tau)
+    BETA1[, , mkeep] <- beta1
+    BETA2[, , mkeep] <- beta2
   }
-  DT[, , i] <- rbind(as.numeric(t(cbind(X[i, ], 0))), as.numeric(t(cbind(0, X[i, ]))))
-  DT_T[, , i] <- t(DT[, , i])
+  
+  ##対数尤度関数の計算とサンプリング結果の確認
+  if(rp%%disp==0){
+    prob <- pnorm(util_mu, 0, 1)
+    LL <- sum(y*log(prob) + (1-y)*log(1-prob))
+    
+    #サンプリング結果を表示
+    print(rp)
+    print(LL)
+    print(Cov)
+    print(round(rbind(theta1, thetat1), 3))
+    print(round(rbind(theta2, thetat2), 3))
+    print(round(rbind(diag(tau1), diag(taut1)), 3))
+    print(round(rbind(diag(tau2), diag(taut2)), 3))
+  }
 }
 
 
-
-xx <- array(0, dim=c(s*k, s*k, f))
-for(i in 1:f){
-  xx[, , i] <- DT_T[, , i] %*% DT[, , i]
-}
-
-for(i in 1:f){
-  xx[, , f]
-}
-
-
-XVX <- matrix(0, nrow=s*k, ncol=s*k)
-XVY <- matrix(0, nrow=s*k, ncol=1)
-for(i in 1:f){
-  XV <- DT_T[, , i] %*% inv_cov
-  XVX <- XVX + XV %*% DT[, , i]
-  XVY <- XVY + XV %*% U[i, ]
-}
-XVX
-
-t(t(as.numeric(t(X)))) %*% inv_cov[1, ]
-
-solve(XVX) %*% XVY
