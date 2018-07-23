@@ -131,7 +131,8 @@ for(j in 1:time){
   tu_id[[j]] <- user_id[time_index[[j]]]
   ti_id[[j]] <- item_id[time_index[[j]]]
 }
-const <- hh/5   #正規化定数
+const1 <- hh / 1.5  #正規化定数
+const2 <- item / 1.5
 
 ##対数尤度の基準値
 LLst <- sum(dnorm(y, mean(y), sd(y), log=TRUE))
@@ -152,7 +153,7 @@ for(rp in 1:R){
     w <- mvrnorm(1, beta_mu, cov)
     W[i, ] <- w
   }
-  W <- W / matrix(colSums(W), nrow=hh, ncol=k, byrow=T) * const
+  W <- W / matrix(colSums(W), nrow=hh, ncol=k, byrow=T) * const1
   
   ##アイテム特徴行列をサンプリング
   for(j in 1:item){
@@ -166,6 +167,7 @@ for(rp in 1:R){
     h <- mvrnorm(1, beta_mu, cov)
     H[j, ] <- h
   }
+  H <- H / matrix(colSums(H), nrow=item, ncol=k, byrow=T) * const2
   
   ##時間の特徴行列をサンプリング
   for(j in 1:time){
@@ -215,8 +217,12 @@ for(rp in 1:R){
   }
 }
 
-
-
+matplot(t(W_array[1, , ]), type="l")
+W
+H
+C
+C_array
+round(W_array, 3)
 
 
 
