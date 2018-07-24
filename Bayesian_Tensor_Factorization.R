@@ -153,7 +153,7 @@ for(rp in 1:R){
     w <- mvrnorm(1, beta_mu, cov)
     W[i, ] <- w
   }
-  W <- W / matrix(colSums(W), nrow=hh, ncol=k, byrow=T) * const1
+  W <- W / matrix(colSums(W), nrow=hh, ncol=k, byrow=T) * hh
   
   ##アイテム特徴行列をサンプリング
   for(j in 1:item){
@@ -167,7 +167,7 @@ for(rp in 1:R){
     h <- mvrnorm(1, beta_mu, cov)
     H[j, ] <- h
   }
-  H <- H / matrix(colSums(H), nrow=item, ncol=k, byrow=T) * const2
+  H <- H / matrix(colSums(H), nrow=item, ncol=k, byrow=T) * item
   
   ##時間の特徴行列をサンプリング
   for(j in 1:time){
@@ -218,11 +218,16 @@ for(rp in 1:R){
 }
 
 matplot(t(W_array[1, , ]), type="l")
+matplot(t(H_array[1, , ]), type="l")
+matplot(t(C_array[1, , ]), type="l")
+C_array
 W
 H
 C
 C_array
 round(W_array, 3)
 
+
+sum((y - rowSums(W[user_id, ] * H[item_id, ] * C[time_id, ]))^2)
 
 
