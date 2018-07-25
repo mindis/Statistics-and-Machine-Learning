@@ -112,7 +112,7 @@ H_array <- array(0, dim=c(item, k, R/keep))
 C_array <- array(0, dim=c(time, k, R/keep))
 SIGMA <- rep(0, R/keep)
 
-##事前分布の設定
+
 ##インデックスを設定
 user_index <- item_index <- time_index <- list()
 ui_id <- ut_id <- iu_id <- it_id <- tu_id <- ti_id <- list()
@@ -227,7 +227,7 @@ C
 C_array
 round(W_array, 3)
 
-
-sum((y - rowSums(W[user_id, ] * H[item_id, ] * C[time_id, ]))^2)
-
+index_na <- which(z_vec==0)
+sum((y0[index_na] - rowSums(W[user_id0[index_na], ] * H[item_id0[index_na], ] * C[time_id0[index_na], ]))^2)
+sd((y0[index_na] - rowSums(WT0[user_id0[index_na], ] * HT0[item_id0[index_na], ] * CT0[time_id0[index_na], ]))^2)
 
