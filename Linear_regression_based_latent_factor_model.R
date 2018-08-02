@@ -123,7 +123,7 @@ for(rp in 1:1000){
   ##ユーザーベースの階層モデルのパラメータ
   #分散共分散行列を設定
   sigma_ut <- sigma_u <- 0.4
-  Cov_ut <- Cov_u <- covmatrix(k, corrM(k, -0.6, 0.8, 0.05, 0.2), 0.0025, 0.25)$covariance
+  Cov_ut <- Cov_u <- covmatrix(k, corrM(k, -0.6, 0.8, 0.05, 0.2), 0.01, 0.25)$covariance
   
   #回帰係数を設定
   alpha_u <- matrix(0, nrow=ncol(u), ncol=k+1)
@@ -145,7 +145,7 @@ for(rp in 1:1000){
   ##アイテムベースの階層モデルのパラメータ
   #分散共分散行列を設定
   sigma_vt <- sigma_v <- 0.4
-  Cov_vt <- Cov_v <- covmatrix(k, corrM(k, -0.6, 0.8, 0.05, 0.2), 0.025, 0.25)$covariance
+  Cov_vt <- Cov_v <- covmatrix(k, corrM(k, -0.6, 0.8, 0.05, 0.2), 0.01, 0.25)$covariance
   
   #回帰係数を設定
   alpha_v <- matrix(0, nrow=ncol(v), ncol=k+1)
@@ -251,6 +251,7 @@ theta_v2 <- theta_mu22 + t(mvrnorm(item, rep(0, k), Cov_v))
 #行列分解の初期値
 uv <- as.numeric(t(theta_u2 %*% theta_v2))[index_z1]
 
+
 ##データの設定
 #インデックスの作成
 user_list <- item_list <- list()
@@ -272,7 +273,7 @@ print(LL)
 
 
 ####モンテカルロEMアルゴリズムをパラメータを推定####
-while(abs(dl) > tol){   #dlがtol以上なら繰り返す
+while(dl > 0){   #dlがtol以上なら繰り返す
   
   ###モンテカルロEステップで潜在変数をサンプリング
   ##ユーザーのランダム効果をサンプリング
@@ -292,7 +293,7 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   theta_u_data <- matrix(rnorm(hh*L, mu_par, sqrt(1 / (1/sigma_u^2 + n1/sigma^2))), nrow=hh, ncol=L)
   theta_u1 <- rowMeans(theta_u_data)
   u1_vars <- rowVars(theta_u_data)
-
+  
   
   ##アイテムのランダム効果をサンプリング
   #データの設定
@@ -310,11 +311,12 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   theta_v1_data <- matrix(rnorm(item*L, mu_par, sqrt(1 / (1/sigma_v^2 + n2/sigma^2))), nrow=item, ncol=L)
   theta_v1 <- rowMeans(theta_v1_data)
   v1_vars <- rowVars(theta_v1_data)
-
-
+  
+  
   ##ユーザー特徴行列のパラメータをサンプリング
   #データの設定
-  uv_er <- as.numeric(y - beta_mu - theta_u1[user_id] - theta_v1[item_id])
+  theta_u_vec <- theta_u1[user_id]; theta_v_vec <- theta_v1[item_id]
+  uv_er <- as.numeric(y - beta_mu - theta_u_vec - theta_v_vec)
   theta_v2_T <- t(theta_v2)
   theta_u2 <- matrix(0, nrow=hh, ncol=k)
   u2_vars <- matrix(0, nrow=k, ncol=k)
@@ -334,7 +336,7 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
     theta_u2[i, ] <- colMeans(theta_u2_data)   #モンテカルロ平均
     u2_vars <- u2_vars + var(theta_u2_data)
   }
-
+  
   
   ##アイテム特徴行列のパラメータをサンプリング
   #アイテムごとに特徴ベクトルをサンプリング
@@ -355,18 +357,18 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
     v2_vars <- v2_vars + var(theta_v2_data)
   }
   
-
+  
   ###Mステップで完全データの尤度を最大化
   #行列分解のパラメータ
   uv <- as.numeric(t(theta_u2 %*% theta_v2))[index_z1]
   
   ##素性ベクトルのパラメータを更新
-  y_er <- y - theta_u1[user_id] - theta_v1[item_id] - uv   #応答変数を設定
+  y_er <- y - theta_u_vec - theta_v_vec - uv   #応答変数を設定
   beta <- inv_xx %*% t(x) %*% y_er   #最小二乗法で素性ベクトルを更新
   beta_mu <- x %*% beta   #素性ベクトルの平均構造
   
   ##観測モデルの誤差パラメータを更新
-  er <- y - beta_mu - theta_u1[user_id] - theta_v1[item_id] - uv
+  er <- y - beta_mu - theta_u_vec - theta_v_vec - uv
   sigma <- sd(er)
   
   
@@ -375,7 +377,7 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   alpha_u[, 1] <- inv_uu %*% t(u) %*% theta_u1
   theta_mu11 <- as.numeric(u %*% alpha_u[, 1])
   sigma_u <- sqrt((sum(u1_vars) + sum((theta_u1 - theta_mu11)^2)) / hh)
-
+  
   
   #アイテムのランダム効果の階層モデルのパラメータを更新
   alpha_v[, 1] <- inv_vv %*% t(v) %*% theta_v1
@@ -386,22 +388,22 @@ while(abs(dl) > tol){   #dlがtol以上なら繰り返す
   alpha_u[, -1] <- inv_uu %*% t(u) %*% theta_u2
   theta_mu12 <- u %*% alpha_u[, -1]
   Cov_u <- (u2_vars + t(theta_u2 - theta_mu12) %*% (theta_u2 - theta_mu12)) / hh
+  inv_Cov_u
   
   #アイテム特徴行列の階層モデルのパラメータを更新
   alpha_v[, -1] <- inv_vv %*% t(v) %*% t(theta_v2)
   theta_mu22 <- t(v %*% alpha_v[, -1])
   Cov_v <- (v2_vars + (theta_v2 - theta_mu22) %*% t(theta_v2 - theta_mu22)) / item
-  
+  inv_Cov_v <- solve(Cov_v)
   
   ##アルゴリズムの収束判定
-  Mu <- beta_mu + theta_u1[user_id] + theta_v1[item_id] + uv   #完全データの平均構造
+  Mu <- beta_mu + theta_u_vec + theta_v_vec + uv   #完全データの平均構造
   LL <- sum(dnorm(y, Mu, sigma, log=TRUE))   #完全データの対数尤度を更新
   iter <- iter + 1
   dl <- LL - LL1
   LL1 <- LL
   print(LL)
 }
-
 
 ####推定結果の確認と適合度####
 ##比較対象モデルの対数尤度
