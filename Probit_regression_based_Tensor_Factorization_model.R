@@ -260,6 +260,7 @@ const2 <- item / 2.0
 gamma_u <- rep(0, ncol(u)); tau_u <- 100 * diag(ncol(u)); inv_tau_u <- solve(tau_u)
 gamma_v <- rep(0, ncol(v)); tau_v <- 100 * diag(ncol(v)); inv_tau_v <- solve(tau_v)
 gamma_c <- 0; tau_c <- 100; inv_tau_c <- 1/tau_c
+v0 <- 1; s0 <- 1
 
 #ユーザーの階層モデルの事前分布
 Deltabar1 <- matrix(rep(0, ncol(u)*k), nrow=ncol(u), ncol=k)   #階層モデルの回帰係数の事前分布の分散
@@ -512,13 +513,12 @@ beta_mu <- inv_uu %*% (t(u) %*% theta_u1 + inv_tau_u %*% gamma_u)
 alpha_u1 <- mvrnorm(1, beta_mu, Cov_u1^2*inv_uu)   #多変量正規分布から回帰ベクトルをサンプリング
 user_u1 <- as.numeric(u %*% alpha_u1)
 
-#ユーザーの階層モデルの分散を更新
+#ユーザーの階層モデルの標準偏差を更新
 er <- theta_u1 - user_u1
-t(er) %*% er
+s1 <- t(er) %*% er + s0
+v1 <- hh + v0
+Cov_u1 <- sqrt(1/rgamma(1, v1/2, s1/2))   #ガンマ分布から標準偏差をサンプリング
+inv_Cov_u1 <- 1 / Cov_u1
 
-sd(er)
-
-alpha_u1
-
-theta_u1
+a
 
