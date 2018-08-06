@@ -235,21 +235,21 @@ disp <- 10
 
 ##インデックスを設定
 user_index <- item_index <- context_index <- list()
-ui_id <- ut_id <- iu_id <- it_id <- tu_id <- ti_id <- list()
+ui_id <- uc_id <- iu_id <- ic_id <- cu_id <- ci_id <- list()
 for(i in 1:hh){
   user_index[[i]] <- which(user_id==i)
   ui_id[[i]] <- item_id[user_index[[i]]]
-  ut_id[[i]] <- context_id[user_index[[i]]]
+  uc_id[[i]] <- context_id[user_index[[i]]]
 }
 for(j in 1:item){
   item_index[[j]] <- which(item_id==j)
   iu_id[[j]] <- user_id[item_index[[j]]]
-  it_id[[j]] <- context_id[item_index[[j]]]
+  ic_id[[j]] <- context_id[item_index[[j]]]
 }
 for(j in 1:context){
   context_index[[j]] <- which(context_id==j)
-  tu_id[[j]] <- user_id[context_index[[j]]]
-  ti_id[[j]] <- item_id[context_index[[j]]]
+  cu_id[[j]] <- user_id[context_index[[j]]]
+  ci_id[[j]] <- item_id[context_index[[j]]]
 }
 vec <- rep(1, k)
 const1 <- hh / 2.0  #正規化定数
@@ -257,8 +257,8 @@ const2 <- item / 2.0
 
 ##事前分布の設定
 #変量効果の階層モデルの事前分布
-gamma_u <- rep(0, ncol(u)); tau_u <- 100; inv_tau_u <- 1/tau_u
-gamma_v <- rep(0, ncol(v)); tau_v <- 100; inv_tau_v <- 1/tau_v
+gamma_u <- rep(0, ncol(u)); tau_u <- 100 * diag(ncol(u)); inv_tau_u <- solve(tau_u)
+gamma_v <- rep(0, ncol(v)); tau_v <- 100 * diag(ncol(v)); inv_tau_v <- solve(tau_v)
 gamma_c <- 0; tau_c <- 100; inv_tau_c <- 1/tau_c
 
 #ユーザーの階層モデルの事前分布
@@ -314,13 +314,13 @@ sigma <- 1
 
 ##パラメータの真値
 alpha_u1 <- alpha_ut1; alpha_u2 <- alpha_ut2; alpha_u3 <- alpha_ut3
-user_mu1 <- u %*% alpha_u1; user_mu2 <- u %*% alpha_u2; user_mu3 <- u %*% alpha_u3
+user_mu1 <- as.numeric(u %*% alpha_u1); user_mu2 <- u %*% alpha_u2; user_mu3 <- u %*% alpha_u3
 alpha_v1 <- alpha_vt1; alpha_v2 <- alpha_vt2; alpha_v3 <- alpha_vt3
-item_mu1 <- v %*% alpha_v1; item_mu2 <- v %*% alpha_v2; item_mu3 <- v %*% alpha_v3
+item_mu1 <- as.numeric(v %*% alpha_v1); item_mu2 <- v %*% alpha_v2; item_mu3 <- v %*% alpha_v3
 alpha_c1 <- alpha_ct1; alpha_c2 <- alpha_ct2; alpha_c3 <- alpha_ct3
-Cov_u1 <- Cov_ut1; Cov_u2 <- Cov_ut2; Cov_u3 <- Cov_ut3
-Cov_v1 <- Cov_vt1; Cov_v2 <- Cov_vt2; Cov_v3 <- Cov_vt3
-Cov_c1 <- Cov_ct1; Cov_c2 <- Cov_ct2; Cov_c3 <- Cov_ct3
+Cov_u1 <- Cov_ut1; Cov_u2 <- Cov_ut2; Cov_u3 <- Cov_ut3; inv_Cov_u2 <- solve(Cov_u2); inv_Cov_u3 <- solve(Cov_u3)
+Cov_v1 <- Cov_vt1; Cov_v2 <- Cov_vt2; Cov_v3 <- Cov_vt3; inv_Cov_v2 <- solve(Cov_v2); inv_Cov_v3 <- solve(Cov_v3)
+Cov_c1 <- Cov_ct1; Cov_c2 <- Cov_ct2; Cov_c3 <- Cov_ct3; inv_Cov_c2 <- solve(Cov_c2); inv_Cov_c3 <- solve(Cov_c3)
 theta_u1 <- theta_ut1; theta_u2 <- theta_ut2; theta_u3 <- theta_ut3
 theta_v1 <- theta_vt1; theta_v2 <- theta_vt2; theta_v3 <- theta_vt3
 theta_c1 <- theta_ct1; theta_c2 <- theta_ct2; theta_c3 <- theta_ct3
@@ -342,6 +342,10 @@ ALPHA_T <- matrix(0, nrow=R/keep, ncol=k)
 COV_U <- array(0, dim=c(k, k, R/keep))
 COV_V <- array(0, dim=c(k, k, R/keep))
 COV_T <- array(0, dim=c(k, k, R/keep))
+
+##データの定数を設定
+uu <- t(u) %*% u + inv_tau_u; inv_uu <- solve(uu)
+vv <- t(v) %*% v + inv_tau_v; inv_vv <- solve(vv)
 
 ##切断領域を定義
 index_y1 <- which(y==1)
@@ -370,8 +374,151 @@ u_mu <- rep(0, hh)
 for(i in 1:hh){
   u_mu[i] <- mean(u_er[user_index[[i]]])
 }
-round(cbind(u_mu, theta_u1), 3)
+weights <- Cov_u1^2 / (sigma^2/freq_user + Cov_u1^2)   #重み係数
+mu_par <- weights*u_mu + (1-weights)*user_mu1   #事後分布の平均
 
-Cov_u1^2
+#正規分布より事後分布をサンプリング
+theta_u1 <- rnorm(hh, mu_par, sqrt(1 / (1/Cov_u1^2 + freq_user/sigma^2)))
+theta_u_vec1 <- theta_u1[user_id]
 
+##アイテムの変量効果をサンプリング
+#モデルの応答変数
+v_er <- U - theta_u_vec1 - theta_c_vec1 - uv - uc - vc - uvc
+
+#アイテムの変量効果の事後分布のパラメータ
+v_mu <- rep(0, item)
+for(j in 1:item){
+  v_mu[j] <- mean(v_er[item_index[[j]]])
+}
+weights <- Cov_v1^2 / (sigma^2/freq_item + Cov_v1^2)   #重み係数
+mu_par <- weights*v_mu + (1-weights)*item_mu1   #事後分布の平均
+
+#正規分布より事後分布をサンプリング
+theta_v1 <- rnorm(item, mu_par, sqrt(1 / (1/Cov_v1^2 + freq_item/sigma^2)))
+theta_v_vec1 <- theta_v1[item_id]
+
+##コンテキストの変量効果をサンプリング
+#モデルの応答変数
+c_er <- U - theta_u_vec1 - theta_v_vec1 - uv - uc - vc - uvc
+
+#アイテムの変量効果の事後分布のパラメータ
+c_mu <- rep(0, context)
+for(j in 1:context){
+  c_mu[j] <- mean(c_er[context_index[[j]]])
+}
+weights <- Cov_c1^2 / (sigma^2/freq_context + Cov_c1^2)   #重み係数
+mu_par <- weights*c_mu + (1-weights)*alpha_c1   #事後分布の平均
+
+#正規分布より事後分布をサンプリング
+theta_c1 <- rnorm(context, mu_par, sqrt(1 / (1/Cov_c1^2 + freq_context/sigma^2)))
+theta_c_vec1 <- theta_c1[context_id]
+
+
+##ユーザーの特徴行列をサンプリング
+#モデルの応答変数
+u_er <- U - theta_u_vec1 - theta_v_vec1 - theta_c_vec1 - vc - uvc
+
+for(i in 1:hh){
+  #特徴ベクトルの事後分布のパラメータ
+  X <- theta_v2[ui_id[[i]], ] + theta_c2[uc_id[[i]], ]
+  Xy <- t(X) %*% u_er[user_index[[i]]]
+  inv_XXV <- solve(t(X) %*% X + inv_Cov_u2)
+  mu <- inv_XXV %*% (Xy + inv_Cov_u2 %*% user_mu2[i, ])   #事後分布の平均
+  
+  #多変量正規分布からユーザー特徴行列をサンプリング
+  theta_u2[i, ] <- mvrnorm(1, mu, sigma^2*inv_XXV)
+}
+#行列分解のパラメータを更新
+uc <- as.numeric((theta_u2[user_id, ] * theta_c2[context_id, ]) %*% vec)
+
+##アイテムの特徴行列をサンプリング
+#モデルの応答変数
+v_er <- U - theta_u_vec1 - theta_v_vec1 - theta_c_vec1 - uc - uvc
+
+for(j in 1:item){
+  #特徴ベクトルの事後分布のパラメータ
+  X <- theta_u2[iu_id[[j]], ] + theta_c2[ic_id[[j]], ]
+  Xy <- t(X) %*% v_er[item_index[[j]]]
+  inv_XXV <- solve(t(X) %*% X + inv_Cov_v2)
+  mu <- inv_XXV %*% (Xy + inv_Cov_v2 %*% item_mu2[j, ])   #事後分布の平均
+  
+  #多変量正規分布からユーザー特徴行列をサンプリング
+  theta_v2[j, ] <- mvrnorm(1, mu, sigma^2*inv_XXV)
+}
+#行列分解のパラメータを更新
+uv <- as.numeric((theta_u2[user_id, ] * theta_v2[item_id, ]) %*% vec)
+
+##コンテキストの特徴行列をサンプリング
+#モデルの応答変数
+c_er <- U - theta_u_vec1 - theta_v_vec1 - theta_c_vec1 - uv - uvc
+
+for(j in 1:context){
+  #特徴ベクトルの事後分布のパラメータ
+  X <- theta_u2[cu_id[[j]], ] + theta_v2[ci_id[[j]], ]
+  Xy <- t(X) %*% c_er[context_index[[j]]]
+  inv_XXV <- solve(t(X) %*% X + inv_Cov_c2)
+  mu <- inv_XXV %*% (Xy + inv_Cov_c2 %*% alpha_c2)   #事後分布の平均
+  
+  #多変量正規分布からユーザー特徴行列をサンプリング
+  theta_c2[j, ] <- mvrnorm(1, mu, sigma^2*inv_XXV)
+}
+#行列分解のパラメータを更新
+uc <- as.numeric((theta_u2[user_id, ] * theta_c2[context_id, ]) %*% vec)
+vc <- as.numeric((theta_v2[item_id, ] * theta_c2[context_id, ]) %*% vec)
+
+
+##ユーザーのテンソルのパラメータをサンプリング
+#モデルの応答変数
+y_er <- U - theta_u_vec1 - theta_v_vec1 - theta_c_vec1 - uv - uc - vc
+
+for(i in 1:hh){
+  #特徴ベクトルのパラメータ
+  X <- theta_v3[ui_id[[i]], ] * theta_c3[uc_id[[i]], ]
+  Xy <- t(X) %*% y_er[user_index[[i]]]
+  inv_XXV <- solve(t(X) %*% X + inv_Cov_u3)
+  beta_mu <- inv_XXV %*% (Xy + inv_Cov_u3 %*% user_mu3[i, ])   #多変量正規分布の平均ベクトル
+  
+  #多変量正規分布からパラメータをサンプリング
+  theta_u3[i, ] <- mvrnorm(1, beta_mu, sigma^2*inv_XXV)
+}
+
+##アイテムのテンソルのパラメータをサンプリング
+for(j in 1:item){
+  #特徴ベクトルのパラメータ
+  X <- theta_u3[iu_id[[j]], ] * theta_c3[ic_id[[j]], ]
+  Xy <- t(X) %*% y_er[item_index[[j]]]
+  inv_XXV <- solve(t(X) %*% X + inv_Cov_v3)
+  beta_mu <- inv_XXV %*% (Xy + inv_Cov_v3 %*% item_mu3[j, ])   #多変量正規分布の平均ベクトル
+  
+  #多変量正規分布からパラメータをサンプリング
+  theta_v3[j, ] <- mvrnorm(1, beta_mu, sigma^2*inv_XXV)
+}
+
+##コンテキストのテンソルのパラメータをサンプリング
+for(j in 1:context){
+  #特徴ベクトルのパラメータ
+  X <- theta_u3[cu_id[[j]], ] * theta_v3[ci_id[[j]], ]
+  Xy <- t(X) %*% y_er[context_index[[j]]]
+  inv_XXV <- solve(t(X) %*% X + inv_Cov_c3)
+  beta_mu <- inv_XXV %*% (Xy + inv_Cov_c3 %*% alpha_c3)   #多変量正規分布の平均ベクトル
+  
+  #多変量正規分布からパラメータをサンプリング
+  theta_c3[j, ] <- mvrnorm(1, beta_mu, sigma^2*inv_XXV)
+}
+
+##変量効果の階層モデルのパラメータをサンプリング
+#ユーザーの変量効果の階層モデルの回帰ベクトルを更新
+beta_mu <- inv_uu %*% (t(u) %*% theta_u1 + inv_tau_u %*% gamma_u)
+alpha_u1 <- mvrnorm(1, beta_mu, Cov_u1^2*inv_uu)   #多変量正規分布から回帰ベクトルをサンプリング
+user_u1 <- as.numeric(u %*% alpha_u1)
+
+#ユーザーの階層モデルの分散を更新
+er <- theta_u1 - user_u1
+t(er) %*% er
+
+sd(er)
+
+alpha_u1
+
+theta_u1
 
