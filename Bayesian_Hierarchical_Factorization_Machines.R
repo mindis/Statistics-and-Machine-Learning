@@ -65,7 +65,8 @@ covmatrix <- function(col, corM, lower, upper){
 
 ####データの発生####
 ##データの設定
-s <- 5   #基底数
+s1 <- 10   #行列分解の基底数
+s2 <- 5   #交互作用の基底数
 hh <- 5000   #ユーザー数
 item <- 2000   #アイテム数
 N0 <- hh*item
@@ -148,16 +149,138 @@ v <- cbind(1, v1, v2, v3)   #データを結合
 
 ##交差項を設定
 #交差項のインデックスを作成
-v_matrix <- matrix(0, nrow=k-1, ncol=k-1)
-v_matrix[upper.tri(v_matrix)] <- 1
-v_list <- list()
+z_matrix <- matrix(0, nrow=k-1, ncol=k-1)
+z_matrix[upper.tri(z_matrix)] <- 1
+z_list <- list()
 for(j in 1:(k-1)){
-  index <- which(v_matrix[j, ]==1)
+  index <- which(z_matrix[j, ]==1)
   if(length(index) > 0){
-    v_list[[j]] <- cbind(j1=j, j2=which(v_matrix[j, ]==1))
+    z_list[[j]] <- cbind(j1=j, j2=which(z_matrix[j, ]==1))
   }
 }
-v_index <- do.call(rbind, v_list)
+z_index <- do.call(rbind, z_list)
+
+#交差項の入力変数を作成
+z <- x[, z_index[, 1]+1] * x[, z_index[, 2]+1]
+
+#説明変数の割当インデックス
+allocation_index11 <- allocation_index12 <- matrix(0, nrow=k-1, ncol=k-2)
+allocation_index21 <- allocation_index22 <- matrix(0, nrow=k-1, ncol=k-2)
+for(j in 1:(k-1)){
+  index <- which(rowSums(z_index==j)==1)
+  allocation_index11[j, ] <- allocation_index12[j, ] <- 
+    rowSums(matrix(as.numeric(z_index[index, ]!=j), nrow=length(index)) * z_index[index, ])
+  allocation_index21[j, ] <- allocation_index22[j, ] <-  index
+}
+allocation_index11[lower.tri(allocation_index11)] <- 0
+allocation_index21[lower.tri(allocation_index21)] <- 0
+vec <- rep(1, s)
+j_data12 <- matrix(1:(k-1), nrow=k-1, ncol=k-2) 
+j_data11 <- j_data12 * (allocation_index11 > 0)
+
+
+####応答変数を生成####
+rp <- 0
+repeat { 
+  print(rp <- rp + 1)
+  
+  ##パラメータと応答変数を生成
+  #モデルの標準偏差
+  sigma <- sigmat <- 1.0
+  
+  #階層モデルの分散パラメータ
+  Cov_x <- Cov_xt <- runif(ncol(x), 0.05, 0.25) * diag(ncol(x))
+  Cov_u <- Cov_ut <- runif(s1, 0.05, 0.20) * diag(s1)
+  Cov_v <- Cov_vt <- runif(s1, 0.05, 0.20) * diag(s1)
+  Cov_z <- Cov_zt <- runif(s2, 0.05, 0.15) * diag(s2)
+  
+  #階層モデルの回帰係数を設定
+  alpha_x <- matrix(0, nrow=ncol(u), ncol=ncol(x))
+  alpha_u <- matrix(0, nrow=ncol(u), ncol=s1)
+  alpha_v <- matrix(0, nrow=ncol(v), ncol=s1)
+  alpha_z <- array(0, dim=c(ncol(u), s2, ncol(z)))
+  
+  for(j in 1:ncol(u)){
+    if(j==1){
+      alpha_x[j, ] <- runif(ncol(x), -0.4, 0.3)
+      alpha_u[j, ] <- runif(s1, -0.4, 0.2)
+      alpha_z[j, , ] <- matrix(rnorm(s2*ncol(z), 0, 0.2), nrow=s2, ncol=ncol(z))
+    } else {
+      alpha_x[j, ] <- runif(ncol(x), -0.4, 0.3)
+      alpha_u[j, ] <- runif(s1, -0.35, 0.2)
+      alpha_z[j, , ] <- matrix(rnorm(s2*ncol(z), 0, 0.2), nrow=s2, ncol=ncol(z))
+    }
+  }
+  for(j in 1:ncol(v)){
+    if(j==1){
+      alpha_v[j, ] <- runif(s2, -0.5, 0.4)
+    } else {
+      alpha_v[j, ] <- runif(s2, -0.4, 0.4)
+    }
+  }
+  alpha_xt <- alpha_x; alpha_ut <- alpha_u; alpha_vt <- alpha_v; alpha_zt <- alpha_z   #真値を格納
+  
+  #多変量回帰モデルからユーザー個別の回帰パラメータを生成
+  theta_x <- theta_xt <- u %*% alpha_x + mvrnorm(hh, rep(0, ncol(x)), Cov_x)   #変量効果のパラメータ
+  theta_u <- theta_ut <- u %*% alpha_u + mvrnorm(hh, rep(0, s1), Cov_u)   #ユーザーの行列分解のパラメータ
+  theta_v <- theta_vt <- v %*% alpha_v + mvrnorm(item, rep(0, s1), Cov_v)   #アイテムの行列分解のパラメータ
+  theta_z <- array(0, c(hh, s2, ncol(z)))
+  for(j in 1:ncol(z)){
+    theta_z[, , j] <- u %*% alpha_z[, , j] + mvrnorm(hh, rep(0, s2), Cov_z)   #交互作用のパラメータ
+  }
+  
+  ##正規分布から効用と購買ベクトルを生成
+  #変量効果のパラメータ
+  x_mu <- as.numeric((x * theta_x[user_id, ]) %*% rep(1, ncol(x)))
+  
+  #行列分解のパラメータ
+  uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% rep(1, s1))
+  
+  #交互作用のパラメータ
+  z_mu <- rep(0, N)
+  j_data_vec11 <- as.numeric(j_data11)[as.numeric(j_data11) > 0]
+  allocation_vec11 <- as.numeric(allocation_index11)[as.numeric(allocation_index11) > 0]
+  allocation_vec21 <- as.numeric(allocation_index21)[as.numeric(allocation_index21) > 0]
+  for(j in 1:length(j_data_vec11)){
+    z_mu <- z_mu + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec
+  }
+  z_mu <- as.numeric(z_mu)
+  
+  #潜在効用と応答変数を生成
+  mu <- x_mu + z_mu + uv   #期待値
+  U <- mu + rnorm(N, 0, sigma)   #潜在効用を生成
+  
+  #購買ベクトルに変換
+  y <- ifelse(U > 0, 1, 0)
+  if(mean(y) > 0.25 & mean(y) < 0.4) break   #break条件
+}
+
+#生成した応答変数を確認
+mean(y)   #購買確率
+prob <- pnorm(U, 0, sigma)   #応答確率
+mean(prob[y==1]); mean(prob[y==0])   #購買有無別の応答確率
+hist(U, col="grey", main="潜在効用の分布", xlab="潜在効用", breaks=25)
+
+
+####マルコフ連鎖モンテカルロ法で階層ベイズFactorization Machinesを推定####
+##切断正規分布の乱数を発生させる関数
+rtnorm <- function(mu, sigma, a, b){
+  FA <- pnorm(a, mu, sigma)
+  FB <- pnorm(b, mu, sigma)
+  par <- qnorm(runif(length(mu))*(FB-FA)+FA, mu, sigma)
+  return(par)
+}
+
+##アルゴリズムの設定
+LL1 <- -100000000   #対数尤度の初期値
+R <- 2000
+keep <- 2  
+iter <- 0
+burnin <- 500/keep
+disp <- 10
+
+##インデックスを設定
+user_index <- item_index 
 
 
 
