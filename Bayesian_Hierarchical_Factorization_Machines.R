@@ -65,8 +65,8 @@ covmatrix <- function(col, corM, lower, upper){
 
 ####データの発生####
 ##データの設定
-s1 <- 10   #行列分解の基底数
-s2 <- 5   #交互作用の基底数
+s1 <- 10; vec1 <- rep(1, s1)   #行列分解の基底数
+s2 <- 5; vec2 <- rep(1, s2)   #交互作用の基底数
 hh <- 5000   #ユーザー数
 item <- 2000   #アイテム数
 N0 <- hh*item
@@ -114,6 +114,7 @@ for(j in 1:k2){
 }
 x3 <- rmnom(N, 1, runif(k3, 0.2, 1.25)); x3 <- x3[, -which.min(colSums(x3))]
 x <- cbind(1, x1, x2, x3)   #データを結合
+
 
 #ユーザーの説明変数を生成
 k1 <- 3; k2 <- 3; k3 <- 4
@@ -228,13 +229,14 @@ repeat {
   for(j in 1:ncol(z)){
     theta_z[, , j] <- u %*% alpha_z[, , j] + mvrnorm(hh, rep(0, s2), Cov_z)   #交互作用のパラメータ
   }
+  theta_xt <- theta_x; theta_ut <- theta_u; theta_vt <- theta_v; theta_zt <- theta_z
   
   ##正規分布から効用と購買ベクトルを生成
   #変量効果のパラメータ
   x_mu <- as.numeric((x * theta_x[user_id, ]) %*% rep(1, ncol(x)))
   
   #行列分解のパラメータ
-  uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% rep(1, s1))
+  uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec1)
   
   #交互作用のパラメータ
   z_mu <- rep(0, N)
@@ -242,7 +244,7 @@ repeat {
   allocation_vec11 <- as.numeric(allocation_index11)[as.numeric(allocation_index11) > 0]
   allocation_vec21 <- as.numeric(allocation_index21)[as.numeric(allocation_index21) > 0]
   for(j in 1:length(j_data_vec11)){
-    z_mu <- z_mu + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec
+    z_mu <- z_mu + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec2
   }
   z_mu <- as.numeric(z_mu)
   
@@ -280,7 +282,73 @@ burnin <- 500/keep
 disp <- 10
 
 ##インデックスを設定
-user_index <- item_index 
+user_index <- item_index <- list()
+ui_id <- iu_id <- list()
+for(i in 1:hh){
+  user_index[[i]] <- which(user_id==i)
+  ui_id[[i]] <- item_id[user_index[[i]]]
+}
+for(j in 1:item){
+  item_index[[j]] <- which(item_id==j)
+  iu_id[[j]] <- user_id[item_index[[j]]]
+}
 
+##事前分布の設定
+#変量効果の階層モデルの事前分布
+Deltabar1 <- matrix(0, nrow=ncol(u), ncol=k)   #階層モデルの回帰係数の事前分布の平均
+ADelta1 <- 0.01 * diag(1, ncol(u))   #階層モデルの回帰係数の事前分布の分散
+nu1 <- k + 1   #逆ウィシャート分布の自由度
+V1 <- nu1 * diag(rep(1, k)) #逆ウィシャート分布のパラメータ
+
+#ユーザーの行列分解の階層モデルの事前分布
+Deltabar2 <- matrix(0, nrow=ncol(u), ncol=s1)   #階層モデルの回帰係数の事前分布の平均
+ADelta2 <- 0.01 * diag(1, ncol(u))   #階層モデルの回帰係数の事前分布の分散
+nu2 <- s1 + 1   #逆ウィシャート分布の自由度
+V2 <- nu2 * diag(rep(1, s1)) #逆ウィシャート分布のパラメータ
+
+#アイテムの行列分解の階層モデルの事前分布
+Deltabar3 <- matrix(0, nrow=ncol(v), ncol=s1)   #階層モデルの回帰係数の事前分布の平均
+ADelta3 <- 0.01 * diag(1, ncol(v))   #階層モデルの回帰係数の事前分布の分散
+nu3 <- s1 + 1   #逆ウィシャート分布の自由度
+V3 <- nu3 * diag(rep(1, s1)) #逆ウィシャート分布のパラメータ
+
+#交互作用項の階層モデルの事前分布
+Deltabar4 <- matrix(0, nrow=ncol(u), ncol=s2)   #階層モデルの回帰係数の事前分布の平均
+ADelta4 <- 0.01 * diag(1, ncol(u))   #階層モデルの回帰係数の事前分布の分散
+nu4 <- s2 + 1   #逆ウィシャート分布の自由度
+V4 <- nu4 * diag(rep(1, s2)) #逆ウィシャート分布のパラメータ
+
+#変量効果の階層モデルの事前分布
+Deltabar1 <- matrix(0, nrow=ncol(u), ncol=k)   #階層モデルの回帰係数の事前分布の平均
+ADelta1 <- 0.01 * diag(1, ncol(u))   #階層モデルの回帰係数の事前分布の分散
+nu1 <- k + 1   #逆ウィシャート分布の自由度
+V1 <- nu1 * diag(rep(1, k)) #逆ウィシャート分布のパラメータ
+
+
+##パラメータの真値
+#階層モデルのパラメータの真値
+Cov_x <- Cov_xt; Cov_u <- Cov_ut; Cov_v <- Cov_vt; Cov_z <- Cov_zt
+alpha_x <- alpha_xt; alpha_u <- alpha_ut; alpha_v <- alpha_vt; alpha_z <- alpha_zt
+x_mu <- u %*% alpha_x; u_mu <- u %*% alpha_u; v_mu <- v %*% alpha_v
+z_mu <- array(0, c(hh, s2, ncol(z)))
+for(j in 1:ncol(z)){
+  z_mu[, , j] <- u %*% alpha_z[, , j]
+}
+
+#モデルパラメータの真値
+sigma <- sigmat
+theta_x <- theta_xt; theta_u <- theta_ut; theta_v <- theta_vt; theta_z <- theta_zt
+user_mu <- as.numeric((x * theta_x[user_id, ]) %*% rep(1, ncol(x)))
+
+#行列分解と交互作用項のパラメータ
+uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec1)
+z_mu <- rep(0, N)
+for(j in 1:length(j_data_vec11)){
+  z_mu <- z_mu + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec2
+}
+z_mu <- as.numeric(z_mu)
+
+
+##パラメータの初期値
 
 
