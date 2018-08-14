@@ -199,17 +199,17 @@ repeat {
   alpha_x <- matrix(0, nrow=ncol(u), ncol=ncol(x))
   alpha_u <- matrix(0, nrow=ncol(u), ncol=s1)
   alpha_v <- matrix(0, nrow=ncol(v), ncol=s1)
-  alpha_z <- array(0, dim=c(ncol(u), s2, ncol(z)))
+  alpha_z <- array(0, dim=c(ncol(u), s2, k-1))
   
   for(j in 1:ncol(u)){
     if(j==1){
       alpha_x[j, ] <- runif(ncol(x), -0.4, 0.3)
       alpha_u[j, ] <- runif(s1, -0.4, 0.2)
-      alpha_z[j, , ] <- matrix(rnorm(s2*ncol(z), 0, 0.2), nrow=s2, ncol=ncol(z))
+      alpha_z[j, , ] <- matrix(rnorm(s2*(k-1), 0, 0.2), nrow=s2, ncol=k-1)
     } else {
       alpha_x[j, ] <- runif(ncol(x), -0.4, 0.3)
       alpha_u[j, ] <- runif(s1, -0.35, 0.2)
-      alpha_z[j, , ] <- matrix(rnorm(s2*ncol(z), 0, 0.2), nrow=s2, ncol=ncol(z))
+      alpha_z[j, , ] <- matrix(rnorm(s2*(k-1), 0, 0.2), nrow=s2, ncol=k-1)
     }
   }
   for(j in 1:ncol(v)){
@@ -225,8 +225,8 @@ repeat {
   theta_x <- theta_xt <- u %*% alpha_x + mvrnorm(hh, rep(0, ncol(x)), Cov_x)   #変量効果のパラメータ
   theta_u <- theta_ut <- u %*% alpha_u + mvrnorm(hh, rep(0, s1), Cov_u)   #ユーザーの行列分解のパラメータ
   theta_v <- theta_vt <- v %*% alpha_v + mvrnorm(item, rep(0, s1), Cov_v)   #アイテムの行列分解のパラメータ
-  theta_z <- array(0, c(hh, s2, ncol(z)))
-  for(j in 1:ncol(z)){
+  theta_z <- array(0, c(hh, s2, k-1))
+  for(j in 1:(k-1)){
     theta_z[, , j] <- u %*% alpha_z[, , j] + mvrnorm(hh, rep(0, s2), Cov_z)   #交互作用のパラメータ
   }
   theta_xt <- theta_x; theta_ut <- theta_u; theta_vt <- theta_v; theta_zt <- theta_z
@@ -237,19 +237,19 @@ repeat {
   
   #行列分解のパラメータ
   uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec1)
-  
+
   #交互作用のパラメータ
-  z_mu <- rep(0, N)
-  j_data_vec11 <- as.numeric(j_data11)[as.numeric(j_data11) > 0]
+  z_vec <- rep(0, N)
+  j_data_vec11 <- as.numeric(j_data11)[as.numeric(j_data11) > 0]; m <- length(j_data_vec11)
   allocation_vec11 <- as.numeric(allocation_index11)[as.numeric(allocation_index11) > 0]
   allocation_vec21 <- as.numeric(allocation_index21)[as.numeric(allocation_index21) > 0]
   for(j in 1:length(j_data_vec11)){
-    z_mu <- z_mu + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec2
+    z_vec <- z_vec + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec2
   }
-  z_mu <- as.numeric(z_mu)
+  z_vec <- as.numeric(z_vec)
   
   #潜在効用と応答変数を生成
-  mu <- x_mu + z_mu + uv   #期待値
+  mu <- x_mu + z_vec + uv   #期待値
   U <- mu + rnorm(N, 0, sigma)   #潜在効用を生成
   
   #購買ベクトルに変換
@@ -327,11 +327,16 @@ V1 <- nu1 * diag(rep(1, k)) #逆ウィシャート分布のパラメータ
 
 ##パラメータの真値
 #階層モデルのパラメータの真値
-Cov_x <- Cov_xt; Cov_u <- Cov_ut; Cov_v <- Cov_vt; Cov_z <- Cov_zt
+Cov_x <- Cov_xt; Cov_u <- Cov_ut; Cov_v <- Cov_vt; Cov_z <- array(Cov_zt, dim=c(s2, s2, k-1))
+inv_Cov_x <- solve(Cov_x); inv_Cov_u <- solve(Cov_u); inv_Cov_v <- solve(Cov_v)
+inv_Cov_z <- array(0, dim=c(s2, s2, k-1))
+for(j in 1:(k-1)){
+  inv_Cov_z[, , j] <- solve(Cov_z[, , j])
+}
 alpha_x <- alpha_xt; alpha_u <- alpha_ut; alpha_v <- alpha_vt; alpha_z <- alpha_zt
 x_mu <- u %*% alpha_x; u_mu <- u %*% alpha_u; v_mu <- v %*% alpha_v
-z_mu <- array(0, c(hh, s2, ncol(z)))
-for(j in 1:ncol(z)){
+z_mu <- array(0, c(hh, s2, k-1))
+for(j in 1:(k-1)){
   z_mu[, , j] <- u %*% alpha_z[, , j]
 }
 
@@ -342,13 +347,209 @@ user_mu <- as.numeric((x * theta_x[user_id, ]) %*% rep(1, ncol(x)))
 
 #行列分解と交互作用項のパラメータ
 uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec1)
-z_mu <- rep(0, N)
+z_vec <- rep(0, N)
 for(j in 1:length(j_data_vec11)){
-  z_mu <- z_mu + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec2
+  z_vec <- z_vec + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec2
 }
-z_mu <- as.numeric(z_mu)
+z_vec <- as.numeric(z_vec)
 
 
 ##パラメータの初期値
+#階層モデルの初期値
+Cov_x <- diag(0.01, ncol(x)); Cov_u <- Cov_v <- diag(0.01, s1); Cov_z <- array(diag(0.01, s2), dim=c(s2, s2, k-1))
+alpha_x <- matrix(0, nrow=ncol(u), ncol=ncol(x)); x_mu <- u %*% alpha_x
+alpha_u <- matrix(0, nrow=ncol(u), ncol=s1); u_mu <- u %*% alpha_u
+alpha_v <- matrix(0, nrow=ncol(v), ncol=s1); v_mu <- v %*% alpha_v
+alpha_z <- array(0, dim=c(ncol(u), s2, k-1)); z_mu <- array(0, dim=c(hh, s2, k-1))
+
+#モデルパラメータの初期値
+sigma <- 1
+theta_x <- mvrnorm(hh, as.numeric(solve(t(x) %*% x) %*% t(x) %*% y), Cov_x) 
+theta_u <- mvrnorm(hh, rep(0, s1), Cov_u)
+theta_v <- mvrnorm(item, rep(0, s1), Cov_v)
+theta_z <- array(0, dim=c(hh, s2, k-1))
+for(j in 1:(k-1)){
+  theta_z[, , j] <- mvrnorm(hh, rep(0, s2), Cov_z[, , j])
+}
+
+#行列分解と交互作用項のパラメータ
+uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec1)
+z_vec <- rep(0, N)
+for(j in 1:m){
+  z_vec <- z_vec + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec2
+}
+z_vec <- as.numeric(z_vec)
+
+
+##インデックスとデータの定数を設定
+#インデックスを設定
+index_list11 <- index_list12 <- list()
+index_list21 <- index_list22 <- index_list23 <- list()
+
+for(j in 1:(k-1)){
+  #データを抽出
+  index <- (allocation_index11==j) + (j_data11==j)
+  
+  #推定パラメータのインデックス
+  j_index <- z_index[rowSums(z_index * cbind(z_index[, 1]==j, z_index[, 2]==j)) > 0, ]
+  index_list11[[j]] <- j_index[j_index!=j]
+  index_list12[[j]] <- allocation_index21[index==1]
+  
+  #固定パラメータのインデックス
+  index1 <- as.numeric(t(allocation_index11 * (1-index)))
+  index2 <- as.numeric(t(allocation_index21 * (1-index)))
+  index3 <- as.numeric(t(j_data11 * (1-index)))
+  index_list21[[j]] <- index1[index1 > 0]
+  index_list22[[j]] <- index2[index2 > 0]
+  index_list23[[j]] <- index3[index3 > 0]
+}
+
+#データの定数を設定
+xx_list <- list()
+for(i in 1:hh){
+  xx_list[[i]] <- t(x[user_index[[i]], ]) %*% x[user_index[[i]], ]
+}
+z_list <- list()
+for(i in 1:hh){
+  z_array <- array(0, dim=c(length(user_index[[i]]), k-2, k-1))
+  for(j in 1:(k-1)){
+    z_array[, , j] <- z[user_index[[i]], index_list12[[j]]]
+  }
+  z_list[[i]] <- z_array
+}
+
+##切断領域を定義
+index_y1 <- which(y==1)
+index_y0 <- which(y==0)
+a <- ifelse(y==0, -100, 0)
+b <- ifelse(y==1, 100, 0)
+
+##対数尤度の基準値
+prob <- mean(y)
+LLst <- sum(y*log(prob)) + sum((1-y)*log(1-prob))   #対数尤度
+
+
+####ギブスサンプリングでパラメータをサンプリング####
+  for(rp in 1:R){
+    
+  ##切断正規分布より潜在効用を生成
+  mu <- user_mu + uv + z_vec   #潜在効用の期待値
+  U <- extraDistr::rtnorm(N, mu, sigma, a, b)   #潜在効用を生成
+  
+  ##ユーザーの回帰ベクトルをサンプリング
+  #モデルの応答変数
+  y_er <- U - uv - z_vec
+  
+  for(i in 1:hh){
+    #回帰ベクトルの事後分布のパラメータ
+    XX <- xx_list[[i]]
+    Xy <- t(x[user_index[[i]], ]) %*% y_er[user_index[[i]]]
+    inv_XXV <- solve(XX + inv_Cov_x)
+    mu <- inv_XXV %*% (Xy + inv_Cov_x %*% x_mu[i, ])   #事後分布の平均
+    
+    #多変量正規分布から回帰ベクトルをサンプリング
+    theta_x[i, ] <- mvrnorm(1, mu, sigma^2*inv_XXV)
+  }
+  user_mu <- as.numeric((x * theta_x[user_id, ]) %*% rep(1, ncol(x)))
+  
+  
+  ##ユーザーの特徴行列をサンプリング
+  #モデルの応答変数
+  u_er <- U - user_mu - z_vec
+  
+  for(i in 1:hh){
+    #特徴ベクトルの事後分布のパラメータ
+    X <- theta_v[ui_id[[i]], ]
+    Xy <- t(X) %*% u_er[user_index[[i]]]
+    inv_XXV <- solve(t(X) %*% X + inv_Cov_u)
+    mu <- inv_XXV %*% (Xy + inv_Cov_u %*% u_mu[i, ])
+    
+    #多変量正規分布から特徴ベクトルをサンプリング
+    theta_u[i, ] <- mvrnorm(1, mu, sigma^2*inv_XXV)
+  }
+  
+  ##アイテムの特徴行列をサンプリング
+  for(j in 1:item){
+    
+    #特徴ベクトルの事後分布のパラメータ
+    X <- theta_u[iu_id[[j]], ]
+    Xy <- t(X) %*% u_er[item_index[[j]]]
+    inv_XXV <- solve(t(X) %*% X + inv_Cov_v)
+    mu <- inv_XXV %*% (Xy + inv_Cov_v %*% v_mu[j, ])
+    
+    #多変量正規分布から特徴ベクトルをサンプリング
+    theta_v[j, ] <- mvrnorm(1, mu, sigma^2*inv_XXV)
+  }
+  #行列分解のパラメータを更新
+  uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec1)
+  
+  
+  ##交互作用項の特徴ベクトルをサンプリング
+  #モデルの応答変数
+  z_er <- U - user_mu - uv
+  
+  for(i in 1:hh){
+    #データを抽出
+    zi <- z[user_index[[i]], ]
+    theta_zi <- t(theta_z[i, , ])
+    
+      for(j in 1:(k-1)){
+      #応答変数を設定
+      er <- z_er[user_index[[i]]] - as.numeric(zi[, index_list22[[j]]] %*%
+                                                 (theta_zi[index_list21[[j]], ] * theta_zi[index_list23[[j]], ]) %*% vec2)
+      
+      #交互作用項の事後分布のパラメータ
+      X <- z_list[[i]][, , j] %*% theta_zi[index_list11[[j]], ]
+      Xy <- t(X) %*% er
+      inv_XXV <- solve(t(X) %*% X + inv_Cov_z[, , j])
+      mu <- as.numeric(inv_XXV %*% (Xy + inv_Cov_z[, , j] %*% z_mu[i, , j]))   #事後分布の平均
+      
+      #多変量正規分布から交互作用項をサンプリング
+      theta_z[i, , j] <- mvrnorm(1, mu, sigma^2*inv_XXV)
+      theta_zi[j, ] <- theta_z[i, , j]
+    }
+  }
+  
+  #交互作用項のパラメータを更新
+  z_vec <- rep(0, N)
+  for(j in 1:m){
+    z_vec <- z_vec + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec2
+  }
+  z_vec <- as.numeric(z_vec)
+  
+  
+  ##ユーザーの回帰ベクトルの階層モデルのパラメータをサンプリング
+  #多変量回帰モデルからパラメータをサンプリング
+  out <- rmultireg(theta_x, u, Deltabar1, ADelta1, nu1, V1)
+  alpha_x <- out$B; x_mu <- u %*% alpha_x   
+  Cov_x <- out$Sigma; inv_Cov_x <- solve(Cov_x)
+  
+  ##ユーザー特徴行列の階層モデルのパラメータをサンプリング
+  #多変量回帰モデルからパラメータをサンプリング
+  out <- rmultireg(theta_u, u, Deltabar2, ADelta2, nu2, V2)
+  alpha_u <- out$B; u_mu <- u %*% alpha_u   
+  Cov_u <- out$Sigma; inv_Cov_u <- solve(Cov_u)
+  
+  ##アイテムの特徴行列の階層モデルのパラメータをサンプリング
+  #多変量回帰モデルからパラメータをサンプリング
+  out <- rmultireg(theta_v, v, Deltabar3, ADelta3, nu3, V3)
+  alpha_v <- out$B; v_mu <- v %*% alpha_v   
+  Cov_v <- out$Sigma; inv_Cov_v <- solve(Cov_v)
+  
+  ##交互作用項の階層モデルのパラメータをサンプリング
+  #多変量回帰モデルパラメータをサンプリング
+  for(j in 1:(k-1)){
+    out <- rmultireg(theta_z[, , j], u, Deltabar4, ADelta4, nu4, V4)
+    alpha_z[, , j] <- out$B; z_mu[, , j] <- u %*% alpha_z[, , j]
+    Cov_z[, , j] <- out$Sigma; inv_Cov_z[, , j] <- solve(Cov_z[, , j])
+  }
+  
+  ##対数尤度を計算
+  mu <- user_mu + uv + z_vec   #潜在効用の期待値
+  prob <- pnorm(mu, 0, sigma)   #購買確率
+  prob[prob==1] <- 0.9999999; prob[prob==0] <- 0.0000001
+  LL <- sum(y*log(prob) + (1-y)*log(1-prob))   #対数尤度
+  print(c(LL, LLst))
+}
 
 
