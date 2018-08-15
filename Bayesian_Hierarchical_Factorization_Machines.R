@@ -275,10 +275,10 @@ rtnorm <- function(mu, sigma, a, b){
 
 ##アルゴリズムの設定
 LL1 <- -100000000   #対数尤度の初期値
-R <- 2000
+R <- 1000
 keep <- 2  
 iter <- 0
-burnin <- 500/keep
+burnin <- 100
 disp <- 10
 
 ##インデックスを設定
@@ -380,6 +380,22 @@ for(j in 1:m){
 }
 z_vec <- as.numeric(z_vec)
 
+##パラメータの格納用配列
+#モデルパラメータの格納用配列
+d <- 0
+THETA_X <- array(0, dim=c(hh, k, R/keep))
+THETA_U <- array(0, dim=c(hh, s1, R/keep))
+THETA_V <- array(0, dim=c(item, s1, R/keep))
+THETA_Z <- array(0, dim=c(hh, s2, k-1))
+
+#階層モデルの格納用配列
+ALPHA_X <- array(0, dim=c(ncol(u), k, R/keep))
+ALPHA_U <- array(0, dim=c(ncol(u), s1, R/keep))
+ALPHA_V <- array(0, dim=c(ncol(v), s1, R/keep))
+ALPHA_Z <- array(0, dim=c(ncol(u), s2, k-1, R/keep))
+COV_X <- array(0, dim=c(k, k, R/keep))
+COV_U <- COV_V <- array(0, dim=c(s1, s1, R/keep))
+COV_Z <- array(0, dim=c(s2, s2, k-1, R/keep))
 
 ##インデックスとデータの定数を設定
 #インデックスを設定
@@ -544,12 +560,40 @@ LLst <- sum(y*log(prob)) + sum((1-y)*log(1-prob))   #対数尤度
     Cov_z[, , j] <- out$Sigma; inv_Cov_z[, , j] <- solve(Cov_z[, , j])
   }
   
-  ##対数尤度を計算
-  mu <- user_mu + uv + z_vec   #潜在効用の期待値
-  prob <- pnorm(mu, 0, sigma)   #購買確率
-  prob[prob==1] <- 0.9999999; prob[prob==0] <- 0.0000001
-  LL <- sum(y*log(prob) + (1-y)*log(1-prob))   #対数尤度
-  print(c(LL, LLst))
+  ##パラメータの格納とサンプリング結果の格納
+  if(rp%%keep==0){
+    mkeep <- rp/keep
+
+    #モデルパラメータの格納
+    THETA_X[, , mkeep] <- theta_x
+    THETA_U[, , mkeep] <- theta_u
+    THETA_V[, , mkeep] <- theta_v
+    
+    #階層モデルの格納用配列
+    ALPHA_X[, , mkeep] <- alpha_x
+    ALPHA_U[, , mkeep] <- alpha_u
+    ALPHA_V[, , mkeep] <- alpha_v
+    ALPHA_Z[, , , mkeep] <- alpha_z
+    COV_X[, , mkeep] <- Cov_x
+    COV_U[, , mkeep] <- Cov_u
+    COV_V[, , mkeep] <- Cov_v
+    COV_Z[, , , mkeep] <- Cov_z
+    
+    if(rp >= burnin){
+      d <- d + 1
+      THETA_Z <- THETA_Z + theta_z
+    }
+  }
+  
+  if(rp%%disp==0){
+    #対数尤度を計算
+    mu <- user_mu + uv + z_vec   #潜在効用の期待値
+    prob <- pnorm(mu, 0, sigma)   #購買確率
+    prob[prob==1] <- 0.9999999; prob[prob==0] <- 0.0000001
+    LL <- sum(y*log(prob) + (1-y)*log(1-prob))   #対数尤度
+    
+    #サンプリング結果の表示
+    print(rp)
+    print(c(LL, LLst))
+  }
 }
-
-
