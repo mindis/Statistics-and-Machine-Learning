@@ -20,7 +20,7 @@ library(lattice)
 ####データの発生####
 ##データの設定
 N <- 2000
-beta <- 0.4   
+beta <- 0.5   
 sigma <- 1.0
 x <- rep(1, N)
 
@@ -33,11 +33,11 @@ n1 <- length(index_y1); n0 <- length(index_y0)
 ####ギブスサンプラーでパラメータをサンプリング####
 ##MCMCの設定
 R <- 1000
-beta <- 0.4   #初期値
+beta <- 0   #初期値
 BETA <- rep(0, R)   #パラメータの格納用配列
 
 ##パラメータをサンプリング
-for(rp in 1:1000){
+for(rp in 1:100000){
   mu <- x * beta
   prob <- exp(mu) / (1 + exp(mu))
   
@@ -46,12 +46,14 @@ for(rp in 1:1000){
   r[index_y0] <- runif(n0, prob[index_y0], 1)
   logit <- log(r / (1-r))
   
-  u <- rep(0, N)
-  u[index_y1] <- extraDistr::rtnorm(n1, 0, sigma, a=logit[index_y1], b=100)
-  u[index_y0] <- extraDistr::rtnorm(n0, 0, sigma, a=-100, b=logit[index_y0])
-  beta <- mean(u)
+  a <- max(logit[index_y1])
+  b <- min(logit[index_y0])
+  beta <- extraDistr::rtnorm(1, 0, 1, a, b)
   BETA[rp] <- beta
 }
+beta
+plot(1:rp, BETA, type="l")
+
 
 mean(u[index_y1])
 mean(u[index_y0])
