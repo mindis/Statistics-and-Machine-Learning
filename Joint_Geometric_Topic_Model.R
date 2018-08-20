@@ -84,7 +84,7 @@ for(rp in 1:1000){
   #ユーザーと場所のユークリッド距離
   d0 <- sqrt(rowSums((geo_user[geo_id01, ] - geo_item[geo_id02, ])^2))
   hist(d0, breaks=50, xlab="ユークリッド距離", main="2地点間のユークリッド距離の分布", col="grey")
-  
+  matrix(d0, nrow=hh, ncol=item, byrow=T)
   
   ##パラメータを生成
   #トピック分布を生成
@@ -92,13 +92,13 @@ for(rp in 1:1000){
   theta <- thetat <- extraDistr::rdirichlet(hh, alpha1)
   
   #場所分布の生成
-  alpha2 <- 1.75
+  alpha2 <- 2.0
   beta <- betat <- 1.0   #バンド幅のパラメータ
   phi <- phit <- mvrnorm(k, rep(0, item), alpha2^2*diag(item))
   
   
   ##応答変数を生成
-  Z_list <- V_list <- d_list <- list()
+  Z_list <- V_list <- d_list <- prob_list <- list()
   VX <- matrix(0, nrow=hh, ncol=item); storage.mode(VX) <- "integer"
   
   for(i in 1:hh){
@@ -110,12 +110,15 @@ for(rp in 1:1000){
     par <- exp(phi[z_vec, ]) * matrix(exp(-beta/2 * d0[geo_index[[i]]]), nrow=w[i], ncol=item)
     prob <- par / rowSums(par)
     
+    hist(exp(-beta/2 * d0[geo_index[[i]]]))
+    
     #訪問した場所を生成
     v <- rmnom(w[i], 1, prob)
     v_vec <- as.numeric(v %*% 1:item)
-     
+    
     #データを格納
     d_list[[i]] <- d0[geo_index[[i]]][v_vec]
+    prob_list[[i]] <- rowSums(prob * v)  
     Z_list[[i]] <- z
     V_list[[i]] <- v_vec
     VX[i, ] <- colSums(v)
@@ -126,12 +129,100 @@ for(rp in 1:1000){
 
 #リストを変換
 d <- unlist(d_list)
+prob <- unlist(prob_list)
 Z <- do.call(rbind, Z_list); storage.mode(Z) <- "integer"
 v <- unlist(V_list)
 sparse_data <- sparseMatrix(i=1:f, j=v, x=rep(1, f), dims=c(f, item))
 sparse_data_T <- t(sparse_data)
 
+
 #データの可視化
 plot(geo_user, xlab="経度", ylab="緯度", main="ユーザーの場所集合の分布") 
 plot(geo_item, xlab="経度", ylab="緯度", main="スポットの分布")
 hist(d0, breaks=50, xlab="ユークリッド距離", main="2地点間のユークリッド距離の分布", col="grey")
+
+
+####EMアルゴリズムでJoint Geometric Topic Modelを推定####
+##単語ごとに尤度と負担率を計算する関数
+burden_fr <- function(theta, phi, wd, w, k){
+  #負担係数を計算
+  Bur <- theta[w, ] * t(phi)[wd, ]   #尤度
+  Br <- Bur / rowSums(Bur)   #負担率
+  r <- colSums(Br) / sum(Br)   #混合率
+  bval <- list(Br=Br, Bur=Bur, r=r)
+  return(bval)
+}
+
+##対数尤度の場所分布での勾配ベクトル
+
+
+
+##インデックスを設定
+v_index <- v_vec <- d_vec <- list()
+for(i in 1:hh){
+  d_vec[[i]] <- rep(1, length(d_index[[i]]))
+}
+for(j in 1:item){
+  v_index[[j]] <- which(v==j)
+  v_vec[[j]] <- rep(1, length(v_index[[j]]))
+}
+
+##パラメータの真値
+beta <- betat 
+theta <- thetat
+phi <- phit
+
+##場所の選択確率の初期値
+#パラメータを設定
+phi_par <- t(exp(phi))
+d_par <- exp(-beta/2 * d); d_par_matrix <- matrix(d_par, nrow=f, ncol=item)
+denom_par <- d_par_matrix %*% phi_par   #分母を設定
+rm(d_par_matrix)
+
+#トピックごとに選択確率を算出
+prob_spot <- (phi_par[v, ] * d_par) / denom_par
+
+
+####EMアルゴリズムでパラメータを推定####
+##Eステップでトピック選択確率を算出
+Lho <- theta[d_id, ] * prob_spot   #尤度関数
+prob_topic <- Lho / as.numeric(Lho %*% rep(1, k))   #トピック選択確率
+prob_topic_T <- t(prob_topic)
+
+
+##Mステップでパラメータを推定
+##トピック分布のパラメータを推定
+#ユーザーごとにトピック割当を設定
+wsum <- matrix(0, nrow=hh, ncol=k) 
+for(i in 1:hh){
+  wsum[i, ] <- prob_topic_T[, d_index[[i]], drop=FALSE] %*% d_vec[[i]]
+}
+#トピック分布を更新
+theta <- wsum / w   
+
+
+##準ニュートン法で場所分布のパラメータを推定
+
+
+j <- 1
+d_par <- exp(-beta/2 * d); d_par_matrix <- matrix(d_par, nrow=f, ncol=item)
+d
+
+#パラメータを設定
+phi_par <- exp(phi[j, ])
+denom_par <- d_par_matrix %*% phi_par   #分母を設定
+prob_spot <- (phi_par[v] * d_par) / denom_par   #トピックごとに選択確率を算出
+
+
+
+(phi_par[v][v_index[[j]]] * d_par[v_index[[j]]]) / denom_par[v_index[[j]]]
+
+
+v_par <- as.numeric(prob_topic_T[j, v_index[[j]]] %*% v_vec[[j]])
+
+prob_topic_T[j, v_index[[j]]]
+prob_spot[v_index[[j]], ]
+
+
+prob_topic * prob_spot
+
