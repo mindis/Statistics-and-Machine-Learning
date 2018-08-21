@@ -107,9 +107,8 @@ for(rp in 1:1000){
     z_vec <- as.numeric(z %*% 1:k)
     
     #訪問確率を決定
-    par <- exp(phi[z_vec, ]) * matrix(exp(-beta/2 * d0[geo_index[[i]]]), nrow=w[i], ncol=item)
+    par <- exp(phi[z_vec, ]) * matrix(exp(-beta/2 * d0[geo_index[[i]]]), nrow=w[i], ncol=item, byrow=T)
     prob <- par / rowSums(par)
-    
     hist(exp(-beta/2 * d0[geo_index[[i]]]))
     
     #訪問した場所を生成
@@ -175,9 +174,9 @@ phi <- phit
 ##場所の選択確率の初期値
 #パラメータを設定
 phi_par <- t(exp(phi))
-d_par <- exp(-beta/2 * d); d_par_matrix <- matrix(d_par, nrow=f, ncol=item)
-denom_par <- d_par_matrix %*% phi_par   #分母を設定
-rm(d_par_matrix)
+d_par <- exp(-beta/2 * d)
+d_par_matrix <- matrix(exp(-beta/2 * d0), nrow=hh, ncol=item, byrow=T)
+denom_par <- d_par_matrix[d_id, ] %*% phi_par   #分母を設定
 
 #トピックごとに選択確率を算出
 prob_spot <- (phi_par[v, ] * d_par) / denom_par
@@ -189,7 +188,6 @@ Lho <- theta[d_id, ] * prob_spot   #尤度関数
 prob_topic <- Lho / as.numeric(Lho %*% rep(1, k))   #トピック選択確率
 prob_topic_T <- t(prob_topic)
 
-
 ##Mステップでパラメータを推定
 ##トピック分布のパラメータを推定
 #ユーザーごとにトピック割当を設定
@@ -200,13 +198,11 @@ for(i in 1:hh){
 #トピック分布を更新
 theta <- wsum / w   
 
-
 ##準ニュートン法で場所分布のパラメータを推定
+sum(prob_topic[, 1])
 
+prob_spot[, 1]
 
-j <- 1
-d_par <- exp(-beta/2 * d); d_par_matrix <- matrix(d_par, nrow=f, ncol=item)
-d
 
 #パラメータを設定
 phi_par <- exp(phi[j, ])
