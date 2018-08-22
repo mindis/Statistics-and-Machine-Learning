@@ -94,7 +94,7 @@ for(rp in 1:1000){
   #場所分布の生成
   alpha2 <- 2.0
   beta <- betat <- 1.0   #バンド幅のパラメータ
-  phi <- phit <- mvrnorm(k, rep(0, item), alpha2^2*diag(item))
+  phi <- phit <- cbind(0, mvrnorm(k, rep(0, item-1), alpha2^2*diag(item-1)))
   
   
   ##応答変数を生成
@@ -176,7 +176,7 @@ phi <- phit
 phi_par <- t(exp(phi))
 d_par <- exp(-beta/2 * d)
 d_par_matrix <- matrix(exp(-beta/2 * d0), nrow=hh, ncol=item, byrow=T)
-denom_par <- d_par_matrix[d_id, ] %*% phi_par   #分母を設定
+denom_par <- (d_par_matrix %*% phi_par)[d_id, ]   #分母を設定
 
 #トピックごとに選択確率を算出
 prob_spot <- (phi_par[v, ] * d_par) / denom_par
@@ -199,26 +199,56 @@ for(i in 1:hh){
 theta <- wsum / w   
 
 ##準ニュートン法で場所分布のパラメータを推定
-sum(prob_topic[, 1])
-
-prob_spot[, 1]
-
 
 #パラメータを設定
-phi_par <- exp(phi[j, ])
-denom_par <- d_par_matrix %*% phi_par   #分母を設定
+phi <- rnorm(item, 0, 1)
+phi_par <- t(exp(phi))
+denom_par <- (d_par_matrix %*% phi_par)[d_id, ]   #分母を設定
 prob_spot <- (phi_par[v] * d_par) / denom_par   #トピックごとに選択確率を算出
 
+Data <- as.matrix(sparse_data)
+storage.mode(Data) <- "integer"
+
+gradient <- function(x, v, theta, prob_topic, d_par_matrix, d_id, j){
+  #パラメータを設定
+  phi_par <- exp(c(0, x))
+  
+  #場所選択確率を設定
+  denom_par <- (d_par_matrix %*% phi_par)[d_id, ]   #分母を設定
+  prob_spot <- (phi_par[v] * d_par) / denom_par   #トピックごとに選択確率
+  
+  sc <- -colSums(prob_topic[, j] * (Data - prob_spot))[-1]
+  return(sc)
+}
+j <- 1
+gradient(phit[j, -1], v, theta, prob_topic, d_par_matrix, d_id, j)
 
 
-(phi_par[v][v_index[[j]]] * d_par[v_index[[j]]]) / denom_par[v_index[[j]]]
+j <- 1
+rowSums(prob_topic_T[, v_index[[j]]])
+rowSums(prob_topic_T[, v_index[[j]]]*t(prob_spot)[, v_index[[j]]])
 
 
-v_par <- as.numeric(prob_topic_T[j, v_index[[j]]] %*% v_vec[[j]])
+##完全データの対数尤度の和を算出する関数
+loglike <- function(x, v, theta, prob_topic, d_par_matrix, d_id, j){
+  #パラメータを設定
+  phi_par <- exp(rbind(0, matrix(x, nrow=item-1, ncol=k)))
+  
+  #場所選択確率を設定
+  denom_par <- (d_par_matrix %*% phi_par)[d_id, ]   #分母を設定
+  prob_spot <- (phi_par[v, ] * d_par) / denom_par   #トピックごとに選択確率
+  
+  #完全データの対数尤度の和
+  LL <- sum(prob_topic * log(theta[d_id, ] * prob_spot))
+  return(LL)
+}
 
-prob_topic_T[j, v_index[[j]]]
-prob_spot[v_index[[j]], ]
+x <- mvrnorm(k, rep(0, item), 0.01 * diag(item))
+as.numeric(t(x[, -1]))
+
+x <- as.numeric(t(phit[, -1]))
+res <- optim(x, loglike, gr=NULL, v, theta, prob_topic, d_par_matrix, d_id, j, method="Nelder-Mead", hessian=FALSE, 
+             control=list(fnscale=-1, trace=TRUE))
 
 
-prob_topic * prob_spot
-
+gradient(res$par, v, theta, prob_topic, d_par_matrix, d_id, j)
