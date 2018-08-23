@@ -223,10 +223,33 @@ gradient <- function(x, v, theta, prob_topic, d_par_matrix, d_id, j){
 j <- 1
 gradient(phit[j, -1], v, theta, prob_topic, d_par_matrix, d_id, j)
 
+#ユーザーと場所の全パターンでの場所選択確率
+denom_par0 <- exp(phi)[rep(1, hh), ] * matrix(exp(-beta/2 * d0), nrow=hh, nco=item, byrow=T)
+prob_spot0 <- denom_par0 / as.numeric(denom_par0 %*% rep(1, item))
+
+system.time(as.matrix(sparse_data) - prob_spot0[d_id, ])
+
+
+for(i in 1:nrow(sparse_data)){
+  1 - prob_spot0[d_id[i], v[i]]
+  0 - prob_spot0[d_id[i], -v[i]]
+}
+prob_spot0[d_id[1:2], v[1:2]]
+
+prob_spot0[d_id[1], v[1]]
+prob_spot0[d_id[2], v[2]]
+
+prob_spot0[]
+
+system.time(prob_spot0[d_id, ])
+
+
 
 j <- 1
 rowSums(prob_topic_T[, v_index[[j]]])
 rowSums(prob_topic_T[, v_index[[j]]]*t(prob_spot)[, v_index[[j]]])
+
+
 
 
 ##完全データの対数尤度の和を算出する関数
@@ -242,6 +265,8 @@ loglike <- function(x, v, theta, prob_topic, d_par_matrix, d_id, j){
   LL <- sum(prob_topic * log(theta[d_id, ] * prob_spot))
   return(LL)
 }
+
+
 
 x <- mvrnorm(k, rep(0, item), 0.01 * diag(item))
 as.numeric(t(x[, -1]))
