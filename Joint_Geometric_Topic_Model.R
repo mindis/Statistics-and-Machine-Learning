@@ -19,8 +19,8 @@ library(ggplot2)
 ####データの発生####
 ##データの発生
 k <- 20   #トピック数
-hh <- 5000   #ユーザー数
-item <- 1500   #場所数
+hh <- 2000   #ユーザー数
+item <- 1000   #場所数
 w <- rtpois(hh, rgamma(item, 25, 0.25), a=1, b=Inf)   #訪問数
 f <- sum(w)   #総訪問数
 
@@ -109,7 +109,6 @@ for(rp in 1:1000){
     #訪問確率を決定
     par <- exp(phi[z_vec, ]) * matrix(exp(-beta/2 * d0[geo_index[[i]]]), nrow=w[i], ncol=item, byrow=T)
     prob <- par / rowSums(par)
-    hist(exp(-beta/2 * d0[geo_index[[i]]]))
     
     #訪問した場所を生成
     v <- rmnom(w[i], 1, prob)
@@ -152,11 +151,35 @@ burden_fr <- function(theta, phi, wd, w, k){
   return(bval)
 }
 
-##対数尤度の場所分布での勾配ベクトル
+##完全データの対数尤度の和を算出する関数
+loglike <- function(x, v, Data, theta, prob_topic, d_par_matrix, d_id, j){
+  #パラメータを設定
+  phi_par <- exp(c(0, x))
+  
+  #場所選択確率を設定
+  denom_par <- (d_par_matrix %*% phi_par)[d_id, ]   #分母を設定
+  prob_spot <- (phi_par[v] * d_par) / denom_par   #トピックごとに選択確率
+  
+  #完全データの対数尤度の和
+  LL <- sum(prob_topic[, j] * log(theta[d_id, j] * prob_spot))
+  return(LL)
+}
 
+gradient <- function(x, v, Data, theta, prob_topic, d_par_matrix, d_id, j){
+  #パラメータを設定
+  phi_par <- exp(c(0, x))
+  
+  #場所選択確率を設定
+  denom_par <- (d_par_matrix0 * matrix(phi_par, nrow=hh, ncol=item, byrow=T))   #分母を設定
+  prob_spot <- denom_par[d_id, ] / rowSums(denom_par)[d_id]   #トピックごとに選択確率
+  
+  #勾配ベクトルを算出
+  sc <- colSums(prob_topic[, j] * (Data - prob_spot))[-1]
+  return(sc)
+}
 
-
-##インデックスを設定
+##インデックスとデータを設定
+#インデックスの設定
 v_index <- v_vec <- d_vec <- list()
 for(i in 1:hh){
   d_vec[[i]] <- rep(1, length(d_index[[i]]))
@@ -166,10 +189,19 @@ for(j in 1:item){
   v_vec[[j]] <- rep(1, length(v_index[[j]]))
 }
 
+#データの設定
+Data <- as.matrix(sparse_data); storage.mode(Data) <- "integer"
+d_par_matrix0 <- matrix(d0, nrow=hh, ncol=item, byrow=T)
+  
 ##パラメータの真値
 beta <- betat 
 theta <- thetat
 phi <- phit
+
+##パラメータの初期値
+beta <- 1.0
+theta <- extraDistr::rdirichlet(hh, rep(1.0, k))
+phi <- cbind(0, mvrnorm(k, rep(0, item-1), 0.1 * diag(item-1)))
 
 ##場所の選択確率の初期値
 #パラメータを設定
@@ -182,98 +214,54 @@ denom_par <- (d_par_matrix %*% phi_par)[d_id, ]   #分母を設定
 prob_spot <- (phi_par[v, ] * d_par) / denom_par
 
 
+##更新ステータス
+LL1 <- -1000000000
+dl <- 100   #EMステップでの対数尤度の差の初期値
+tol <- 10.0
+iter <- 0 
+
 ####EMアルゴリズムでパラメータを推定####
-##Eステップでトピック選択確率を算出
-Lho <- theta[d_id, ] * prob_spot   #尤度関数
-prob_topic <- Lho / as.numeric(Lho %*% rep(1, k))   #トピック選択確率
-prob_topic_T <- t(prob_topic)
-
-##Mステップでパラメータを推定
-##トピック分布のパラメータを推定
-#ユーザーごとにトピック割当を設定
-wsum <- matrix(0, nrow=hh, ncol=k) 
-for(i in 1:hh){
-  wsum[i, ] <- prob_topic_T[, d_index[[i]], drop=FALSE] %*% d_vec[[i]]
-}
-#トピック分布を更新
-theta <- wsum / w   
-
-##準ニュートン法で場所分布のパラメータを推定
-
-#パラメータを設定
-phi <- rnorm(item, 0, 1)
-phi_par <- t(exp(phi))
-denom_par <- (d_par_matrix %*% phi_par)[d_id, ]   #分母を設定
-prob_spot <- (phi_par[v] * d_par) / denom_par   #トピックごとに選択確率を算出
-
-Data <- as.matrix(sparse_data)
-storage.mode(Data) <- "integer"
-
-gradient <- function(x, v, theta, prob_topic, d_par_matrix, d_id, j){
-  #パラメータを設定
-  phi_par <- exp(c(0, x))
+while(abs(dl) >= tol){ #dlがtol以上の場合は繰り返す
   
-  #場所選択確率を設定
+  ##Eステップでトピック選択確率を算出
+  Lho <- theta[d_id, ] * prob_spot   #尤度関数
+  prob_topic <- Lho / as.numeric(Lho %*% rep(1, k))   #トピック選択確率
+  prob_topic_T <- t(prob_topic)
+  
+
+  ##Mステップでトピック分布のパラメータを推定
+  #ユーザーごとにトピック割当を設定
+  wsum <- matrix(0, nrow=hh, ncol=k) 
+  for(i in 1:hh){
+    wsum[i, ] <- prob_topic_T[, d_index[[i]], drop=FALSE] %*% d_vec[[i]]
+  }
+  #トピック分布を更新
+  theta <- wsum / w   
+  
+  ##準ニュートン法で場所分布のパラメータを推定
+  #トピックごとにパラメータを更新
+  for(j in 1:k){
+    x <- phi[j, -1]
+    res <- optim(x, loglike, gr=gradient, v, Data, theta, prob_topic, d_par_matrix, d_id, j, 
+                 method="BFGS", hessian=FALSE, control=list(fnscale=-1, trace=FALSE, maxit=1))
+    phi[j, -1] <- res$par
+  }
+  
+  #場所選択確率を更新
+  phi_par <- t(exp(phi))
+  d_par <- exp(-beta/2 * d)
+  d_par_matrix <- matrix(exp(-beta/2 * d0), nrow=hh, ncol=item, byrow=T)
   denom_par <- (d_par_matrix %*% phi_par)[d_id, ]   #分母を設定
-  prob_spot <- (phi_par[v] * d_par) / denom_par   #トピックごとに選択確率
+  prob_spot <- (phi_par[v, ] * d_par) / denom_par   #トピックごとに選択確率を算出
   
-  sc <- -colSums(prob_topic[, j] * (Data - prob_spot))[-1]
-  return(sc)
-}
-j <- 1
-gradient(phit[j, -1], v, theta, prob_topic, d_par_matrix, d_id, j)
-
-#ユーザーと場所の全パターンでの場所選択確率
-denom_par0 <- exp(phi)[rep(1, hh), ] * matrix(exp(-beta/2 * d0), nrow=hh, nco=item, byrow=T)
-prob_spot0 <- denom_par0 / as.numeric(denom_par0 %*% rep(1, item))
-
-system.time(as.matrix(sparse_data) - prob_spot0[d_id, ])
-
-
-for(i in 1:nrow(sparse_data)){
-  1 - prob_spot0[d_id[i], v[i]]
-  0 - prob_spot0[d_id[i], -v[i]]
-}
-prob_spot0[d_id[1:2], v[1:2]]
-
-prob_spot0[d_id[1], v[1]]
-prob_spot0[d_id[2], v[2]]
-
-prob_spot0[]
-
-system.time(prob_spot0[d_id, ])
-
-
-
-j <- 1
-rowSums(prob_topic_T[, v_index[[j]]])
-rowSums(prob_topic_T[, v_index[[j]]]*t(prob_spot)[, v_index[[j]]])
-
-
-
-
-##完全データの対数尤度の和を算出する関数
-loglike <- function(x, v, theta, prob_topic, d_par_matrix, d_id, j){
-  #パラメータを設定
-  phi_par <- exp(rbind(0, matrix(x, nrow=item-1, ncol=k)))
   
-  #場所選択確率を設定
-  denom_par <- (d_par_matrix %*% phi_par)[d_id, ]   #分母を設定
-  prob_spot <- (phi_par[v, ] * d_par) / denom_par   #トピックごとに選択確率
-  
-  #完全データの対数尤度の和
-  LL <- sum(prob_topic * log(theta[d_id, ] * prob_spot))
-  return(LL)
+  ##対数尤度を更新
+  LL <- sum(log((theta[d_id, ] * prob_spot) %*% rep(1, k)))   #観測データの対数尤度
+  iter <- iter + 1
+  dl <- LL - LL1
+  LL1 <- LL
+  print(LL)
+  gc()
 }
 
 
-
-x <- mvrnorm(k, rep(0, item), 0.01 * diag(item))
-as.numeric(t(x[, -1]))
-
-x <- as.numeric(t(phit[, -1]))
-res <- optim(x, loglike, gr=NULL, v, theta, prob_topic, d_par_matrix, d_id, j, method="Nelder-Mead", hessian=FALSE, 
-             control=list(fnscale=-1, trace=TRUE))
-
-
-gradient(res$par, v, theta, prob_topic, d_par_matrix, d_id, j)
