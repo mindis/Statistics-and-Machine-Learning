@@ -24,6 +24,10 @@ hh <- 5000   #ユーザー数
 w <- rpois(hh, (rgamma(hh, 10, 0.15)))   #ユーザーごとのサンプル数
 f <- sum(w)   #総サンプル数
 
+##IDを設定
+u_id <- rep(1:hh, w)
+t_id <- as.numeric(unlist(tapply(1:f, u_id, rank)))
+
 ##素性ベクトルを生成
 m1 <- 2; m2 <- 3; m3 <- 4
 z1 <- matrix(runif(f*m1, 0, 1), nrow=f, ncol=m1)
@@ -49,34 +53,30 @@ u <- cbind(1, u1, u2, u3)   #データを結合
 
 ##テンソルを生成
 k1 <- 20; k2 <- 7; k3 <- 5
-X_list <- id_list <- no_list <- list()
+X_list <- list()
 N <- 0
 
 for(i in 1:hh){
   #パラメータを生成
   lambda <- runif(k1, 0.25, 3.0)
-  par1 <- extraDistr::rdirichlet(k2, rep(0.5, k2))
-  par2 <- extraDistr::rdirichlet(k3, rep(0.5, k3))
+  par1 <- extraDistr::rdirichlet(k1, rep(1.5, k2))
+  par2 <- extraDistr::rdirichlet(k1, rep(1.5, k3))
   
   #データを生成
   n <- w[i]*k1
-  x <- array(rpois(n, rep(lambda, w[i])) * rmnom(n, 1, par1), dim=c(w[i]*k1, k2, k3))   #1、2階層目のデータを生成
-  z <- rmnom(n, 1, par2)   #3階層目のデータを生成
-  for(j in 1:k3){
-    x[, , j] <- x[, , j] * z[, j]   #テンソルを生成
-  }
-  
-  #IDを生成
-  id <- rep(1:w[i], rep(k1, w[i]))
-  no <- rep(1:k1, w[i])
+  x1 <- matrix(rpois(n, rep(lambda, w[i])), nrow=w[i], ncol=k1, byrow=T)
+  x2 <- matrix(rmnom(n, 1, par1) %*% 1:k2, nrow=w[i], ncol=k1, byrow=T)
+  x3 <- matrix(rmnom(n, 1, par2) %*% 1:k3, nrow=w[i], ncol=k1, byrow=T)
+  x <- cbind(x1, x2, x3)
   
   #データを格納
   storage.mode(x) <- "integer"
   X_list[[i]] <- x
-  id_list[[i]] <- id
-  no_list[[i]] <- no
-  N <- N + dim(x)[1]
 }
+
+#リストを変換
+Data <- do.call(rbind, X_list)
+index_c <- matrix(1:ncol(Data), nrow=d, ncol=k1, byrow=T)
 
 
 ##パラメータを生成
@@ -115,4 +115,10 @@ for(j in 2:k3){
   theta3[j, , ] <- t(u %*% alpha3[, , j] + mvrnorm(hh, rep(0, r), Cov3[, , j]))
 }
 
+Data
+i <- 1
+X_list[[i]][, 1:20] %*% theta1[, , 1]
+a <- X_list[[i]][, index_c[2, ]]
+
+rowSums(theta2[a, , i])
 
