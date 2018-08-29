@@ -201,6 +201,26 @@ Cov1 <- Covt1
 Cov2 <- Covt2
 Cov3 <- Covt3
 
+#階層モデルの期待値を設定
+alpha_mu1 <- array(0, dim=c(hh, r, k1))
+inv_Cov1 <- array(0, dim=c(r, r, k1))
+for(j in 1:k1){
+  alpha_mu1[, , j] <- u %*% alpha1[, , j]
+  inv_Cov1[, , j] <- solve(Cov1[, , j])
+}
+alpha_mu2 <- array(0, dim=c(hh, r, k2))
+inv_Cov2 <- array(0, dim=c(r, r, k2))
+for(j in 1:k2){
+  alpha_mu2[, , j] <- u %*% alpha2[, , j]
+  inv_Cov2[, , j] <- solve(Cov2[, , j])
+}
+alpha_mu3 <- array(0, dim=c(hh, r, k3))
+inv_Cov3 <- array(0, dim=c(r, r, k1))
+for(j in 1:k3){
+  alpha_mu3[, , j] <- u %*% alpha3[, , j]
+  inv_Cov3[, , j] <- solve(Cov3[, , j])
+}
+
 #テンソルのパラメータ
 theta1 <- thetat1
 theta2 <- thetat2
@@ -209,7 +229,7 @@ theta3 <- thetat3
 #素性ベクトルのパラメータ
 beta <- betat
 sigma <- sigmat
-
+beta_mu <- as.numeric(z %*% beta)
 
 ##初期値の設定
 #1階層目のモデルのパラメータ
@@ -248,6 +268,7 @@ for(j in 1:k3){
 #素性ベクトルの初期値  
 beta <- solve(t(z) %*% z) %*% t(z) %*% y
 sigma <- sd(y - z %*% beta)
+beta_mu <- as.numeric(z %*% beta)
 
 
 ##パラメータの格納用配列
@@ -267,7 +288,86 @@ BETA <- matrix(0, nrow=R/keep, ncol=ncol(z))
 SIGAM <- rep(0, R/keep)
 gc(); gc()
 
+##データとインデックスの設定
+index_vec <- matrix(1:(k1*max(w)), nrow=max(w), ncol=k1, byrow=T)
+
+
+id_vec <- rep(1:f, rep(k1, f))
+y_vec <- y[id_vec]
 
 ####ギブスサンプリングでパラメータをサンプリング####
 ##テンソルのパラメータをサンプリング
+#モデル誤差から応答変数を設定
+er <- y - beta_mu
 
+for(i in 1:hh){
+  i <- 1
+  #データを抽出
+  er_vec <- er[id_list[[i]]]
+  x1 <- x1_vec[[i]]; x2 <- x2_vec[[i]]; x3 <- x3_vec[[i]]
+  gamma2 <- theta2[x2, , i] * theta3[x3, , i]
+  index <- allocation_vec[[i]]
+  index_w <- index_vec[1:w[i], ]
+  
+  ##1階層目のテンソルのパラメータをサンプリング
+  for(j in 1:k1){
+    #テンソルの設定
+    gamma1 <- theta1[, , i]; gamma1[j, ] <- 1
+    tensor_dt <- x1 * gamma1[index, ] * gamma2
+    tensor_mu <- as.numeric((matrix(tensor_dt %*% rep(1, r), nrow=w[i], ncol=k1, byrow=T)[, -j]) %*% rep(1, k1-1))
+    tensor_er <- er_vec - tensor_mu   #応答変数を設定
+    
+    #多変量正規分布のパラメータを設定
+    X <- tensor_dt[index_w[, j], ]   #入力変数を設定
+    Xy <- t(X) %*% tensor_er
+    inv_XXV <- solve(t(X) %*% X + inv_Cov1[, , j])
+    theta_mu <- inv_XXV %*% (Xy + inv_Cov1[, , j] %*% alpha_mu1[i, , j])   #多変量正規分布の平均ベクトル
+    
+    #多変量正規分布からパラメータをサンプリング
+    theta1[j, , i] <- mvrnorm(1, theta_mu, sigma^2*inv_XXV)
+  }
+  
+  ##2階層目のテンソルのパラメータをサンプリング
+  j <- 1
+  gamma2 <- theta1[index, , i] * theta3[x3, , i]
+  gamma1 <- theta2[, , i]; gamma1[j, ] <- 1
+  
+  tensor_dt <- x1 * gamma1[x2, ] * gamma2
+  matrix(tensor_dt %*% rep(1, r), nrow=w[i], ncol=k1) 
+  tensor_dt
+  
+  
+  
+  tensor_mu <- as.numeric((matrix(tensor_dt %*% rep(1, r), nrow=w[i], ncol=k1, byrow=T)[, -j]) %*% rep(1, k1-1))
+  tensor_er <- er_vec - tensor_mu   #応答変数を設定
+}
+
+
+for(i in 1:hh){
+  i <- 1
+  #データを抽出
+  er_vec <- er[id_list[[i]]]
+  x1 <- x1_vec[[i]]; x2 <- x2_vec[[i]]; x3 <- x3_vec[[i]]
+  gamma2 <- theta2[x2, , i] * theta3[x3, , i]
+  index <- allocation_vec[[i]]
+  index_w <- index_vec[1:w[i], ]
+  
+  for(j in 1:k1){
+    #テンソルの設定
+    gamma1 <- theta1[, , i]; gamma1[j, ] <- 1
+    tensor_dt <- x1 * gamma1[index, ] * gamma2
+    tensor_mu <- as.numeric((matrix(tensor_dt %*% rep(1, r), nrow=w[i], ncol=k1, byrow=T)[, -j]) %*% rep(1, k1-1))
+    tensor_er <- er_vec - tensor_mu   #応答変数を設定
+    
+    #多変量正規分布のパラメータを設定
+    X <- tensor_dt[index_w[, j], ]   #入力変数を設定
+    Xy <- t(X) %*% tensor_er
+    inv_XXV <- solve(t(X) %*% X + inv_Cov1[, , j])
+    theta_mu <- inv_XXV %*% (Xy + inv_Cov1[, , j] %*% alpha_mu1[i, , j])   #多変量正規分布の平均ベクトル
+    
+    #多変量正規分布からパラメータをサンプリング
+    theta1[j, , i] <- mvrnorm(1, theta_mu, sigma^2*inv_XXV)
+  }
+  
+  
+}
