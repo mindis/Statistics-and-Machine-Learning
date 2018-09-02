@@ -231,6 +231,7 @@ beta <- betat
 sigma <- sigmat
 beta_mu <- as.numeric(z %*% beta)
 
+
 ##初期値の設定
 #1階層目のモデルのパラメータ
 alpha1 <- array(0, dim=c(ncol(u), r, k1))
@@ -326,9 +327,35 @@ for(i in 1:hh){
     #多変量正規分布からパラメータをサンプリング
     theta1[j, , i] <- mvrnorm(1, theta_mu, sigma^2*inv_XXV)
   }
-  
+
   ##2階層目のテンソルのパラメータをサンプリング
-  j <- 1
+  Data2
+  index_x2 <- which(x2_vec[[i]]==1)
+  
+  gamma2 <- theta2[x2_vec[[i]], , i]
+  gamma2[index_x2, ] <- 0
+  tensor_dt <- x1_vec[[i]]*theta1[index, , i] * theta2[x3_vec[[i]], , i]
+  tensor_mu <- as.numeric(matrix(as.numeric((tensor_dt * gamma2) %*% rep(1, r)), nrow=w[i], ncol=k1, byrow=T) %*% rep(1, k1))  
+  tensor_er <- er_vec - tensor_mu
+  
+  index_dt2 <- which(Data2[id_list[[i]], ]==1)
+  data1 <- Data1[id_list[[i]], ]
+  data3 <- Data3[id_list[[i]], ]
+  data1[-index_dt2] <- 0
+  data3[-index_dt2] <- 0
+  
+  data1
+  data3
+
+  
+  tensor_er  
+  
+  index_x2
+  
+  tensor_dt[index_x2, ]
+  
+  Data1
+  
   gamma2 <- theta1[index, , i] * theta3[x3, , i]
   gamma1 <- theta2[, , i]; gamma1[j, ] <- 1
   
