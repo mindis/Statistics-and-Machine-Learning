@@ -17,10 +17,9 @@ library(lattice)
 ####データの発生####
 #set.seed(34027)
 ##データの設定
-hh <- 5000   #消費者数
-pt <- rtpois(hh, rgamma(hh, 15.0, 0.25), a=1, b=Inf)   #購買接触数
+hh <- 10000   #消費者数
+pt <- rtpois(hh, rgamma(hh, 15.0, 0.2), a=1, b=Inf)   #購買接触数
 hhpt <- sum(pt)   #全サンプル数
-
 
 #IDを設定
 u_id <- rep(1:hh, pt)
@@ -34,7 +33,7 @@ cont <- 4
 x1 <- matrix(runif(hhpt*cont, 0, 1), nrow=hhpt, ncol=cont) 
 
 #二値変数
-bin <- 3
+bin <- 4
 x2 <- matrix(0, nrow=hhpt, ncol=bin)
 for(j in 1:bin){
   prob <- runif(1, 0.2, 0.8)
@@ -42,7 +41,7 @@ for(j in 1:bin){
 }
 
 #多値変数
-multi <- 4
+multi <- 5
 x3 <- rmnom(hhpt, 1, extraDistr::rdirichlet(1, rep(2.5, multi))); x3 <- x3[, -which.min(colSums(x3))]
 
 #データの結合
@@ -75,7 +74,7 @@ k2 <- ncol(u)
 ##個体間回帰係数の設定
 #妥当な反応変数が出来るまで回帰係数を設定し直す
 repeat {
-
+  
   #階層モデルのパラメータを生成
   Cov <- Covt <- diag(runif(k1, 0.01, 0.2))
   theta <- thetat <-  matrix(rnorm(k1*k2, runif(k1*k2, -0.4, 0.3), 0.75), nrow=k2, ncol=k1)
@@ -105,7 +104,7 @@ cont <- 4
 x1 <- matrix(runif(hhpt*cont, 0, 1), nrow=hhpt, ncol=cont) 
 
 #二値変数
-bin <- 3
+bin <- 4
 x2 <- matrix(0, nrow=hhpt, ncol=bin)
 for(j in 1:bin){
   prob <- runif(1, 0.2, 0.8)
@@ -113,7 +112,7 @@ for(j in 1:bin){
 }
 
 #多値変数
-multi <- 4
+multi <- 5
 x3 <- rmnom(hhpt, 1, extraDistr::rdirichlet(1, rep(2.5, multi))); x3 <- x3[, -which.min(colSums(x3))]
 
 #データの結合
@@ -148,7 +147,7 @@ beta_test <- u_test %*% theta + mvrnorm(hh, rep(0, k1), Cov)
 #確率の発生
 logit <- as.numeric((x_test * beta_test[u_id, ]) %*% rep(1, k1))
 prob <- exp(logit) / (1 + exp(logit))
-  
+
 #応答変数を生成
 y_test <- rbinom(hhpt, 1, prob)
 
@@ -167,15 +166,12 @@ loglike <- function(beta, y, x, u_mu, inv_Cov, u_id, u_index, hh, k1){
   LLi_mvn <- -1/2 * as.numeric((er %*% inv_Cov * er) %*% rep(1, k1))
   
   #ユーザーごとの対数事後分布
-  LLi <- rep(0, hh)
-  for(i in 1:hh){
-    LLi[i] <- sum(LLi_logit[u_index[[i]]]) + LLi_mvn[i] 
-  }
+  LLi <- as.numeric(user_vec %*% LLi_logit) + LLi_mvn
   return(LLi)
 }
 
 ##ロジスティック-正規分布の対数事後分布の微分関数
-dloglike <- function(beta, y, x, u_mu, inv_Cov, hh, u_id, u_index, k1){
+dloglike <- function(beta, y, x, u_mu, inv_Cov, hh, u_id, u_index, user_vec, k1){
   #応答確率の設定
   mu <- exp(as.numeric((x * beta[u_id, ]) %*% rep(1, k1)))   #ロジットの指数関数
   prob <- mu / (1 + mu)   #確率の計算
@@ -184,21 +180,18 @@ dloglike <- function(beta, y, x, u_mu, inv_Cov, hh, u_id, u_index, k1){
   er <- beta - u_mu
   dlogit <- y*x - x*prob   #ロジスティック回帰の対数尤度の微分関数
   dmvn <- -t(inv_Cov %*% t(er))   #多変量正規分布の対数事前分布の微分関数
-
+  
   #対数事後分布の微分関数の和
-  LLd <- matrix(0, nrow=hh, ncol=k1)
-  for(i in 1:hh){
-    LLd[i, ] <- -(colSums(dlogit[u_index[[i]], ]) + dmvn[i, ])
-  }
+  LLd <- -as.matrix((user_vec %*% dlogit) + dmvn)
   return(LLd)
 }
 
 ##リープフロッグ法を解く関数
 leapfrog <- function(r, z, D, e, L) {
   leapfrog.step <- function(r, z, e){
-    r2 <- r  - e * D(z, y, x, u_mu, inv_Cov, hh, u_id, u_index, k1) / 2
+    r2 <- r  - e * D(z, y, x, u_mu, inv_Cov, hh, u_id, u_index, user_vec, k1) / 2
     z2 <- z + e * r2
-    r2 <- r2 - e * D(z2, y, x, u_mu, inv_Cov, hh, u_id, u_index, k1) / 2
+    r2 <- r2 - e * D(z2, y, x, u_mu, inv_Cov, hh, u_id, u_index, user_vec, k1) / 2
     list(r=r2, z=z2) # 1回の移動後の運動量と座標
   }
   leapfrog.result <- list(r=r, z=z)
@@ -223,7 +216,7 @@ u_index <- list()
 for(i in 1:hh){
   u_index[[i]] <- which(u_id==i)
 }
-
+user_vec <- sparseMatrix(sort(u_id), 1:hhpt, x=rep(1, hhpt), dims=c(hh, hhpt))
 
 ##事前分布の設定
 Deltabar <- matrix(0, nrow=k2, ncol=k1)   #階層モデルの回帰係数の事前分布の分散
@@ -291,7 +284,7 @@ for(rp in 1:R){
   flag <- as.numeric(alpha > rand)
   beta <- flag*betan + (1-flag)*betad
   
-
+  
   ##階層モデルのパラメータをサンプリング
   #多変量回帰モデルから階層モデルの回帰パラメータと分散をサンプリング
   out <- rmultireg(beta, u, Deltabar, ADelta, nu, V)
