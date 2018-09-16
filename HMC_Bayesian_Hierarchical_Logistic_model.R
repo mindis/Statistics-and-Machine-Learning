@@ -205,7 +205,7 @@ leapfrog <- function(r, z, D, e, L) {
 R <- 10000
 keep <- 2
 disp <- 10
-burnin <- 2000/keep
+burnin <- 1000/keep
 iter <- 0
 e <- 0.1
 L <- 3
