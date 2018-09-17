@@ -7,13 +7,13 @@ library(RMeCab)
 library(matrixStats)
 library(Matrix)
 library(bayesm)
-library(HMM)
 library(extraDistr)
 library(reshape2)
 library(dplyr)
 library(plyr)
 library(ggplot2)
 #set.seed(2506787)
+
 
 ####データの発生####
 ##データの設定
@@ -43,12 +43,9 @@ dir_id <- rep(1:d, dir_freq)   #ディレクトリID
 #単語数とIDを設定
 w <- rpois(d, rgamma(d, 75, 0.5))   #文書ごとの語彙数
 f <- sum(w)   #総単語数
-d_id <- rep(1:d, w)   #単語ID
-t_id <- c()
-for(i in 1:d){
-  t_id <- c(t_id, 1:w[i])
-}
-i_id <- rep(item_id, w)
+d_id <- rep(1:d, w)   #単語ごとの文書id
+t_id <- as.numeric(unlist(tapply(1:f, d_id, rank)))   #単語ごとの文書no
+v_id <- rep(item_id, w)   #単語ごとのアイテムid
 
 ##ディレクトリの割当を設定
 dir_n <- length(dir_id)
@@ -253,7 +250,7 @@ burden_fr <- function(theta, phi, wd, w, k){
 R <- 5000
 keep <- 2  
 iter <- 0
-burnin <- 1000
+burnin <- 1000/keep
 disp <- 10
 
 ##事前分布の設定
@@ -312,31 +309,18 @@ SEG23 <- matrix(0, nrow=f, ncol=k3)
 ##インデックスを設定
 #文書と単語のインデックスを設定
 dir_list <- dir_vec <- list()
-item_list <- item_vec <- list()
-doc_list <- doc_vec <- list()
-wd_list <- wd_vec <- list()
 freq_list <- list()
 directory_id0 <- paste(",", directory_id, ",", sep="")
 
-for(i in 1:d){
-  doc_list[[i]] <- which(d_id==i)
-  doc_vec[[i]] <- rep(1, length(doc_list[[i]]))
-}
 for(i in 1:dir){
   dir_list[[i]] <- which(str_detect(directory_id0, paste(",", as.character(i), ",", sep=""))==TRUE)
   dir_vec[[i]] <- rep(1, length(dir_list[[i]]))
 }
-for(i in 1:item){
-  item_list[[i]] <- which(i_id==i)
-  item_vec[[i]] <- rep(1, length(item_list[[i]]))
-}
-for(j in 1:v){
-  wd_list[[j]] <- which(wd==j)
-  wd_vec[[j]] <- rep(1, length(wd_list[[j]]))
-}
 for(j in 1:max_freq){
   freq_list[[j]] <- which(dir_freq==j)
 }
+d_vec <- sparseMatrix(sort(d_id), 1:f, x=rep(1, f), dims=c(d, f))
+v_vec <- sparseMatrix(sort(v_id), 1:f, x=rep(1, f), dims=c(item, f))
 vec1 <- rep(1, k1); vec2 <- rep(1, k2); vec3 <- rep(1, k3)
 
 ##対数尤度の基準値
@@ -349,7 +333,7 @@ for(rp in 1:R){
   ##文書の尤度と期待尤度を設定
   #ディレクトリ、アイテム、一般語の尤度
   Lho1 <- theta1[dir_v, ] * t(phi1)[wd_v, ]   #ディレクトリの尤度
-  Lho2 <- theta2[i_id, ] * t(phi2)[wd, ]   #アイテムの尤度
+  Lho2 <- theta2[v_id, ] * t(phi2)[wd, ]   #アイテムの尤度
   Lho3 <- matrix(theta3, nrow=f, ncol=k3, byrow=T) * t(phi3)[wd, ]   #一般語の尤度
   
   #ディレクトリの期待尤度
@@ -372,37 +356,33 @@ for(rp in 1:R){
   par_r <- lambda_r * par
   doc_prob <- par_r / rowSums(par_r)   #文書スイッチング変数の割当確率
   Zi11 <- rmnom(f, 1, doc_prob)   #文書スイッチング変数をサンプリング
-  Zi11_T <- t(Zi11)
+  
+  #割当ごとのインデックスを作成
   index_dir <- which(Zi11[, 1]==1)
   index_item <- which(Zi11[, 2]==1)
   index_general <- which(Zi11[, 3]==1)
   
   
   ##ディレクトリのスイッチング変数をサンプリング
-  #多項分布からディレクトリスイッチング変数をサンプリング「
-  dir_prob <- LLi1[index_dir, ] / rowSums(LLi1[index_dir, ])   #ディレクトリスイッチング変数の割当確率
+  #多項分布からディレクトリスイッチング変数をサンプリング
+  LLi_dir <- LLi1[index_dir, ]
+  dir_prob <- LLi_dir / as.numeric(LLi_dir %*% rep(1, a))   #ディレクトリスイッチング変数の割当確率
   Zi12 <- matrix(0, nrow=f, ncol=a)
   Zi12[index_dir, ] <- rmnom(length(index_dir), 1, dir_prob)   #ディレクトリスイッチング変数をサンプリング
-  Zi12_T <- t(Zi12)
   
   
   ##ディリクレ分布から混合率をサンプリング
-  rsum0 <- matrix(0, nrow=d, ncol=a)
-  dsum0 <- matrix(0, nrow=d, ncol=max_freq)
-  for(i in 1:d){
-    rsum0[i, ] <- Zi11_T[, doc_list[[i]]] %*% doc_vec[[i]]
-    if(dir_freq[i] > 0){
-      dsum0[i, ] <- Zi12_T[, doc_list[[i]]] %*% doc_vec[[i]]
-    }
-  }
-  rsum <- rsum0 + beta01; dsum <- dsum0 + beta02   #ディリクレ分布のパラメータ
+  #文書の混合率をサンプリング
+  rsum <- d_vec %*% Zi11 + beta01   #ディリクレ分布のパラメータ
   lambda <- extraDistr::rdirichlet(d, rsum)   #文書の混合率をサンプリング
+  
+  #ディレクトリの混合率をサンプリング
+  dsum <- d_vec %*% Zi12 + beta02
   for(j in 2:max_freq){   #ディレクトリの混合率をサンプリング
-    gamma[freq_list[[j]], 1:j] <- extraDistr::rdirichlet(length(freq_list[[j]]), dsum0[freq_list[[j]], 1:j] + beta02)
+    gamma[freq_list[[j]], 1:j] <- extraDistr::rdirichlet(length(freq_list[[j]]), dsum[freq_list[[j]], 1:j])
   }
+
   
-  
-  ##スイッチング変数を条件づけたトピックをサンプリング
   ##ディレクトリのトピックをサンプリング
   #ディレクトリのトピック尤度を設定
   index <- as.numeric((Zi12 * dir_matrix) %*% rep(1, max_freq))
@@ -412,53 +392,47 @@ for(rp in 1:R){
   Zi21 <- matrix(0, nrow=f, ncol=k1)
   dir_prob <- Lho1 / as.numeric(Lho1 %*% vec1)   #ディレクトリのトピックの割当確率
   Zi21[index_dir, ] <- rmnom(length(index_dir), 1, dir_prob)   #多項分布からトピックをサンプリング
-  Zi21_T <- t(Zi21)
   z21_vec <- as.numeric((Zi12 * dir_matrix) %*% rep(1, max_freq))   #ディレクトリ割当
-  
+  Zi21_T <- t(Zi21)
   
   ##アイテムのトピックをサンプリング
   #多項分布からトピックをサンプリング
   Zi22 <- matrix(0, nrow=f, ncol=k2)
   item_prob <- (Lho2 / as.numeric(Lho2 %*% vec2))[index_item, ]   #アイテムのトピックの割当確率
   Zi22[index_item, ] <- rmnom(length(index_item), 1, item_prob)   #多項分布からトピックをサンプリング
-  Zi22_T <- t(Zi22)
   
   ##一般語のトピックをサンプリング
   #多項分布からトピックをサンプリング
   Zi23 <- matrix(0, nrow=f, ncol=k3)
   general_prob <- (Lho3 / as.numeric(Lho3 %*% vec3))[index_general, ]   #一般語のトピックの割当確率
   Zi23[index_general, ] <- rmnom(length(index_general), 1, general_prob)   #多項分布からトピックをサンプリング
-  Zi23_T <- t(Zi23)
   
   
   ##トピック分布のパラメータをサンプリング
   #ディレクトリのトピック分布をサンプリング
   dsum0 <- matrix(0, nrow=dir, ncol=k1)
   for(i in 1:dir){
-    x <- z21_vec[dir_list[[i]]]; x[x!=i] <- 0; x[x==i] <- 1   
+    x <- z21_vec[dir_list[[i]]]
+    index <- which(x==i); x[-index] <- 0; x[index] <- 1   
     dsum0[i, ] <- Zi21_T[, dir_list[[i]], drop=FALSE] %*% x
   }
   dsum <- dsum0 + alpha01   #ディリクレ分布のパラメータ
   theta1 <- extraDistr::rdirichlet(dir, dsum)   #パラメータをサンプリング
   
   #アイテムのトピック分布をサンプリング
-  rsum0 <- matrix(0, nrow=item, ncol=k2)
-  for(i in 1:item){
-    rsum0[i, ] <- Zi22_T[, item_list[[i]], drop=FALSE] %*% item_vec[[i]]
-  }
-  rsum <- rsum0 + alpha01   #ディリクレ分布のパラメータ
+  rsum <- v_vec %*% Zi22 + alpha01   #ディリクレ分布のパラメータ
   theta2 <- extraDistr::rdirichlet(item, rsum)   #パラメータをサンプリング
   
   #一般語のトピック分布をサンプリング
-  gsum <- as.numeric(Zi23_T[, index_general, drop=FALSE] %*% rep(1, length(index_general))) + alpha01
+  gsum <- rep(1, length(index_general)) %*% Zi23[index_general, , drop=FALSE] + alpha01
   theta3 <- as.numeric(extraDistr::rdirichlet(1, gsum))   #パラメータをサンプリング
   
   
   ##単語分布のパラメータをサンプリング
   #ディリクレ分布のパラメータを推定
-  wsum1 <- (Zi21_T %*% sparse_data) + alpha02
-  wsum2 <- (Zi22_T %*% sparse_data) + alpha02
-  wsum3 <- (Zi23_T %*% sparse_data) + alpha02
+  wsum1 <- t(sparse_data_T %*% Zi21) + alpha02
+  wsum2 <- t(sparse_data_T %*% Zi22) + alpha02
+  wsum3 <- t(sparse_data_T %*% Zi23) + alpha02
   
   #ディリクレ分布からパラメータをサンプリング
   phi1 <- extraDistr::rdirichlet(k1, wsum1)
@@ -494,7 +468,7 @@ for(rp in 1:R){
     #対数尤度を計算
     index <- which(z21_vec > 0)
     LL1 <- sum(log((theta1[z21_vec, ] * t(phi1)[wd[index], ]) %*% vec1))   #ディレクトリの対数尤度
-    LL2 <- sum(log((theta2[i_id, ] * t(phi2)[wd, ])[index_item, ] %*% vec2))   #アイテムの対数尤度
+    LL2 <- sum(log((theta2[v_id, ] * t(phi2)[wd, ])[index_item, ] %*% vec2))   #アイテムの対数尤度
     LL3 <- sum(log((matrix(theta3, nrow=f, ncol=k3, byrow=T) * t(phi3)[wd, ])[index_general, ] %*% vec3))   #一般語の対数尤度
     LL <- sum(LL1 + LL2 + LL3)   #対数尤度の総和
     
