@@ -164,7 +164,7 @@ gc(); gc()
 ####ハミルトニアンモンテカルロ法でパラメータをサンプリング####
 ##対数事後分布を計算する関数
 #対数尤度を計算する関数
-loglike <- function(mu, uv, y, n, select, index){
+loglike <- function(mu, uv, y, hh, select, dt){
   
   #ロジットモデルの対数尤度
   logit_exp <- exp(mu + uv)   #ロジットの期待値の指数
@@ -172,10 +172,7 @@ loglike <- function(mu, uv, y, n, select, index){
   LLi_logit <- log(as.numeric((y * prob) %*% rep(1, select)))
   
   #ユーザーごとの対数尤度
-  LLi <- rep(0, n)
-  for(i in 1:n){
-    LLi[i] <- sum(LLi_logit[index[[i]]])
-  }
+  LLi <- as.numeric(dt %*% LLi_logit)
   return(LLi)
 }
 
@@ -187,7 +184,7 @@ dmv <- function(er, inv_Cov, k){
 
 ##素性ベクトルのサンプリングに必要な関数
 #素性ベクトルの対数事後分布の微分関数
-dloglike <- function(theta, uv, Data, y_vec, alpha_mu, inv_Cov, hh, hhpt, select, k1, user_id_vec){
+dloglike <- function(theta, uv, Data, y_vec, alpha_mu, inv_Cov, hh, hhpt, select, k1, user_id_vec, user_dt){
   
   #応答確率の設定
   logit_exp <- exp(matrix((Data * theta[user_id_vec, ]) %*% rep(1, k1), nrow=hhpt, ncol=select, byrow=T) + uv)
@@ -200,19 +197,16 @@ dloglike <- function(theta, uv, Data, y_vec, alpha_mu, inv_Cov, hh, hhpt, select
   dmvn <- -t(inv_Cov %*% t(er))   #多変量正規分布の対数事前分布の微分関数
 
   #対数事後分布の微分関数の和
-  LLd <- matrix(0, nrow=hh, ncol=k1)
-  for(i in 1:hh){
-    LLd[i, ] <- -(colSums(dlogit[u_vec_index[[i]], ]) + dmvn[i, ])
-  }
+  LLd <- -(user_dt %*% dlogit + dmvn)
   return(LLd)
 }
 
 #素性ベクトルのリープフロッグ法を解く関数
 leapfrog <- function(r, z, D, e, L) {
   leapfrog.step <- function(r, z, e){
-    r2 <- r  - e * D(z, uv, Data, y_vec, alpha_mu, inv_Cov, hh, hhpt, select, k1, user_id_vec) / 2
+    r2 <- r  - e * D(z, uv, Data, y_vec, alpha_mu, inv_Cov, hh, hhpt, select, k1, user_id_vec, user_dt) / 2
     z2 <- z + e * r2
-    r2 <- r2 - e * D(z2, uv, Data, y_vec, alpha_mu, inv_Cov, hh, hhpt, select, k1, user_id_vec) / 2
+    r2 <- r2 - e * D(z2, uv, Data, y_vec, alpha_mu, inv_Cov, hh, hhpt, select, k1, user_id_vec, user_dt) / 2
     list(r=r2, z=z2) # 1回の移動後の運動量と座標
   }
   leapfrog.result <- list(r=r, z=z)
@@ -224,12 +218,11 @@ leapfrog <- function(r, z, D, e, L) {
 
 ##ユーザーの特徴行列のサンプリングに必要な関数
 #ユーザーの行列分解の対数事後分布の微分関数
-dloglike_u <- function(theta_u, theta_v, mu, y, u_mu, inv_Cov_u, hh, hhpt, select, r, k2,
-                       user_id, item_id, u_index, allocation_index){
+dloglike_u <- function(theta_u, theta_dv, mu, y, u_mu, inv_Cov_u, hh, hhpt, select, r, k2,
+                       user_id, user_vec, allocation_index){
   
   #応答確率の設定
   uv <- matrix(0, nrow=hhpt, ncol=select)
-  theta_dv <- theta_v[item_id, ]
   uv_dt <- theta_u[user_id, ] * theta_dv
   for(j in 1:(select-1)){
     uv[, j] <- uv_dt[, allocation_index[j, ]] %*% rep(1, r)
@@ -241,24 +234,21 @@ dloglike_u <- function(theta_u, theta_v, mu, y, u_mu, inv_Cov_u, hh, hhpt, selec
   er <- theta_u - u_mu
   dlogit <- matrix(0, nrow=hhpt, ncol=k2)
   for(j in 1:(select-1)){
-    dlogit[, allocation_index[j, ]] <- (y[, j] - prob[, j]) * theta_dv[, allocation_index[j, ]]
+    dlogit[, allocation_index[j, ]] <- (y[, j] - prob[, j]) * theta_dv[, allocation_index[j, ]]   #ロジットの微分関数
   }
-  dmvn <- -t(inv_Cov_u %*% t(er))
+  dmvn <- -t(inv_Cov_u %*% t(er))   #多変量正規分布の微分関数
 
   #対数事後分布の微分関数の和
-  LLd <- matrix(0, nrow=hh, ncol=k2)
-  for(i in 1:hh){
-    LLd[i, ] <- -(colSums(dlogit[u_index[[i]], ]) + dmvn[i, ])
-  }
+  LLd <- -(as.matrix(user_vec %*% dlogit) + dmvn)
   return(LLd)
 }
 
 #ユーザーの行列分解のリープフロッグ法を解く関数
 leapfrog_u <- function(r, z, D, e, L) {
   leapfrog.step <- function(r, z, e){
-    r2 <- r  - e * D(z, theta_v, mu, y, u_mu, inv_Cov_u, hh, hhpt, select, g, k2, user_id, item_id, u_index, allocation_index) / 2
+    r2 <- r  - e * D(z, theta_dv, mu, y, u_mu, inv_Cov_u, hh, hhpt, select, g, k2, user_id, user_vec, allocation_index) / 2
     z2 <- z + e * r2
-    r2 <- r2 - e * D(z2, theta_v, mu, y, u_mu, inv_Cov_u, hh, hhpt, select, g, k2, user_id, item_id, u_index, allocation_index) / 2
+    r2 <- r2 - e * D(z2, theta_dv, mu, y, u_mu, inv_Cov_u, hh, hhpt, select, g, k2, user_id, user_vec, allocation_index) / 2
     list(r=r2, z=z2) # 1回の移動後の運動量と座標
   }
   leapfrog.result <- list(r=r, z=z)
@@ -270,12 +260,11 @@ leapfrog_u <- function(r, z, D, e, L) {
 
 ##アイテムの特徴行列のサンプリングに必要な関数
 #アイテムの行列分解の対数事後分布の微分関数
-dloglike_v <- function(theta_v, theta_u, mu, y, v_mu, inv_Cov_v, item, hhpt, select, r, k2,
-                       user_id, item_id, v_index, allocation_index){
+dloglike_v <- function(theta_v, theta_du, mu, y, v_mu, inv_Cov_v, item, hhpt, select, r, k2,
+                       item_id, item_vec, allocation_index){
   
   #応答確率の設定
   uv <- matrix(0, nrow=hhpt, ncol=select)
-  theta_du <- theta_u[user_id, ]
   uv_dt <- theta_du * theta_v[item_id, ]
   for(j in 1:(select-1)){
     uv[, j] <- uv_dt[, allocation_index[j, ]] %*% rep(1, r)
@@ -292,19 +281,16 @@ dloglike_v <- function(theta_v, theta_u, mu, y, v_mu, inv_Cov_v, item, hhpt, sel
   dmvn <- -t(inv_Cov_v %*% t(er))
   
   #対数事後分布の微分関数の和
-  LLd <- matrix(0, nrow=item, ncol=k2)
-  for(i in 1:item){
-    LLd[i, ] <- -(colSums(dlogit[v_index[[i]], ]) + dmvn[i, ])
-  }
+  LLd <- -(as.matrix(item_vec %*% dlogit) + dmvn)
   return(LLd)
 }
 
 #アイテムの行列分解のリープフロッグ法を解く関数
 leapfrog_v <- function(r, z, D, e, L) {
   leapfrog.step <- function(r, z, e){
-    r2 <- r  - e * D(z, theta_u, mu, y, v_mu, inv_Cov_v, item, hhpt, select, g, k2, user_id, item_id, v_index, allocation_index) / 2
+    r2 <- r  - e * D(z, theta_du, mu, y, v_mu, inv_Cov_v, item, hhpt, select, g, k2, item_id, item_vec, allocation_index) / 2
     z2 <- z + e * r2
-    r2 <- r2 - e * D(z2, theta_u, mu, y, v_mu, inv_Cov_v, item, hhpt, select, g, k2, user_id, item_id, v_index, allocation_index) / 2
+    r2 <- r2 - e * D(z2, theta_du, mu, y, v_mu, inv_Cov_v, item, hhpt, select, g, k2, item_id, item_vec, allocation_index) / 2
     list(r=r2, z=z2) # 1回の移動後の運動量と座標
   }
   leapfrog.result <- list(r=r, z=z)
@@ -328,14 +314,9 @@ L2 <- 5
 
 ##インデックスとデータの設定
 #インデックスの設定
-u_index <- u_vec_index <- v_index <- list()
-for(i in 1:hh){
-  u_index[[i]] <- which(user_id==i)
-  u_vec_index[[i]] <- which(user_id_vec==i)
-}
-for(j in 1:item){
-  v_index[[j]] <- which(item_id==j)
-}
+user_vec <- sparseMatrix(user_id, 1:hhpt, x=rep(1, hhpt), dims=c(hh, hhpt))
+user_dt <- sparseMatrix(user_id_vec, 1:length(user_id_vec), x=rep(1, length(user_id_vec)), dims=c(hh, length(user_id_vec)))
+item_vec <- sparseMatrix(item_id, 1:hhpt, x=rep(1, hhpt), dims=c(item, hhpt))
 
 #データの設定
 g <- r
@@ -446,7 +427,7 @@ for(rp in 1:R){
   #リープフロッグ法による1ステップ移動
   res <- leapfrog(rold, thetad, dloglike, e1, L1)
   rnew <- res$r
-  thetan <- res$z
+  thetan <- as.matrix(res$z)
   
   #ロジットのパラメータの設定
   mu_old <- matrix(as.numeric((Data * thetad[user_id_vec, ]) %*% rep(1, k1)), nrow=hhpt, ncol=select, byrow=T)   
@@ -455,8 +436,8 @@ for(rp in 1:R){
   er_new <- thetan - alpha_mu
   
   #移動前と移動後のハミルトニアン
-  Hnew <- -(loglike(mu_new, uv, y, hh, select, u_index) + dmv(er_new, inv_Cov, k1)) + as.numeric(rnew^2 %*% rep(1, k1))/2
-  Hold <- -(loglike(mu_old, uv, y, hh, select, u_index) + dmv(er_old, inv_Cov, k1)) + as.numeric(rold^2 %*% rep(1, k1))/2
+  Hnew <- -(loglike(mu_new, uv, y, hh, select, user_vec) + dmv(er_new, inv_Cov, k1)) + as.numeric(rnew^2 %*% rep(1, k1))/2
+  Hold <- -(loglike(mu_old, uv, y, hh, select, user_vec) + dmv(er_old, inv_Cov, k1)) + as.numeric(rold^2 %*% rep(1, k1))/2
   
   #HMC法によりパラメータの採択を決定
   rand <- runif(hh) #一様分布から乱数を発生
@@ -477,6 +458,7 @@ for(rp in 1:R){
   thetad_u <- theta_u
   
   #リープフロッグ法による1ステップ移動
+  theta_dv <- theta_v[item_id, ]
   res <- leapfrog_u(rold, thetad_u, dloglike_u, e1, L1)
   rnew <- res$r
   thetan_u <- res$z
@@ -484,7 +466,7 @@ for(rp in 1:R){
   #ロジットのパラメータの設定
   uv_old <- uv
   uv_new <- matrix(0, nrow=hhpt, ncol=select)
-  uv_dt <- thetan_u[user_id, ] * theta_v[item_id, ]
+  uv_dt <- thetan_u[user_id, ] * theta_dv
   for(j in 1:(select-1)){
     uv_new[, j] <- uv_dt[, allocation_index[j, ]] %*% rep(1, r)
   }
@@ -492,8 +474,8 @@ for(rp in 1:R){
   er_new <- thetan_u - u_mu
   
   #移動前と移動後のハミルトニアン
-  Hnew <- -(loglike(mu, uv_new, y, hh, select, u_index) + dmv(er_new, inv_Cov_u, k2)) + as.numeric(rnew^2 %*% rep(1, k2))/2
-  Hold <- -(loglike(mu, uv_old, y, hh, select, u_index) + dmv(er_old, inv_Cov_u, k2)) + as.numeric(rold^2 %*% rep(1, k2))/2
+  Hnew <- -(loglike(mu, uv_new, y, hh, select, user_vec) + dmv(er_new, inv_Cov_u, k2)) + as.numeric(rnew^2 %*% rep(1, k2))/2
+  Hold <- -(loglike(mu, uv_old, y, hh, select, user_vec) + dmv(er_old, inv_Cov_u, k2)) + as.numeric(rold^2 %*% rep(1, k2))/2
   
   #HMC法によりパラメータの採択を決定
   rand <- runif(hh) #一様分布から乱数を発生
@@ -506,7 +488,7 @@ for(rp in 1:R){
   
   #行列分解のパラメータを更新
   theta_du <- theta_u[user_id, ]
-  uv_dt <- theta_du * theta_v[item_id, ]
+  uv_dt <- theta_du * theta_dv
   uv <- matrix(0, nrow=hhpt, ncol=select)
   for(j in 1:(select-1)){
     uv[, j] <- uv_dt[, allocation_index[j, ]] %*% rep(1, r)
@@ -519,6 +501,7 @@ for(rp in 1:R){
   thetad_v <- theta_v
   
   #リープフロッグ法による1ステップ移動
+  theta_du <- theta_u[user_id, ]
   res <- leapfrog_v(rold, thetad_v, dloglike_v, e2, L2)
   rnew <- res$r
   thetan_v <- res$z
@@ -534,8 +517,8 @@ for(rp in 1:R){
   er_new <- thetan_v - v_mu
   
   #移動前と移動後のハミルトニアン
-  Hnew <- -(loglike(mu, uv_new, y, item, select, v_index) + dmv(er_new, inv_Cov_v, k2)) + as.numeric(rnew^2 %*% rep(1, k2))/2
-  Hold <- -(loglike(mu, uv_old, y, item, select, v_index) + dmv(er_old, inv_Cov_v, k2)) + as.numeric(rold^2 %*% rep(1, k2))/2
+  Hnew <- -(loglike(mu, uv_new, y, item, select, item_vec) + dmv(er_new, inv_Cov_v, k2)) + as.numeric(rnew^2 %*% rep(1, k2))/2
+  Hold <- -(loglike(mu, uv_old, y, item, select, item_vec) + dmv(er_old, inv_Cov_v, k2)) + as.numeric(rold^2 %*% rep(1, k2))/2
   
   #HMC法によりパラメータの採択を決定
   rand <- runif(item)   #一様分布から乱数を発生
