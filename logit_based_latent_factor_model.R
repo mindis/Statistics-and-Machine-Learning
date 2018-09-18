@@ -298,15 +298,7 @@ dloglike_v <- function(theta_v, mu, theta_u, y, mu_v, inv_Cov, item_vec, user_id
   er <- theta_v - mu_v
   dlogit <- y*theta_vec - theta_vec*prob   #ロジスティック回帰の対数尤度の微分関数
   dmvn <- -t(inv_Cov %*% t(er))   #多変量正規分布の対数事前分布の微分関数
-  
-  LLd1 <- item_vec %*% dlogit
-  LLd2 <- matrix(0, nrow=item, ncol=k)
-  for(j in 1:item){
-    LLd2[j, ] <- colSums(dlogit[item_list[[j]], ])
-  }
-  round(cbind(LLd1, LLd2), 2)
-  
-  
+
   #対数事後分布の微分関数の和
   LLd <- -as.matrix(item_vec %*% dlogit + dmvn)
   return(LLd)
@@ -347,13 +339,13 @@ inv_tau <- solve(100 * diag(ncol(x)))
 #ユーザーの階層モデルの事前分布
 Deltabar1 <- matrix(rep(0, ncol(u)*k), nrow=ncol(u), ncol=k)   #階層モデルの回帰係数の事前分布の分散
 ADelta1 <- 0.01 * diag(rep(1, ncol(u)))   #階層モデルの回帰係数の事前分布の分散
-nu1 <- k + 1   #逆ウィシャート分布の自由度
+nu1 <- 1   #逆ウィシャート分布の自由度
 V1 <- nu1 * diag(rep(1, k)) #逆ウィシャート分布のパラメータ
 
 #アイテムの階層モデルの事前分布
 Deltabar2 <- matrix(rep(0, ncol(v)*k), nrow=ncol(v), ncol=k)   #階層モデルの回帰係数の事前分布の分散
 ADelta2 <- 0.01 * diag(rep(1, ncol(v)))   #階層モデルの回帰係数の事前分布の分散
-nu2 <- k + 1   #逆ウィシャート分布の自由度
+nu2 <- 1   #逆ウィシャート分布の自由度
 V2 <- nu2 * diag(rep(1, k)) #逆ウィシャート分布のパラメータ
 
 
