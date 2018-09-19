@@ -16,7 +16,7 @@ library(ggplot2)
 
 ####データの発生####
 ##データの設定
-hh <- 30000   #サンプル数
+hh <- 100000   #サンプル数
 k <- 11   #説明変数数
 
 
@@ -49,18 +49,28 @@ hist(y, breaks=25, col="grey", main="アクセス頻度の分布", xlab="アクセス頻度")
 
 
 ####最尤法で切断ポアソン回帰モデルを推定####
-##切断ポアソン回帰モデルの対数尤度
+##切断ポアソン回帰モデルの推定のための関数
+#切断ポアソン回帰モデルの対数尤度
 loglike <- function(beta, y, x, y_lfactorial){
   lambda <- as.numeric(exp(x %*% beta))   #期待値
   LL <- sum(y*log(lambda) - lambda - log(1-exp(-lambda)) - y_lfactorial)   #対数尤度関数
   return(LL)
 }
 
+#切断ポアソン回帰モデルの対数尤度の微分関数
+dloglike <- function(beta, y, x, y_lfactorial){ 
+  lambda <- as.numeric(exp(x %*% beta))
+  lambda_exp <- exp(-lambda)
+  sc <- colSums(y*x - x*lambda - lambda_exp * (x*lambda) / (1-lambda_exp))
+  return(sc)
+}
+
+
 ##切断ポアソン回帰モデルを準ニュートン法で最尤推定
 #パラメータを推定
 y_lfactorial <- lfactorial(y)   #yの対数階乗
 beta <- rep(0, ncol(x))   #初期値
-res <- optim(beta, loglike, gr=NULL, y, x, y_lfactorial, method="BFGS", hessian=TRUE,   #準ニュートン法
+res <- optim(beta, loglike, gr=dloglike, y, x, y_lfactorial, method="BFGS", hessian=TRUE,   #準ニュートン法
              control=list(fnscale=-1, trace=TRUE))
 
 #推定結果
@@ -95,21 +105,117 @@ loglike <- function(beta, y, x, inv_tau, y_lfactorial){
   
   #対数事後分布
   LL <- Lho + log_mvn
-  return(LL)
+  return(list(LL=LL, Lho=Lho))
 }
 
-##HMCでパラメータをサンプリングするためのサンプリング
+##HMCでパラメータをサンプリングするための関数
 #切断ポアソン回帰モデルの対数事後分布の微分関数
+dloglike <- function(beta, y, x, const){ 
+  
+  #期待値の設定
+  lambda <- as.numeric(exp(x %*% beta))
+  lambda_exp <- exp(-lambda)
+  lambda_x <- x*lambda
+  
+  #微分関数の設定
+  dltpois <- const - lambda_x - lambda_exp * (lambda_x) / (1-lambda_exp)
+  dmvn <- as.numeric(-inv_tau %*% beta)
+  
+  #対数事後分布の微分関数の和
+  LLd <- -(colSums(dltpois) + dmvn)
+  return(LLd)
+}
+
+#リープフロッグ法を解く関数
+leapfrog <- function(r, z, D, e, L) {
+  leapfrog.step <- function(r, z, e){
+    r2 <- r  - e * D(z, y, x, const) / 2
+    z2 <- z + e * r2
+    r2 <- r2 - e * D(z2, y, x, const) / 2
+    list(r=r2, z=z2) # 1回の移動後の運動量と座標
+  }
+  leapfrog.result <- list(r=r, z=z)
+  for(i in 1:L) {
+    leapfrog.result <- leapfrog.step(leapfrog.result$r, leapfrog.result$z, e)
+  }
+  leapfrog.result
+}
+
+##アルゴリズムの設定
+R <- 5000
+keep <- 2
+disp <- 10
+burnin <- 1000/keep
+iter <- 0
+e <- 0.001
+L <- 3
+
+#事前分布の設定
+gamma <- rep(0, k)
+inv_tau <- solve(100 * diag(k))
+
+#初期値の設定
+beta <- betat   #パラメータの真値
+beta <- rep(0, k)
 
 
-lambda <- as.numeric(exp(x %*% beta))   #期待値
-lambda_exp <- exp(-lambda)
+#データの設定
+const <- y * x
+y_lfactorial <- lfactorial(y)   #yの対数階乗
 
-y*1/lambda - lambda_exp / (1-lambda_e
+#パラメータの格納用配列
+BETA <- matrix(0, nrow=R/keep, ncol=k)
+
+#対数尤度関数の基準値
+LLst <- as.numeric(logLik(glm(y ~ x[, -1], family="poisson")))
+LLbest <- loglike(betat, y, x, inv_tau, y_lfactorial)$Lho
 
 
+####HMCでパラメータをサンプリング####
+for(rp in 1:R){
+  
+  ##HMCによりパラメータをサンプリング
+  #HMCの新しいパラメータを生成
+  rold <- as.numeric(mvrnorm(1, rep(0, k), diag(k)))   #標準多変量正規分布からパラメータを生成
+  betad <- beta
+  
+  #リープフロッグ法による1ステップ移動
+  res <- leapfrog(rold, betad, dloglike, e, L)
+  rnew <- res$r
+  betan <- res$z
+  
+  #移動前と移動後のハミルトニアン
+  Hnew <- -loglike(betan, y, x, inv_tau, y_lfactorial)$LL + as.numeric(rnew^2 %*% rep(1, k))/2
+  Hold <- -loglike(betad, y, x, inv_tau, y_lfactorial)$LL + as.numeric(rold^2 %*% rep(1, k))/2
 
+  #パラメータの採択を決定
+  rand <- runif(1)   #一様分布から乱数を発生
+  alpha <- min(c(1, exp(Hold - Hnew)))   #採択率を決定
+  
+  #alphaの値に基づき新しいbetaを採択するかどうかを決定
+  flag <- as.numeric(alpha > rand)
+  beta <- flag*betan + (1-flag)*betad
+  
+  ##サンプリング結果の保存と表示
+  #サンプリング結果の保存
+  if(rp%%keep==0){
+    mkeep <- rp/keep
+    BETA[mkeep, ] <- beta
+  }
+  
+  if(rp%%disp==0){
+    #対数尤度を算出
+    LL <- loglike(beta, y, x, inv_tau, y_lfactorial)$Lho
+  
+    #サンプリング結果を表示
+    print(rp)
+    print(alpha)
+    print(c(LL, LLbest, LLst))
+    print(round(rbind(beta=beta, betat=betat), 3))
+  }
+}
 
-
-
+####推定結果の確認と要約####
+#サンプリング結果のプロット
+matplot(BETA, type="l", main="betaのサンプリング結果のプロット", ylab="betaの推定値", xlab="サンプリング回数")
 
