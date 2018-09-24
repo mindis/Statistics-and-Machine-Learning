@@ -51,26 +51,30 @@ hist(y, breaks=25, col="grey", main="アクセス頻度の分布", xlab="アクセス頻度")
 ####最尤法で切断ポアソン回帰モデルを推定####
 ##切断ポアソン回帰モデルの推定のための関数
 #切断ポアソン回帰モデルの対数尤度
-loglike <- function(beta, y, x, y_lfactorial){
+loglike <- function(beta, y, x, y_lfactorial, const){
   lambda <- as.numeric(exp(x %*% beta))   #期待値
   LL <- sum(y*log(lambda) - lambda - log(1-exp(-lambda)) - y_lfactorial)   #対数尤度関数
   return(LL)
 }
 
 #切断ポアソン回帰モデルの対数尤度の微分関数
-dloglike <- function(beta, y, x, y_lfactorial){ 
+dloglike <- function(beta, y, x, y_lfactorial, const){ 
   lambda <- as.numeric(exp(x %*% beta))
   lambda_exp <- exp(-lambda)
-  sc <- colSums(y*x - x*lambda - lambda_exp * (x*lambda) / (1-lambda_exp))
+  lambda_x <- x * lambda
+  sc <- colSums(const - lambda_x - lambda_exp * (lambda_x) / (1-lambda_exp))
   return(sc)
 }
 
 
 ##切断ポアソン回帰モデルを準ニュートン法で最尤推定
-#パラメータを推定
+#データの設定
+const <- y * x   #定数
 y_lfactorial <- lfactorial(y)   #yの対数階乗
+
+#パラメータを推定
 beta <- rep(0, ncol(x))   #初期値
-res <- optim(beta, loglike, gr=dloglike, y, x, y_lfactorial, method="BFGS", hessian=TRUE,   #準ニュートン法
+res <- optim(beta, loglike, gr=dloglike, y, x, y_lfactorial, const, method="BFGS", hessian=TRUE,   #準ニュートン法
              control=list(fnscale=-1, trace=TRUE))
 
 #推定結果
