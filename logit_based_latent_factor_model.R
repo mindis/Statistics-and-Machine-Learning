@@ -220,7 +220,7 @@ dmv <- function(er, inv_Cov, k){
 
 ##素性ベクトルのサンプリングに必要な関数
 #素性ベクトルの対数事後分布の微分関数
-dloglike <- function(beta, uv, y, x, inv_Cov){
+dloglike <- function(beta, uv, y, x, inv_Cov, const){
   #応答確率の設定
   logit_exp <- exp(as.numeric(x %*% beta) + uv)   #ロジットの指数関数
   prob <- logit_exp / (1 + logit_exp)   #確率の計算
@@ -237,9 +237,9 @@ dloglike <- function(beta, uv, y, x, inv_Cov){
 #素性ベクトルのリープフロッグ法を解く関数
 leapfrog <- function(r, z, D, e, L) {
   leapfrog.step <- function(r, z, e){
-    r2 <- r  - e * D(z, uv, y, x, inv_tau) / 2
+    r2 <- r  - e * D(z, uv, y, x, inv_tau, const) / 2
     z2 <- z + e * r2
-    r2 <- r2 - e * D(z2, uv, y, x, inv_tau) / 2
+    r2 <- r2 - e * D(z2, uv, y, x, inv_tau, const) / 2
     list(r=r2, z=z2) # 1回の移動後の運動量と座標
   }
   leapfrog.result <- list(r=r, z=z)
@@ -251,10 +251,9 @@ leapfrog <- function(r, z, D, e, L) {
 
 ##ユーザーのアイテムに対する行列分解のパラメータのサンプリングに必要な関数
 #行列分解のパラメータの対数事後分布の微分関数
-dloglike_u <- function(theta_u, mu, theta_v, y, mu_u, inv_Cov, user_vec, user_id, item_id){
+dloglike_u <- function(theta_u, mu, theta_vec, y, mu_u, inv_Cov, user_vec, user_id){
   
   #応答確率の設定
-  theta_vec <- theta_v[item_id, ]
   uv <- as.numeric((theta_u[user_id, ] * theta_vec) %*% vec)
   logit_exp <- exp(mu + uv)   #ロジットの指数関数
   prob <- logit_exp / (1 + logit_exp)   #確率の計算
@@ -272,9 +271,9 @@ dloglike_u <- function(theta_u, mu, theta_v, y, mu_u, inv_Cov, user_vec, user_id
 #行列分解のパラメータのリープフロッグ法を解く関数
 leapfrog_u <- function(r, z, D, e, L) {
   leapfrog.step <- function(r, z, e){
-    r2 <- r  - e * D(z, mu, theta_v, y, mu_u, inv_Cov_u, user_vec, user_id, item_id) / 2
+    r2 <- r  - e * D(z, mu, theta_vec, y, mu_u, inv_Cov_u, user_vec, user_id) / 2
     z2 <- z + e * r2
-    r2 <- r2 - e * D(z2, mu, theta_v, y, mu_u, inv_Cov_u, user_vec, user_id, item_id) / 2
+    r2 <- r2 - e * D(z2, mu, theta_vec, y, mu_u, inv_Cov_u, user_vec, user_id) / 2
     list(r=r2, z=z2) # 1回の移動後の運動量と座標
   }
   leapfrog.result <- list(r=r, z=z)
@@ -286,10 +285,9 @@ leapfrog_u <- function(r, z, D, e, L) {
 
 ##アイテムの行列分解のパラメータのサンプリングに必要な関数
 #行列分解のパラメータの対数事後分布の微分関数
-dloglike_v <- function(theta_v, mu, theta_u, y, mu_v, inv_Cov, item_vec, user_id, item_id){
+dloglike_v <- function(theta_v, mu, theta_vec, y, mu_v, inv_Cov, item_vec, item_id){
   
   #応答確率の設定
-  theta_vec <- theta_u[user_id, ]
   uv <- as.numeric((theta_vec * theta_v[item_id, ]) %*% vec)
   logit_exp <- exp(mu + uv)   #ロジットの指数関数
   prob <- logit_exp / (1 + logit_exp)   #確率の計算
@@ -307,9 +305,9 @@ dloglike_v <- function(theta_v, mu, theta_u, y, mu_v, inv_Cov, item_vec, user_id
 #行列分解のパラメータのリープフロッグ法を解く関数
 leapfrog_v <- function(r, z, D, e, L) {
   leapfrog.step <- function(r, z, e){
-    r2 <- r  - e * D(z, mu, theta_u, y, mu_v, inv_Cov_v, item_vec, user_id, item_id) / 2
+    r2 <- r  - e * D(z, mu, theta_vec, y, mu_v, inv_Cov_v, item_vec, item_id) / 2
     z2 <- z + e * r2
-    r2 <- r2 - e * D(z2, mu, theta_u, y, mu_v, inv_Cov_v, item_vec, user_id, item_id) / 2
+    r2 <- r2 - e * D(z2, mu, theta_vec, y, mu_v, inv_Cov_v, item_vec, item_id) / 2
     list(r=r2, z=z2) # 1回の移動後の運動量と座標
   }
   leapfrog.result <- list(r=r, z=z)
@@ -383,6 +381,7 @@ theta_v <- v %*% alpha_v + mvrnorm(item, rep(0, k), Cov_v)
 uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec)
 
 ##データの設定
+const <- y * x
 x_col <- ncol(x)
 u_col <- ncol(u)
 
@@ -433,6 +432,7 @@ for(rp in 1:R){
   #alphaの値に基づき新しいbetaを採択するかどうかを決定
   flag <- gamma > rand
   beta <- flag*betan + (1-flag)*betad
+  beta[is.na(beta)] <- betad
   mu <- as.numeric(x %*% beta)
   
   
@@ -443,10 +443,11 @@ for(rp in 1:R){
   uv_old <- uv
   
   #リープフロッグ法による1ステップ移動
+  theta_vec <- theta_v[item_id, ]
   res <- leapfrog_u(rold, thetad, dloglike_u, e2, L)
   rnew <- res$r
   thetan <- res$z
-  uv_new <- as.numeric((thetan[user_id, ] * theta_v[item_id, ]) %*% vec)
+  uv_new <- as.numeric((thetan[user_id, ] * theta_vec) %*% vec)
   
   #移動前と移動後のハミルトニアン
   er_new <- thetan - mu_u
@@ -462,7 +463,8 @@ for(rp in 1:R){
   #alphaの値に基づき新しいbetaを採択するかどうかを決定
   flag <- as.numeric(gamma > rand)
   theta_u <- flag*thetan + (1-flag)*thetad
-  uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec)
+  na_theta_u <- is.na(theta_u); if(sum(na_theta_u) > 0){theta_u[na_theta_u] <- thetad}
+  uv <- as.numeric((theta_u[user_id, ] * theta_vec) %*% vec)
   
   
   ##アイテムの行列分解のパラメータをサンプリング
@@ -472,10 +474,11 @@ for(rp in 1:R){
   uv_old <- uv
   
   #リープフロッグ法による1ステップ移動
+  theta_vec <- theta_u[user_id, ]
   res <- leapfrog_v(rold, thetad, dloglike_v, e2, L)
   rnew <- res$r
   thetan <- res$z
-  uv_new <- as.numeric((theta_u[user_id, ] * thetan[item_id, ]) %*% vec)
+  uv_new <- as.numeric((theta_vec * thetan[item_id, ]) %*% vec)
   
   #移動前と移動後のハミルトニアン
   er_new <- thetan - mu_v
@@ -491,7 +494,8 @@ for(rp in 1:R){
   #alphaの値に基づき新しいbetaを採択するかどうかを決定
   flag <- as.numeric(gamma > rand)
   theta_v <- flag*thetan + (1-flag)*thetad
-  uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec)
+  na_theta_v <- is.na(theta_v); if(sum(na_theta_v) > 0){theta_v[na_theta_v] <- thetad}
+  uv <- as.numeric((theta_vec * theta_v[item_id, ]) %*% vec)
   
 
   ##階層モデルのパラメータをサンプリング
@@ -538,4 +542,5 @@ for(rp in 1:R){
     print(rbind(beta, betat))
   }
 }
+
 
