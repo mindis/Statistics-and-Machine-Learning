@@ -1,78 +1,101 @@
-#####欠損のある非負値行列因子分解#####
+#####Incomplete data Non Negative Matrix Factorization#####
 library(MASS)
 library(matrixStats)
-library(FAdist)
+library(Matrix)
+library(data.table)
+library(bayesm)
 library(NMF)
+library(stringr)
 library(extraDistr)
-library(actuar)
-library(gtools)
-library(caret)
 library(reshape2)
 library(dplyr)
+library(plyr)
 library(ggplot2)
-library(lattice)
-
 #set.seed(78594)
 
 ####データの発生####
 #データの設定
+k <- 10   #基底数
 hh <- 5000   #ユーザー数
-item <- 1500  #カテゴリー数
-k <- 10   #潜在変数数
+item <- 2000  #アイテム数
+pt <- rtpois(hh, rgamma(hh, 27.5, 0.25), a=1, b=Inf)   #接触数
+hhpt <- sum(pt)   #総接触数
+vec_k <- rep(1, k)
 
-##IDの設定
-user_id0 <- rep(1:hh, rep(item, hh))
-item_id0 <- rep(1:item, hh)
-
-
-##非負値行列因子分解の仮定に従いデータを生成
-#ガンマ分布よりパラメータを設定
-alpha01 <- 0.25; beta01 <- 1.0
-alpha02 <- 0.15; beta02 <- 0.85
-W0 <- matrix(rgamma(hh*k, alpha01, beta01), nrow=hh, ncol=k)
-H0 <- matrix(rgamma(item*k, alpha02, beta02), nrow=k, ncol=item)
-WH <- W0 %*% H0
-
-#欠損有無のベータ分布のパラメータを設定
-beta1 <- rbeta(hh, 9.5, 10.0)   #ユーザ-購買確率
-beta2 <- rbeta(item, 7.5, 8.0)   #アイテム購買確率
-
-#ポアソン分布よりデータを生成
-Data0 <- matrix(0, nrow=hh, ncol=item)
-for(j in 1:item){
-  Data0[, j] <- rpois(hh, WH[, j])
+#IDを設定
+user_id <- rep(1:hh, pt)
+pt_id <- as.numeric(unlist(tapply(1:hhpt, user_id, rank)))
+ID <- data.frame(no=1:hhpt, id=user_id, t=pt_id)   #データの結合
+user_list <- list()
+for(i in 1:hh){
+  user_list[[i]] <- which(user_id==i)
 }
 
-##欠損がある購買データを生成
-#欠損行列を生成
-Z0 <- matrix(0, nrow=hh, ncol=item)
+##アイテムの割当を生成
+#セグメント割当を生成
+topic <- 25
+phi <- extraDistr::rdirichlet(topic, rep(0.5, item))
+z <- as.numeric(rmnom(hh, 1,  extraDistr::rdirichlet(hh, rep(2.5, topic))) %*% 1:topic)
+
+#多項分布からアイテムを生成
+item_id_list <- list()
+for(i in 1:hh){
+  if(i%%100==0){
+    print(i)
+  }
+  item_id_list[[i]] <- as.numeric(rmnom(pt[i], 1, phi[z[user_id[user_list[[i]]]], ]) %*% 1:item)
+}
+item_id <- unlist(item_id_list)
+item_list <- list()
 for(j in 1:item){
-  deficit <- rbinom(hh, 1, beta1 * beta2[j])
-  Z0[, j] <- deficit   #欠損を代入
+  item_list[[j]] <- which(item_id==j)
 }
 
-#欠損インデックス
-Z <- Z0 * Data0 > 0
-z_vec <- as.numeric(t(Z))
-index_z <- which(z_vec==1)
-N <- length(index_z)
-
-#欠損のある購買ベクトル
-user_id <- user_id0[index_z]
-item_id <- item_id0[index_z]
-y <- as.numeric(t(Data0))[index_z]
+#生成したデータを可視化
+freq_item <- plyr::count(item_id); freq_item$x <- as.character(freq_item$x)
+hist(freq_item$freq, breaks=25, col="grey", xlab="アイテムの購買頻度", main="アイテムの購買頻度分布")
+gc(); gc()
 
 
-##ベストなパラメータに対する対数尤度
-LLc1 <- sum(dpois(Data0, W0 %*% H0, log=TRUE))   #完全データに対する対数尤度
-LLc2 <- sum(as.numeric(t(dpois(Data0, W0 %*% H0, log=TRUE)))[index_z])   #不完全データに対する対数尤度
-sparse_data <- as(Data0, "CsparseMatrix")   #スパース行列の作成
+####応答変数を生成####
+rp <- 0
+repeat {
+  rp <- rp + 1
+  
+  ##NMFのパラメータを生成
+  #ガンマ分布の尺度パラメータを設定
+  lambda_u <- abs(rnorm(1, 1, 0.5))
+  lambda_v <- abs(rnorm(1, 1, 0.5))
+  
+  #ガンマ分布の形状パラメータ
+  beta_u <- beta_ut <- abs(rnorm(1, 1, 0.5))
+  beta_v <- beta_vt <- abs(rnorm(1, 1, 0.5))
+  
+  #ガンマ分布から行列分解のパラメータを生成
+  theta_u <- theta_ut <- matrix(rgamma(hh*k, lambda_u, beta_u), nrow=hh, ncol=k)
+  theta_v <- theta_vt <- matrix(rgamma(item*k, lambda_v, beta_v), nrow=item, ncol=k)
+  
+  ##ポアソン分布から応答変数を生成
+  WH <- (theta_u[user_id, ] * theta_v[item_id, ]) %*% vec_k   #期待値
+  y　<- rpois(hhpt, WH)   
+  
+  #break条件
+  print(rp)
+  print(max(y))
+  if(max(y) < 75 & max(y) > 25 & sd(y) > 2.5){
+    break
+  }
+}
+
+#生成したデータのヒストグラム
+hist(y, main="購買頻度の分布", xlab="購買頻度", col="grey", breaks=50)
 
 
-####マルコフ連鎖モンテカルロ法でNMFを推定####
+####マルコフ連鎖モンテカルロ法でBayesian Hierarchical NMFを推定####
 ##アルゴリズムの設定
 R <- 5000
 keep <- 4
+burnin <- 1000/keep
 iter <- 0
 disp <- 10
 
@@ -80,97 +103,88 @@ disp <- 10
 alpha1 <- 0.1; beta1 <- 1
 alpha2 <- 0.1; beta2 <- 1
 
+##パラメータの真値
+theta_u <- theta_ut
+theta_v <- theta_vt
+WH <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec_k)   #期待値
+
 ##初期値の設定
-W <- matrix(rgamma(hh*k, 0.1, 0.25), nrow=hh, ncol=k)
-H <- matrix(rgamma(item*k, 0.1, 0.25), nrow=k, ncol=item)
+theta_u <- matrix(rgamma(hh*k, 0.5, 1.0), nrow=hh, ncol=k)
+theta_v <- matrix(rgamma(item*k, 0.5, 1.0), nrow=item, ncol=k)
+WH <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec_k)   #期待値
+
 
 ##サンプリング結果の保存用配列
-W_array <- array(0, dim=c(hh, k, R/keep))
-H_array <- array(0, dim=c(k, item, R/keep))
-lambda <- array(0, dim=c(hh, item, k))
+THETA_U <- array(0, dim=c(hh, k, R/keep))
+THETA_V <- array(0, dim=c(item, k, R/keep))
+LAMBDA <- array(0, dim=c(hh, item, k))
 
 ##ユーザーおよびアイテムのインデックスを作成
-user_list <- user_vec <- list()
-item_list <- item_vec <- list()
-for(i in 1:hh){
-  user_list[[i]] <- which(user_id==i)
-  user_vec[[i]] <- rep(1, length(user_list[[i]]))
-}
-for(j in 1:item){
-  item_list[[j]] <- which(item_id==j)
-  item_vec[[j]] <- rep(1, length(item_list[[j]]))
-}
+#個別に和を取るためのスパース行列
+user_dt <- sparseMatrix(sort(user_id), unlist(user_list), x=rep(1, hhpt), dims=c(hh, hhpt))
+item_dt <- sparseMatrix(sort(item_id), unlist(item_list), x=rep(1, hhpt), dims=c(item, hhpt))
+
+##対数尤度の基準値
+LLst <- sum(dpois(y, mean(y), log=TRUE))
+LLbest <- sum(dpois(y, as.numeric((theta_ut[user_id, ] * theta_vt[item_id, ]) %*% vec_k), log=TRUE))
 
 
 ####ギブスサンプリングでパラメータをサンプリング####
 for(rp in 1:R){
   
-  ##補助変数lambdaを更新
-  lambda <- matrix(0, nrow=N, ncol=k)
-  WH <- as.numeric(t(W %*% H))[index_z]
-  for(j in 1:k){
-    lambda[, j] <- as.numeric(t(W[, j] %*% t(H[j, ])))[index_z] / WH
-  }
+  ##ユーザー特徴行列をサンプリング
+  #補助変数lambdaを更新
+  theta_vec2 <- theta_v[item_id, ]
+  lambda <- (theta_u[user_id, ] * theta_vec2) / WH
   
-  ##ガンマ分布よりユーザー特徴行列Wをサンプリング
   #ユーザーごとのガンマ分布のパラメータを設定
-  W1 <- W2 <- matrix(0, nrow=hh, ncol=k)
-  W1_T <- t(lambda * y)   #要素ごとの期待値
-  for(i in 1:hh){
-    W1[i, ] <- alpha1 + W1_T[, user_list[[i]], drop=FALSE] %*% user_vec[[i]]
-    W2[i, ] <- beta1 + H[, item_id[user_list[[i]]], drop=FALSE] %*% user_vec[[i]]
-  }
+  lambda_y <- lambda * y   #要素ごとの期待値
+  W1 <- as.matrix(user_dt %*% lambda_y + alpha1)
+  W2 <- as.matrix(user_dt %*% theta_vec2 + beta1)
   
-  #ガンマ分布よりユーザー特徴行列Wをサンプリング
-  W <- matrix(rgamma(hh*k, W1, W2), nrow=hh, ncol=k)
-  W <- W / matrix(colSums(W), nrow=hh, ncol=k, byrow=T) * hh/5   #各列ベクトルを正規化
+  #ガンマ分布よりパラメータをサンプリング
+  theta_u <- matrix(rgamma(hh*k, W1, W2), nrow=hh, ncol=k)
+  theta_u <- theta_u / matrix(colSums(theta_u), nrow=hh, ncol=k, byrow=T) * hh/(k/2)   #各列ベクトルを正規化
   
   
-  ##補助変数lambdaを更新
-  lambda <- matrix(0, nrow=N, ncol=k)
-  WH <- as.numeric(t(W %*% H))[index_z]
-  for(j in 1:k){
-    lambda[, j] <- as.numeric(t(W[, j] %*% t(H[j, ])))[index_z] / WH
-  }
+  ##アイテム特徴行列をサンプリング
+  #補助変数lambdaを更新
+  theta_vec1 <- theta_u[user_id, ]
+  WH <- as.numeric((theta_vec1 * theta_vec2) %*% vec_k)
+  lambda <- (theta_vec1 * theta_vec2) / WH
   
-  ##ガンマ分布よりアイテム特徴行列Hをサンプリング
-  #アイテムごとのガンマ分布のパラメータを設定
-  H1 <- H2 <- matrix(0, nrow=item, ncol=k)
-  H1_T <- t(lambda * y)   #要素ごとの期待値
-  for(i in 1:item){
-    H1[i, ] <- alpha1 + H1_T[, item_list[[i]], drop=FALSE] %*% item_vec[[i]]
-    H2[i, ] <- beta1 + t(W[user_id[item_list[[i]]], , drop=FALSE]) %*% item_vec[[i]]
-  }
-  #ガンマ分布よりユーザー特徴行列Wをサンプリング
-  H <- t(matrix(rgamma(item*k, H1, H2), nrow=item, ncol=k))
+  #ユーザーごとのガンマ分布のパラメータを設定
+  lambda_y <- lambda * y   #要素ごとの期待値
+  H1 <- as.matrix(item_dt %*% lambda_y + alpha1)
+  H2 <- as.matrix(item_dt %*% theta_vec1 + beta1)
+  
+  #ガンマ分布よりパラメータをサンプリング
+  theta_v <- matrix(rgamma(item*k, H1, H2), nrow=item, ncol=k)
+  WH <- as.numeric((theta_vec1 * theta_v[item_id, ]) %*% vec_k)
   
   
   ##サンプリング結果の保存と表示
   if(rp%%keep==0){
     mkeep <- rp/keep
-    W_array[, , mkeep] <- W[, 1:k]
-    H_array[, , mkeep] <- H[1:k, ]
+    THETA_U[, , mkeep] <- theta_u
+    THETA_V[, , mkeep] <- theta_v
   }
   
   if(rp%%disp==0){
+    #対数尤度の更新
+    LL <- sum(dpois(y, WH, log=TRUE))
+    
+    #サンプリング結果を表示
     print(rp)
-    print(c(sum(dpois(y, as.numeric(t(W %*% H))[index_z], log=TRUE)), LLc2))
-    print(round(W[1:10, ], 3))
+    print(c(LL, LLbest, LLst))
   }
 }
 
 ####サンプリング結果の確認####
 ##サンプリング結果をプロット
-matplot(t(W_array[100, , ]), type="l")
-matplot(t(H_array[, 1, ]), type="l")
+matplot(t(THETA_U[1, , ]), type="l")
+matplot(t(THETA_V[1, , ]), type="l")
 
-##事後平均を計算
-
-
-##テストデータに対する対数尤度
-sum(dpois(as.numeric(t(Data0))[-index_z], as.numeric(t(W %*% H))[-index_z], log=TRUE))
-sum(dpois(as.numeric(t(Data0))[-index_z], as.numeric(t(W0 %*% H0))[-index_z], log=TRUE))
-round(cbind(as.numeric(t(Data0))[-index_z], as.numeric(t(W %*% H))[-index_z], as.numeric(t(W0 %*% H0))[-index_z]), 3)
-round(cbind(y, as.numeric(t(W %*% H))[index_z], as.numeric(t(W0 %*% H0))[index_z]), 3)
+THETA_V[, 1, ]
 
 
