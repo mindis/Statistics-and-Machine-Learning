@@ -1,25 +1,26 @@
 #####Zero Truncated Non Negative Matrix Factorization#####
 library(MASS)
 library(matrixStats)
-library(FAdist)
+library(Matrix)
+library(data.table)
+library(bayesm)
 library(NMF)
+library(stringr)
 library(extraDistr)
-library(actuar)
-library(gtools)
-library(caret)
 library(reshape2)
 library(dplyr)
+library(plyr)
 library(ggplot2)
-library(lattice)
 
 #set.seed(78594)
 
 ####データの発生####
 #データの設定
 hh <- 5000   #ユーザー数
-item <- 1500  #カテゴリー数
+item <- 2000  #カテゴリー数
 hhpt <- hh*item
 k <- 10   #潜在変数数
+vec_k <- rep(1, k)
 
 ##IDの設定
 user_id0 <- rep(1:hh, rep(item, hh))
@@ -29,32 +30,25 @@ item_id0 <- rep(1:item, hh)
 #ガンマ分布よりパラメータを設定
 alpha01 <- 0.25; beta01 <- 1.0
 alpha02 <- 0.15; beta02 <- 0.85
-W0 <- matrix(rgamma(hh*k, alpha01, beta01), nrow=hh, ncol=k)
-H0 <- matrix(rgamma(item*k, alpha02, beta02), nrow=k, ncol=item)
-WH <- W0 %*% H0
+W <- WT <- matrix(rgamma(hh*k, alpha01, beta01), nrow=hh, ncol=k)   #ユーザー特徴行列
+H <- HT <- matrix(rgamma(item*k, alpha02, beta02), nrow=item, ncol=k)   #アイテム特徴行列
+WH <- as.numeric(t(W %*% t(H)))
 
 #欠損有無のベータ分布のパラメータを設定
 beta1 <- rbeta(hh, 9.5, 10.0)   #ユーザ-購買確率
 beta2 <- rbeta(item, 7.5, 8.0)   #アイテム購買確率
 
 #ポアソン分布よりデータを生成
-Data0 <- matrix(0, nrow=hh, ncol=item)
-for(j in 1:item){
-  Data0[, j] <- rpois(hh, WH[, j])
-}
+y_comp <- rpois(hhpt, WH)
+
 
 ##欠損がある購買データを生成
-#欠損行列を生成
-Z0 <- matrix(0, nrow=hh, ncol=item)
-for(j in 1:item){
-  deficit <- rbinom(hh, 1, beta1 * beta2[j])
-  Z0[, j] <- deficit   #欠損を代入
-}
+#欠損ベクトルを生成
+z_vec0 <- rbinom(hhpt, 1, beta1[user_id] * beta2[item_id])
 
 #欠損インデックス
-Z <- Z0 * Data0 > 0
-z_vec <- as.numeric(t(Z))
-index_z <- which(as.numeric(t(Z0))==1)
+z_vec <- z_vec0 * y_comp > 0
+index_z <- which(z_vec0==1)
 index_z1 <- which(z_vec==1)
 index_z0 <- which(z_vec==0)
 N <- length(index_z1)
@@ -62,18 +56,15 @@ N <- length(index_z1)
 #欠損のある購買ベクトル
 user_id <- user_id0[index_z1]
 item_id <- item_id0[index_z1]
-y_vec <- as.numeric(t(Data0))[index_z1]
+y_vec <- y_comp[index_z1]  
 
 #購買ベクトルに変換
-y_comp <- as.numeric(t(Data0))   #完全データの購買ベクトル
-y <- as.numeric(t(Z0 * Data0))   #欠損データを0に変換した購買ベクトル
-
+y <- z_vec0 * y_comp   #欠損データを0に変換した購買ベクトル(観測された購買ベクトル)
 
 ##ベストなパラメータに対する対数尤度
-LLc <- sum(dpois(Data0, W0 %*% H0, log=TRUE))   #完全データに対する対数尤度
-LLc1 <- sum(as.numeric(t(dpois(Data0, W0 %*% H0, log=TRUE)))[index_z1])   #非ゼロのデータに対する対数尤度
-LLc2 <- sum(dpois(y_comp[index_z], as.numeric(t(W0 %*% H0))[index_z], log=TRUE))
-sparse_data <- as(Data0, "CsparseMatrix")   #スパース行列の作成
+LLc <- sum(dpois(y_comp, as.numeric(t(W %*% t(H))), log=TRUE))   #完全データに対する対数尤度
+LLc1 <- sum(dpois(y_comp, as.numeric(t(W %*% t(H))), log=TRUE)[index_z1])   #非ゼロのデータに対する対数尤度
+LLc2 <- sum(dpois(y_comp[index_z], as.numeric(t(W %*% t(H)))[index_z], log=TRUE))   #真の観測に対する対数尤度
 
 
 ####マルコフ連鎖モンテカルロ法でNMFを推定####
@@ -88,30 +79,30 @@ disp <- 10
 alpha1 <- 0.1; beta1 <- 1
 alpha2 <- 0.1; beta2 <- 1
 
+##パラメータの真値
+W <- WT
+H <- HT; H_t <- t(H)
+r <- rowMeans(matrix(z_vec, nrow=hh, ncol=item, byrow=T))
+z_vec <- rep(0, hhpt); z_vec[index_z1] <- 1
+
 ##初期値の設定
 W <- matrix(rgamma(hh*k, 0.1, 0.25), nrow=hh, ncol=k)
-H <- matrix(rgamma(item*k, 0.1, 0.25), nrow=k, ncol=item)
-r <- rowMeans(Data0 > 0)
+H <- matrix(rgamma(item*k, 0.1, 0.25), nrow=item, ncol=k); H_t <- t(H)
+r <- rowMeans(matrix(z_vec, nrow=hh, ncol=item, byrow=T))
 z_vec <- rep(0, hhpt); z_vec[index_z1] <- 1
 
 ##サンプリング結果の保存用配列
 W_array <- array(0, dim=c(hh, k, R/keep))
 H_array <- array(0, dim=c(k, item, R/keep))
 Z_data <- matrix(0, nrow=hh, ncol=item)
-lambda <- array(0, dim=c(hh, item, k))
 
 
 ##ユーザーおよびアイテムのインデックスを作成
-user_list <- user_vec <- list()
-item_list <- item_vec <- list()
-for(i in 1:hh){
-  user_list[[i]] <- which(user_id==i)
-  user_vec[[i]] <- rep(1, length(user_list[[i]]))
-}
-for(j in 1:item){
-  item_list[[j]] <- which(item_id==j)
-  item_vec[[j]] <- rep(1, length(item_list[[j]]))
-}
+#個別に和を取るためのスパース行列
+user_dt <- sparseMatrix(sort(user_id), unlist(user_list), x=rep(1, hhpt), dims=c(hh, hhpt))
+item_dt <- sparseMatrix(sort(item_id), unlist(item_list), x=rep(1, hhpt), dims=c(item, hhpt))
+
+#欠損した値のインデックス
 user_vec_full <- rep(1, hh)
 item_vec_full <- rep(1, item)
 user_z0 <- user_id0[index_z0]
@@ -122,9 +113,11 @@ user_z0 <- user_id0[index_z0]
 for(rp in 1:R){
   
   ##欠損有無の潜在変数Zをサンプリング
+  WH_comp <- as.numeric(t(W %*% H_t))   #完全データの行列分解の期待値
+  
   #潜在変数zの割当確率のパラメータ
   r_vec <- r[user_z0]   #混合率のベクトル
-  Li_zeros <- exp(-as.numeric(t(W %*% H))[index_z0])   #データがゼロの時の尤度
+  Li_zeros <- exp(-WH_comp[index_z0])   #データがゼロの時の尤度
   Posterior_zeros <- r_vec * Li_zeros   #z=1の事後分布のパラメータ
   z_rate <- Posterior_zeros / (Posterior_zeros + (1-r_vec))   #潜在変数の割当確率
   
@@ -133,8 +126,7 @@ for(rp in 1:R){
   Zi <- matrix(z_vec, nrow=hh, ncol=item, byrow=T)
   r <- rowMeans(Zi)   #混合率を更新
   z_comp <- which(z_vec==1); N_comp <- length(z_comp)
-
-
+  
   ##補助変数lambdaを更新
   lambda <- matrix(0, nrow=N, ncol=k)
   WH <- as.numeric(t(W %*% H))[index_z1]
