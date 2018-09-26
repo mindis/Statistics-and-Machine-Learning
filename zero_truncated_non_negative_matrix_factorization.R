@@ -44,7 +44,7 @@ y_comp <- rpois(hhpt, WH)
 
 ##欠損がある購買データを生成
 #欠損ベクトルを生成
-z_vec0 <- rbinom(hhpt, 1, beta1[user_id] * beta2[item_id])
+z_vec0 <- rbinom(hhpt, 1, beta1[user_id0] * beta2[item_id0])
 
 #欠損インデックス
 z_vec <- z_vec0 * y_comp > 0
@@ -56,7 +56,7 @@ N <- length(index_z1)
 #欠損のある購買ベクトル
 user_id <- user_id0[index_z1]
 item_id <- item_id0[index_z1]
-y_vec <- y_comp[index_z1]  
+y_vec <- y_comp[index_z1]
 
 #購買ベクトルに変換
 y <- z_vec0 * y_comp   #欠損データを0に変換した購買ベクトル(観測された購買ベクトル)
@@ -99,8 +99,10 @@ Z_data <- matrix(0, nrow=hh, ncol=item)
 
 ##ユーザーおよびアイテムのインデックスを作成
 #個別に和を取るためのスパース行列
-user_dt <- sparseMatrix(sort(user_id), unlist(user_list), x=rep(1, hhpt), dims=c(hh, hhpt))
-item_dt <- sparseMatrix(sort(item_id), unlist(item_list), x=rep(1, hhpt), dims=c(item, hhpt))
+user_dt <- sparseMatrix(user_id, 1:N, x=rep(1, N), dims=c(hh, N))
+user_dt_full <- sparseMatrix(user_id0, 1:hhpt, x=rep(1, hhpt), dims=c(hh, hhpt))
+item_dt <- sparseMatrix(item_id, 1:N, x=rep(1, N), dims=c(item, N))
+item_dt_full <- sparseMatrix(item_id0, 1:hhpt, x=rep(1, hhpt), dims=c(item, hhpt))
 
 #欠損した値のインデックス
 user_vec_full <- rep(1, hh)
@@ -113,7 +115,7 @@ user_z0 <- user_id0[index_z0]
 for(rp in 1:R){
   
   ##欠損有無の潜在変数Zをサンプリング
-  WH_comp <- as.numeric(t(W %*% H_t))   #完全データの行列分解の期待値
+  WH_comp <- as.numeric(t(W %*% t(H)))   #完全データの行列分解の期待値
   
   #潜在変数zの割当確率のパラメータ
   r_vec <- r[user_z0]   #混合率のベクトル
@@ -127,61 +129,61 @@ for(rp in 1:R){
   r <- rowMeans(Zi)   #混合率を更新
   z_comp <- which(z_vec==1); N_comp <- length(z_comp)
   
-  ##補助変数lambdaを更新
-  lambda <- matrix(0, nrow=N, ncol=k)
-  WH <- as.numeric(t(W %*% H))[index_z1]
-  for(j in 1:k){
-    lambda[, j] <- as.numeric(t(W[, j] %*% t(H[j, ])))[index_z1] / WH
-  }
   
   ##ガンマ分布よりユーザー特徴行列Wをサンプリング
+  #補助変数lambdaを更新
+  H_vec <- H[item_id, ]
+  WH <- as.numeric((W[user_id, ] * H_vec) %*% vec_k)    #観測データの行列分解の期待値
+  lambda <- (W[user_id, ] * H_vec) / WH
+
   #ユーザーごとのガンマ分布のパラメータを設定
-  W1 <- W2 <- matrix(0, nrow=hh, ncol=k)
-  W1_T <- t(lambda * y_vec)   #要素ごとの期待値
-  for(i in 1:hh){
-    W1[i, ] <- alpha1 + W1_T[, user_list[[i]], drop=FALSE] %*% user_vec[[i]]
-    W2[i, ] <- beta1 + (H * matrix(Zi[i, ], nrow=k, ncol=item, byrow=T)) %*% item_vec_full
-  }
+  lambda_y <- lambda * y_vec   #要素ごとの期待値
+  W1 <- as.matrix(user_dt %*% lambda_y + alpha1)
+  W2 <- as.matrix((user_dt_full %*% (H[item_id0, ] * z_vec)) + beta1)
 
   #ガンマ分布よりユーザー特徴行列Wをサンプリング
   W <- matrix(rgamma(hh*k, W1, W2), nrow=hh, ncol=k)
-  W <- W / matrix(colSums(W), nrow=hh, ncol=k, byrow=T) * hh/5   #各列ベクトルを正規化
+  #W <- W / matrix(colSums(W), nrow=hh, ncol=k, byrow=T) * hh/5   #各列ベクトルを正規化
   
-  
-  ##補助変数lambdaを更新
-  lambda <- matrix(0, nrow=N, ncol=k)
-  WH <- as.numeric(t(W %*% H))[index_z1]
-  for(j in 1:k){
-    lambda[, j] <- as.numeric(t(W[, j] %*% t(H[j, ])))[index_z1] / WH
-  }
   
   ##ガンマ分布よりアイテム特徴行列Hをサンプリング
-  #アイテムごとのガンマ分布のパラメータを設定
-  H1 <- H2 <- matrix(0, nrow=item, ncol=k)
-  H1_T <- t(lambda * y_vec)   #要素ごとの期待値
-  for(i in 1:item){
-    H1[i, ] <- alpha1 + H1_T[, item_list[[i]], drop=FALSE] %*% item_vec[[i]]
-    H2[i, ] <- beta1 + t(W * Zi[, i]) %*% user_vec_full
-  }
-  #ガンマ分布よりユーザー特徴行列Wをサンプリング
-  H <- t(matrix(rgamma(item*k, H1, H2), nrow=item, ncol=k))
+  #補助変数lambdaを更新
+  W_vec <- W[user_id, ]
+  WH <- as.numeric((W_vec * H_vec) %*% vec_k)   #観測データの行列分解の期待値
+  lambda <- (W_vec * H_vec) / WH
   
+  #ユーザーごとのガンマ分布のパラメータを設定
+  lambda_y <- lambda * y_vec   #要素ごとの期待値
+  H1 <- as.matrix(item_dt %*% lambda_y + alpha2)
+  H2 <- as.matrix((item_dt_full %*% (W[user_id0, ] * z_vec)) + beta2)
+  
+  #ガンマ分布よりユーザー特徴行列Wをサンプリング
+  H <- matrix(rgamma(item*k, H1, H2), nrow=item, ncol=k)
+  
+
   ##サンプリング結果の保存と表示
+  #サンプリング結果の格納
   if(rp%%keep==0){
     mkeep <- rp/keep
-    W_array[, , mkeep] <- W[, 1:k]
-    H_array[, , mkeep] <- H[1:k, ]
+    W_array[, , mkeep] <- W
+    H_array[, , mkeep] <- H
     if(rp > burnin){
       Z_data <- Z_data + Zi
     }
   }
   
+  #サンプリング結果の表示
   if(rp%%disp==0){
+    #対数尤度の計算
+    LL <- sum(dpois(y_comp[index_z], as.numeric(t(W %*% t(H)))[index_z], log=TRUE))
+    
+    #パラメータの表示
     print(rp)
-    print(c(mean(z_vec), mean(Z0)))
-    print(c(sum(dpois(y_comp[index_z], as.numeric(t(W %*% H))[index_z], log=TRUE)), LLc2))
+    print(c(mean(z_vec), mean(z_vec0)))
+    print(c(LL, LLc2))
   }
 }
+
 
 ####サンプリング結果の要約と適合度####
 sum(dpois(as.numeric(t(Data0))[-index_z1], as.numeric(t(W %*% H))[-index_z1], log=TRUE))
