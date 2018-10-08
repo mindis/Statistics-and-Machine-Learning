@@ -1,177 +1,207 @@
 #####HMM-LDAモデル#####
+options(warn=0)
 library(MASS)
 library(lda)
 library(RMeCab)
 library(matrixStats)
 library(Matrix)
+library(data.table)
 library(bayesm)
+library(HMM)
 library(extraDistr)
 library(reshape2)
 library(dplyr)
 library(plyr)
 library(ggplot2)
+'%!in%' <- function(a,b) ! a %in% b
 
-#set.seed(5723)
+#set.seed(2506787)
 
 ####データの発生####
 ##データの設定
 k1 <- 8   #syntax数
-k2 <- 10   #トピック数
-d <- 2000   #文書数
-v1 <- 300   #トピックに関係のある語彙数
-v2 <- 300   #トピック以外のsyntaxに関係のある語彙数
+k2 <- 15   #トピック数
+d <- 3000   #文書数
+v1 <- 700   #トピックに関係のある語彙数
+v2 <- 500   #トピック以外のsyntaxに関係のある語彙数
 v <- v1 + v2   #総語彙数
-w <- rpois(d, rgamma(d, 100, 0.45))   #文書あたりの単語数
+w <- rpois(d, rgamma(d, 40, 0.15))   #文書あたりの単語数
 f <- sum(w)   #総単語数
+vec_k1 <- rep(1, k1)
+vec_k2 <- rep(1, k2)
 
 ##IDの設定
 d_id <- rep(1:d, w)
-t_id <- c()
-for(i in 1:d) {t_id <- c(t_id, 1:w[i])}
+t_id <- as.numeric(unlist(tapply(1:f, d_id, rank)))
 
 ##パラメータを設定
 #ディレクリ分布のパラメータ
-alpha01 <- seq(3.0, 0.2, length=k1*5)[((1:(k1*5))%%5)==0]
-alpha02 <- matrix(0.5, nrow=k1, ncol=k1)
-alpha02[-k1, k1] <- 4.0   #k1の行および列はトピックsyntax 
-alpha02[k1, k1] <- 1.25
-alpha11 <- rep(0.3, k2)
-alpha21 <- c(rep(0.15, v1), rep(0.0005, v2))
+alpha01 <- seq(2.5, 0.5, length=k1)
+alpha02 <- matrix(0.5, nrow=k1, ncol=k1); alpha02[-k1, k1] <- 8.0; alpha02[k1, k1] <- 3.0
+alpha11 <- rep(0.15, k2)
+alpha21 <- c(rep(0.05, v1), rep(0.00025, v2))
 
-alloc <- as.numeric(rmnom(v2, 1, runif(k1-1, 5, 10)) %*% 1:(k1-1))
-alpha22 <- cbind(matrix(0.001, nrow=k1-1, ncol=v1), matrix(0.005, nrow=k1-1, ncol=v2))
+#syntaxの事前分布
+alloc <- as.numeric(rmnom(v2, 1, extraDistr::rdirichlet(k1-1, rep(5.0, k1-1))) %*% 1:(k1-1))
+alpha22 <- cbind(matrix(0.0001, nrow=k1-1, ncol=v1), matrix(0.0025, nrow=k1-1, ncol=v2))
 for(j in 1:(k1-1)){
   index <- which(alloc==j) + v1
-  alpha22[j, index] <- 3.0              
+  alpha22[j, index] <- 2.5
 }
 
-#ディレクリ分布よりパラメータを生成
-pi1 <- pit1 <- extraDistr::rdirichlet(1, alpha01)
-pi2 <- pit2 <- extraDistr::rdirichlet(k1, alpha02)
-theta <- thetat <- extraDistr::rdirichlet(d, alpha11)
-phi <- phit <- extraDistr::rdirichlet(k2, alpha21)
-psi <- psit <- extraDistr::rdirichlet(k1-1, alpha22)
-
-##HMM-LDAモデルに基づき多項分布から単語を生成
-wd_list <- list()
-ID_list <- list()
-Z1_list <- list()
-Z2_list <- list()
-
-for(i in 1:d){
-  if(i%%100==0){
-    print(i)
-  }
-  z1_vec <- rep(0, w[i])
-  z2_vec <- rep(0, w[i])
-  words <- rep(0, w[i])
+##モデルに基づき単語を生成
+rp <- 0
+repeat {
+  rp <- rp + 1
+  print(rp)
   
-  for(j in 1:w[i]){
-    if(j==1){
-      #文書の先頭単語のsyntaxを生成
-      z1 <- rmnom(1, 1, pi1)
-      z1_vec[j] <- as.numeric(z1 %*% 1:k1)
-    } else {
-      #先頭以降はマルコフ推移に基づきsyntaxを生成
-      z1 <- rmnom(1, 1, pi2[z1_vec[j-1], ])
-      z1_vec[j] <- as.numeric(z1 %*% 1:k1)
+  #ディレクリ分布よりパラメータを生成
+  pi1 <- pit1 <- as.numeric(extraDistr::rdirichlet(1, alpha01))
+  pi2 <- pit2 <- extraDistr::rdirichlet(k1, alpha02)
+  theta <- thetat <- extraDistr::rdirichlet(d, alpha11)
+  phi <- extraDistr::rdirichlet(k2, alpha21)
+  psi <- extraDistr::rdirichlet(k1-1, alpha22)
+  
+  #単語出現確率が低いトピックを入れ替える
+  index1 <- which(colMaxs(psi) < (k1*10)/f); index1 <- index1[index1 > v1]
+  index2 <- which(colMaxs(phi) < (k2*10)/f); index2 <- index2[index2 <= v1]
+  for(j in 1:length(index1)){
+    psi[as.numeric(rmnom(1, 1, extraDistr::rdirichlet(1, rep(1.0, k1-1))) %*% 1:(k1-1)), index1[j]] <- (k1*10)/f
+  }
+  for(j in 1:length(index2)){
+    phi[as.numeric(rmnom(1, 1, extraDistr::rdirichlet(1, rep(1.0, k2))) %*% 1:k2), index2[j]] <- (k2*10)/f
+  }
+  psit <- psi
+  phit <- phi
+  
+  ##HMM-LDAモデルに基づき単語を生成
+  wd_list <- Z1_list <- Z2_list <- list()
+  WX <- matrix(0, nrow=d, ncol=v)
+  
+  for(i in 1:d){
+    z1_vec <- rep(0, w[i])
+    z2_vec <- rep(0, w[i])
+    words <- matrix(0, nrow=w[i], ncol=v)
+    
+    for(j in 1:w[i]){
+      if(j==1){
+        #文書の先頭単語のsyntaxを生成
+        z1 <- rmnom(1, 1, pi1)
+        z1_vec[j] <- as.numeric(z1 %*% 1:k1)
+      } else {
+        #先頭以降はマルコフ推移に基づきsyntaxを生成
+        z1 <- rmnom(1, 1, pi2[z1_vec[j-1], ])
+        z1_vec[j] <- as.numeric(z1 %*% 1:k1)
+      }
     }
+    sum(z1_vec==k1)
+    
+    #トピック分布を生成
+    index_topic <- which(z1_vec==k1)
+    z2 <- rmnom(length(index_topic), 1, theta[i, ])
+    z2_vec[index_topic] <- as.numeric(z2 %*% 1:k2)
+    
+    #トピック分布に基づき単語を生成
+    words[-index_topic, ] <- rmnom(w[i]-length(index_topic), 1, psi[z1_vec[-index_topic], ])   #syntaxに関連する単語
+    words[index_topic, ] <- rmnom(length(index_topic), 1, phi[z2_vec[index_topic], ])   #トピックに関連する単語
+    
+
+    #データを格納
+    wd_list[[i]] <- as.numeric(words %*% 1:v)
+    WX[i, ] <- colSums(words) 
+    Z1_list[[i]] <- z1_vec
+    Z2_list[[i]] <- z2_vec
   }
-  
-  #syntaxにもとづき単語を生成
-  index_topic <- which(z1_vec==k1)
-  words[-index_topic] 
-  wn1 <- rmnom(w[i]-length(index_topic), 1, psi[z1_vec[-index_topic], ])
-  words[-index_topic] <- as.numeric(wn1 %*% 1:v)
-  
-  #トピック分布を生成
-  z2 <- rmnom(length(index_topic), 1, theta[i, ])
-  z2_vec[index_topic] <- as.numeric(z2 %*% 1:k2)
-  
-  #トピック分布に基づき単語を生成
-  wn2 <- rmnom(length(index_topic), 1, phi[z2_vec[index_topic], ])
-  words[index_topic] <- as.numeric(wn2 %*% 1:v)
-  
-  #データを格納
-  wd_list[[i]] <- words
-  ID_list[[i]] <- rep(i, w[i]) 
-  Z1_list[[i]] <- z1_vec
-  Z2_list[[i]] <- z2_vec
+  if(min(colSums(WX)) > 0){
+    break
+  }
 }
 
 #リスト形式をベクトル形式に変換
-z1 <- unlist(Z1_list)
+z1 <- unlist(Z1_list); Z1 <- matrix(as.numeric(table(1:f, z1)), nrow=f, ncol=k1)
 z2 <- unlist(Z2_list)
 wd <- unlist(wd_list)
-ID_d <- unlist(ID_list)
-WX <- sparseMatrix(i=(1:f), j=wd, x=rep(1, f), dims=c(f, v))   #単語のスパース行列
+word_data <- sparseMatrix(1:f, wd, x=rep(1, f), dims=c(f, v))   #単語ベクトルを行列化
+word_dt <- t(word_data)
 
-
-##インデックスを作成
-doc_list <- list()
-word_list <- list()
-for(i in 1:d){doc_list[[i]] <- which(ID_d==i)}
+#インデックスを作成
+d_list <- word_list <- list()
+for(i in 1:d){d_list[[i]] <- which(d_id==i)}
 for(i in 1:v){word_list[[i]] <- which(wd==i)}
 
 
 ####マルコフ連鎖モンテカルロ法でHMM-LDAモデルを推定####
 ##単語ごとに尤度と負担率を計算する関数
-burden_fr <- function(theta, phi, wd, w, k){
-  Bur <-  matrix(0, nrow=length(wd), ncol=k)   #負担係数の格納用
-  for(j in 1:k){
-    #負担係数を計算
-    Bi <- rep(theta[, j], w) * phi[j, wd]   #尤度
-    Bur[, j] <- Bi   
-  }
-  
-  Br <- Bur / rowSums(Bur)   #負担率の計算
-  r <- colSums(Br) / sum(Br)   #混合率の計算
-  bval <- list(Br=Br, Bur=Bur, r=r)
+burden_fr <- function(theta, phi, wd, w, k, vec_k){
+  #負担係数を計算
+  Bur <- theta[w, ] * t(phi)[wd, ]   #尤度
+  Br <- Bur / as.numeric(Bur %*% vec_k)   #負担率
+  bval <- list(Br=Br, Bur=Bur)
   return(bval)
 }
 
 
-####HMM-LDAモデルのパラメータをサンプリング####
+####ギブスサンプラーでHMM-LDAモデルを推定####
 ##アルゴリズムの設定
-R <- 10000
+R <- 3000
 keep <- 2  
 iter <- 0
-burnin <- 1000/keep
+burnin <- 500
 disp <- 10
+er <- 0.00005
 
-#パラメータの真値
+##インデックスとデータの設定
+#データの設定
+d_data <- sparseMatrix(1:f, d_id, x=rep(1, f), dims=c(f, d))   #文書ベクトルを行列化
+d_dt <- t(d_data)
+
+#先頭と後尾のインデックスを作成
+max_word <- max(t_id)
+index_t11 <- which(t_id==1)
+index_t12 <- rep(0, d)
+for(i in 1:d){
+  index_t12[i] <- max(d_list[[i]])
+}
+
+#中間のインデックスを作成
+index_list_t21 <- index_list_t22 <- list()
+for(j in 2:max_word){
+  index_list_t21[[j]] <- which(t_id==j)-1
+  index_list_t22[[j]] <- which(t_id==j)
+}
+index_t21 <- sort(unlist(index_list_t21))
+index_t22 <- sort(unlist(index_list_t22))
+
+
+##事前分布の設定
+alpha01 <- 0.01 
+alpha02 <- 0.01
+beta01 <- 0.01
+beta02 <- 0.01
+
+##パラメータの真値
+#パラメータの初期値
 pi1 <- as.numeric(pit1)
 pi2 <- pit2
 theta <- thetat
 phi <- phit
 psi <- psit
 
-#tfidfで初期値を設定
-tf0 <- colMeans(WX)*10
-idf1 <- log(nrow(WX)/colSums(WX > 0))
-idf2 <- log(nrow(WX)/colSums(WX==0))
+#HMMの潜在変数の初期値
+z1_vec <- z1
+Zi1 <- matrix(as.numeric(table(1:f, z1)), nrow=f, ncol=k1) %*% 1:k1
 
-#単語トピック単位のパラメータの初期値
-word_data <- matrix(0, nrow=d, ncol=v)
-for(i in 1:d){
-  word_data[i, ] <- colSums(WX[doc_list[[i]], ])
-}
-tf0 <- colSums(word_data)/sum(word_data)
-idf0 <- log(d / colSums(word_data > 0))
+##初期値を設定
+#パラメータの初期値
+pi1 <- as.numeric(extraDistr::rdirichlet(1, rep(2.0, k1)))
+pi2 <- extraDistr::rdirichlet(k1, rep(2.0, k1))
+theta <- extraDistr::rdirichlet(d, rep(2.0, k2))
+phi <- extraDistr::rdirichlet(k2, rep(1.0, v))
+psi <- extraDistr::rdirichlet(k1-1, rep(1.0, v))
 
-theta <- extraDistr::rdirichlet(d, rep(0.2, k2))   #文書単位のトピックの初期値
-phi <- extraDistr::rdirichlet(k2, c(rep(0.1, v1), rep(0.025, v2)))   #文書単位の出現確率の初期値
-psi <- extraDistr::rdirichlet(k1-1, c(rep(0.025, v1), rep(0.3, v2)))   #文章セグメントの出現確率の初期値
-pi1 <- rep(1/k1, k1)
-pi2 <- extraDistr::rdirichlet(k1, c(rep(1, k1-1), 5))
-
-##事前分布の設定
-#ハイパーパラメータの事前分布
-alpha01 <- 0.01 
-alpha02 <- 0.01
-alpha11 <- 0.01
-beta01 <- 1
-beta02 <- 1
+#HMMの潜在変数の初期値
+Zi1 <- rmnom(f, 1, rep(1/k1, k1))
+z1_vec <- as.numeric(Zi1 %*% 1:k1)
 
 
 ##パラメータの格納用配列
@@ -185,109 +215,74 @@ SEG2 <- matrix(0, nrow=f, ncol=k2)
 storage.mode(SEG1) <- "integer"
 storage.mode(SEG2) <- "integer"
 
-##MCMC推定用配列
-max_word <- max(t_id)
-index_t11 <- which(t_id==1)
-index_t21 <- list()
-index_t22 <- list()
-for(j in 2:max_word){
-  index_t21[[j]] <- which(t_id==j)-1
-  index_t22[[j]] <- which(t_id==j)
-}
 
-#対数尤度の基準値
-LLst <- sum(WX %*% log(colSums(WX)/sum(WX)))
+##対数尤度の基準値
+#ユニグラムモデルの対数尤度
+LLst <- sum(WX %*% log(colSums(WX)/sum(WX)))   
+
+#ベストな対数尤度
+LL <- c()
+LL1 <- sum(log(as.numeric((Z1[z1!=k1, -k1] * t(psit)[wd[z1!=k1], ]) %*% rep(1, k1-1))))
+LL2 <- sum(log(as.numeric(((thetat[d_id, ] * t(phit)[wd, ])[z1==k1, ]) %*% vec_k2)))
+LLbest <- LL1 + LL2
 
 
 ####ギブスサンプリングでパラメータをサンプリング####
 for(rp in 1:R){
   
-  ##単語ごとのsyntax尤度の推定とsyntaxの生成
-  #syntaxごとの尤度を推定
-  Li01 <- matrix(0, nrow=f, ncol=k1-1)
-  for(j in 1:(k1-1)){
-    Li01[, j] <- psi[j, wd]
-  }
-  #トピックモデルの尤度
-  word_par <- burden_fr(theta, phi, wd, w, k2)   
+  ##単語ごとの尤度と混合率を設定
+  #syntaxとトピックモデルの尤度
+  Li01 <- t(psi)[wd, ]   #syntaxごとの尤度
+  word_par <- burden_fr(theta, phi, wd, d_id, k2, vec_k2) 
   Li02 <- rowSums(word_par$Bur)   #トピックモデルの期待尤度
+  Li0 <- cbind(Li01, Li02)   #尤度の結合
   
-  #尤度の結合
-  Li0 <- cbind(Li01, Li02)
+  #HMMの混合率
+  pi_dt1 <- pi_dt2 <- matrix(1, nrow=f, ncol=k1)
+  pi_dt1[index_t11, ] <- matrix(pi1, nrow=d, ncol=k1, byrow=T)   #文書の先頭と後尾の混合率
+  pi_dt1[index_t22, ] <- pi2[z1_vec[index_t21], ]   #1単語前の混合率
+  pi_dt2[index_t21, ] <- t(pi2)[z1_vec[index_t22], ]   #1単語後の混合率
   
-  #マルコフ推移モデルの尤度と割当確率を逐次的に推定
-  Zi1 <- matrix(0, nrow=f, ncol=k1)
-  z1_rate <- matrix(0, nrow=f, ncol=k1)
-  rf02 <- matrix(0, nrow=k1, ncol=k1)
   
-  for(j in 1:max_word){
-    if(j==1){
-      #セグメントの割当確率
-      Li <- matrix(pi1, nrow=length(index_t11), ncol=k1, byrow=T) * Li0[index_t11, ]   #重み付き尤度
-      z1_rate[index_t11, ] <- Li / rowSums(Li)   #割当確率
-      
-      #多項分布よりセグメントを生成
-      Zi1[index_t11, ] <- rmnom(length(index_t11), 1, z1_rate[index_t11, ])
-      z1_vec[index_t11] <- as.numeric(Zi1[index_t11, ] %*% 1:k1)
-      
-      #混合率のパラメータを更新
-      rf01 <- colSums(Zi1[index_t11, ])
-      
-    } else {
-      
-      #セグメントの割当確率
-      index <- index_t22[[j]]
-      Li <- pi2[z1_vec[index_t21[[j]]], , drop=FALSE] * Li0[index, , drop=FALSE]   #重み付き尤度
-      z1_rate[index, ] <- Li / rowSums(Li)   #割当確率
-      
-      #多項分布よりセグメントを生成
-      Zi1[index, ] <- rmnom(length(index), 1, z1_rate[index, ])
-      z1_vec[index] <- as.numeric(Zi1[index, ] %*% 1:k1)
-      
-      #混合率のパラメータを更新
-      rf02 <- rf02 + t(Zi1[index_t21[[j]], , drop=FALSE]) %*% Zi1[index, , drop=FALSE]   #マルコフ推移
-    }
-  }
-  index_topic <- which(z1_vec==k1)
-  n <- length(index_topic)
+  ##多項分布からHMMの潜在変数をサンプリング
+  #潜在変数の割当確率
+  Li <- pi_dt1 * pi_dt2 * Li0   #結合分布
+  z1_rate <- Li / as.numeric(Li %*% vec_k1)   #割当確率
   
-  #ディクレリ分布からHMMの混合率をサンプリング
-  rf11 <- rf01 + alpha01
-  rf12 <- rf02 + alpha01
-  pi1 <- extraDistr::rdirichlet(1, rf11)
+  #潜在変数をサンプリング
+  Zi1 <- rmnom(f, 1, z1_rate)
+  z1_vec <- as.numeric(Zi1 %*% 1:k1)
+  n1 <- sum(Zi1[, 1:(k1-1)]); n2 <- sum(Zi1[, k1])
+  index_topic <- which(Zi1[, k1]==1)
+  
+  ##HMMのパラメータをサンプリング
+  #ディリクレ分布から推移確率をサンプリング
+  rf11 <- colSums(Zi1[index_t11, ]) + alpha01
+  rf12 <- t(Zi1[index_t21, ]) %*% Zi1[index_t22, ] + alpha02
+  pi1 <- as.numeric(extraDistr::rdirichlet(1, rf11))
   pi2 <- extraDistr::rdirichlet(k1, rf12)
+
   
   #ディクレリ分布からsyntaxのパラメータをサンプリング
   Zi1_syntax <- Zi1[-index_topic, ]
-  WX_syntax <- WX[-index_topic, ]
-  df0 <- matrix(0, nrow=k1-1, ncol=v)
-  for(j in 1:(k1-1)){
-    df0[j, ] <- colSums(WX_syntax * Zi1_syntax[, j])
-  }
-  df <- df0 + alpha02 
+  df <- t(as.matrix(word_dt[, -index_topic] %*% Zi1_syntax)) + alpha02
   psi <- extraDistr::rdirichlet(k1-1, df)
   
-  ##単語ごとにトピックをサンプリング
-  Zi2 <- matrix(0, nrow=f, ncol=k2)
-  Zi2[index_topic, ] <- rmnom(n, 1, word_par$Br[index_topic, ])   #多項分布よりトピックをサンプリング
-  z2_vec <- as.numeric(Zi2 %*% 1:k2)
   
+  ##単語のトピックをサンプリング
+  Zi2 <- matrix(0, nrow=f, ncol=k2)
+  Zi2[index_topic, ] <- rmnom(n2, 1, word_par$Br[index_topic, ])   #多項分布よりトピックをサンプリング
+  z2_vec <- as.numeric(Zi2 %*% 1:k2)
+
   
   ##トピックモデルのパラメータをサンプリング
-  #トピック分布thetaをサンプリング
-  wsum0 <- matrix(0, nrow=d, ncol=k2)
-  for(i in 1:d){
-    wsum0[i, ] <- colSums(Zi2[doc_list[[i]], ])
-  }
-  wsum <- wsum0 + beta01
+  #トピック分布をサンプリング
+  Zi2_topic <- Zi2[index_topic, ]
+  wsum <- as.matrix(d_dt[, index_topic] %*% Zi2_topic) + beta01
   theta <- extraDistr::rdirichlet(d, wsum)
   
-  #単語分布phiをサンプリング
-  vf0 <- matrix(0, nrow=k2, ncol=v)
-  for(j in 1:v){
-    vf0[, j] <- colSums(Zi2[word_list[[j]], ])
-  }
-  vf <- vf0 + alpha11
+  #単語分布をサンプリング
+  vf <- t(as.matrix(word_dt[, index_topic] %*% Zi2_topic)) + beta02
   phi <- extraDistr::rdirichlet(k2, vf)
   
   ##パラメータの格納とサンプリング結果の表示
@@ -307,19 +302,23 @@ for(rp in 1:R){
       SEG2 <- SEG2 + Zi2
     }
     
-    #サンプリング結果を確認
     if(rp%%disp==0){
-      LL1 <- sum(log(rowSums(word_par$Bur[index_topic, ] * Zi2[index_topic, ])))
-      LL2 <- sum(log(rowSums(Li01[-index_topic, ] * Zi1[-index_topic, -k1])))
+      #対数尤度を計算
+      LL1 <- sum(log(as.numeric((Zi1[-index_topic, -k1] * t(psi)[wd[-index_topic], ]) %*% rep(1, k1-1))))
+      LL2 <- sum(log(as.numeric(((theta[d_id, ] * t(phi)[wd, ])[index_topic, ]) %*% vec_k2)))
+      LL <- c(LL, LL1 + LL2)
+      
+      #サンプリング結果を表示
       print(rp)
-      print(c(LL1 + LL2, LLst))
+      print(c(LL1+LL2, LLbest, LLst))
       print(round(cbind(pi2, pit2), 3))
-      print(round(cbind(theta[1:6, ], thetat[1:6, ]), 3))
-      print(round(cbind(psi[, 296:305], psit[, 296:305]), 3))
+      print(round(cbind(psi[, (v1-4):(v1+5)], psit[, (v1-4):(v1+5)]), 3))
     }
   }
 }
 
+plot(1:length(LL), LL, type="l")
+LL
 
 ####サンプリング結果の可視化と要約####
 burnin <- 1000/keep   #バーンイン期間
