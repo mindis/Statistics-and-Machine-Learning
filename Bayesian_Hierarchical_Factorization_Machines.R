@@ -1,19 +1,17 @@
 #####Bayesian Hierarchical Factorization Machines#####
 library(MASS)
+library(lda)
+library(RMeCab)
 library(matrixStats)
 library(Matrix)
 library(data.table)
-library(FAdist)
 library(bayesm)
+library(HMM)
 library(extraDistr)
-library(condMVNorm)
-library(actuar)
-library(gtools)
-library(caret)
 library(reshape2)
 library(dplyr)
+library(plyr)
 library(ggplot2)
-library(lattice)
 
 #set.seed(78594)
 
@@ -68,53 +66,69 @@ covmatrix <- function(col, corM, lower, upper){
 s1 <- 10; vec1 <- rep(1, s1)   #行列分解の基底数
 s2 <- 5; vec2 <- rep(1, s2)   #交互作用の基底数
 hh <- 5000   #ユーザー数
-item <- 2000   #アイテム数
-N0 <- hh*item
+item <- 3000   #アイテム数
+pt <- rtpois(hh, rgamma(hh, 35.0, 0.2), a=1, b=Inf)   #購買接触数
+f <- sum(pt)
+vec_s1 <- rep(1, s1)
+vec_s2 <- rep(1, s2)
 
 #IDを設定
-user_id0 <- rep(1:hh, rep(item, hh))
-item_id0 <- rep(1:item, hh)
+user_id <- rep(1:hh, pt)
+t_id <- as.numeric(unlist(tapply(1:f, user_id, rank)))
+user_list <- list()
+for(i in 1:hh){
+  user_list[[i]] <- which(user_id==i)
+}
 
-##欠損ベクトルを生成
-#欠損確率を生成
-user_prob <- rbeta(hh, 8.5, 10.0)   #ユーザ-購買確率
-item_prob <- rbeta(item, 6.5, 8.0)   #アイテム購買確率
-prob <- user_prob[user_id0]*item_prob[item_id0]
+##アイテムの割当を生成
+#セグメント割当を生成
+topic <- 25
+phi <- extraDistr::rdirichlet(topic, rep(0.5, item))
+z <- as.numeric(rmnom(hh, 1,  extraDistr::rdirichlet(hh, rep(2.5, topic))) %*% 1:topic)
 
-#ベルヌーイ分布から欠損ベクトルを生成
-z_vec <- rbinom(N0, 1, prob)
-N <- sum(z_vec)
+#多項分布からアイテムを生成
+item_id_list <- list()
+for(i in 1:hh){
+  if(i%%100==0){
+    print(i)
+  }
+  item_id_list[[i]] <- as.numeric(rmnom(pt[i], 1, phi[z[user_id[user_list[[i]]]], ]) %*% 1:item)
+}
+item_id <- unlist(item_id_list)
+item_list <- list()
+for(j in 1:item){
+  item_list[[j]] <- which(item_id==j)
+}
 
-#欠損ベクトルからidを再構成
-user_id <- user_id0[z_vec==1]
-item_id <- item_id0[z_vec==1]
-rm(user_id0); rm(item_id0); rm(z_vec); rm(prob)
+#スパース行列を作成
+user_data <- sparseMatrix(1:f, user_id, x=rep(1, f), dims=c(f, hh))
+user_data_T <- t(user_data)
+item_data <- sparseMatrix(1:f, item_id, x=rep(1, f), dims=c(f, item))
+item_data_T <- t(item_data)
+
+#生成したデータを可視化
+freq_item <- plyr::count(item_id); freq_item$x <- as.character(freq_item$x)
+hist(freq_item$freq, breaks=25, col="grey", xlab="アイテムの購買頻度", main="アイテムの購買頻度分布")
 gc(); gc()
-
-#購買数をカウント
-freq <- plyr::count(user_id); user_freq <- freq$freq[order(freq$x)]
-freq <- plyr::count(item_id); item_freq <- freq$freq[order(freq$x)]
-hist(user_freq, col="grey", breaks=25, main="ユーザーごとの購買数", xlab="購買数")
-hist(item_freq, col="grey", breaks=25, main="アイテムごとの購買数", xlab="購買数")
 
 
 ##説明変数の生成
 #モデルの説明変数を生成
-k1 <- 4; k2 <- 5; k3 <- 5
+k1 <- 3; k2 <- 4; k3 <- 4
 k <- k1 + k2 + k3
-x1 <- matrix(0, nrow=N, ncol=k1)
-x2 <- matrix(0, nrow=N, ncol=k2)
+x1 <- matrix(0, nrow=f, ncol=k1)
+x2 <- matrix(0, nrow=f, ncol=k2)
 for(j in 1:k1){
   par <- runif(2, 1.0, 2.5)
-  x1[, j] <- rbeta(N, par[1], par[2])
+  x1[, j] <- rbeta(f, par[1], par[2])
 }
 for(j in 1:k2){
   pr <- runif(1, 0.25, 0.55)
-  x2[, j] <- rbinom(N, 1, pr)
+  x2[, j] <- rbinom(f, 1, pr)
 }
-x3 <- rmnom(N, 1, runif(k3, 0.2, 1.25)); x3 <- x3[, -which.min(colSums(x3))]
+x3 <- rmnom(f, 1, runif(k3, 0.2, 1.25)); x3 <- x3[, -which.min(colSums(x3))]
 x <- cbind(1, x1, x2, x3)   #データを結合
-
+z <- cbind(x1, x2 ,x3)
 
 #ユーザーの説明変数を生成
 k1 <- 3; k2 <- 3; k3 <- 4
@@ -148,36 +162,22 @@ v3 <- rmnom(item, 1, runif(k3, 0.2, 1.25)); v3 <- v3[, -which.min(colSums(v3))]
 v <- cbind(1, v1, v2, v3)   #データを結合
 
 
-##交差項を設定
-#交差項のインデックスを作成
-z_matrix <- matrix(0, nrow=k-1, ncol=k-1)
-z_matrix[upper.tri(z_matrix)] <- 1
+##交差項の設定
+#組み合わせを作成
+index_combine <- t(combn(c(1:ncol(z)), m=2))
+combine_list <- list()
+combine_n <- rep(0, max(index_combine[, 1]))
+for(j in 1:max(index_combine[, 1])){
+  combine_list[[j]] <- index_combine[which(index_combine[, 1]==j), 2]
+  combine_n[j] <- length(combine_list[[j]])
+}
+
+#交差項の配列を設定
 z_list <- list()
-for(j in 1:(k-1)){
-  index <- which(z_matrix[j, ]==1)
-  if(length(index) > 0){
-    z_list[[j]] <- cbind(j1=j, j2=which(z_matrix[j, ]==1))
-  }
+for(j in 1:length(combine_list)){
+  z_list[[j]] <- z[, j] * z[, combine_list[[j]]]
 }
-z_index <- do.call(rbind, z_list)
-
-#交差項の入力変数を作成
-z <- x[, z_index[, 1]+1] * x[, z_index[, 2]+1]
-
-#説明変数の割当インデックス
-allocation_index11 <- allocation_index12 <- matrix(0, nrow=k-1, ncol=k-2)
-allocation_index21 <- allocation_index22 <- matrix(0, nrow=k-1, ncol=k-2)
-for(j in 1:(k-1)){
-  index <- which(rowSums(z_index==j)==1)
-  allocation_index11[j, ] <- allocation_index12[j, ] <- 
-    rowSums(matrix(as.numeric(z_index[index, ]!=j), nrow=length(index)) * z_index[index, ])
-  allocation_index21[j, ] <- allocation_index22[j, ] <-  index
-}
-allocation_index11[lower.tri(allocation_index11)] <- 0
-allocation_index21[lower.tri(allocation_index21)] <- 0
-vec <- rep(1, s)
-j_data12 <- matrix(1:(k-1), nrow=k-1, ncol=k-2) 
-j_data11 <- j_data12 * (allocation_index11 > 0)
+zz <- do.call(cbind, z_list)
 
 
 ####応答変数を生成####
@@ -205,11 +205,11 @@ repeat {
     if(j==1){
       alpha_x[j, ] <- runif(ncol(x), -0.4, 0.3)
       alpha_u[j, ] <- runif(s1, -0.4, 0.2)
-      alpha_z[j, , ] <- matrix(rnorm(s2*(k-1), 0, 0.2), nrow=s2, ncol=k-1)
+      alpha_z[j, , ] <- matrix(rnorm(s2*(k-1), 0, 0.225), nrow=s2, ncol=k-1)
     } else {
       alpha_x[j, ] <- runif(ncol(x), -0.4, 0.3)
       alpha_u[j, ] <- runif(s1, -0.35, 0.2)
-      alpha_z[j, , ] <- matrix(rnorm(s2*(k-1), 0, 0.2), nrow=s2, ncol=k-1)
+      alpha_z[j, , ] <- matrix(rnorm(s2*(k-1), 0, 0.225), nrow=s2, ncol=k-1)
     }
   }
   for(j in 1:ncol(v)){
@@ -225,6 +225,7 @@ repeat {
   theta_x <- theta_xt <- u %*% alpha_x + mvrnorm(hh, rep(0, ncol(x)), Cov_x)   #変量効果のパラメータ
   theta_u <- theta_ut <- u %*% alpha_u + mvrnorm(hh, rep(0, s1), Cov_u)   #ユーザーの行列分解のパラメータ
   theta_v <- theta_vt <- v %*% alpha_v + mvrnorm(item, rep(0, s1), Cov_v)   #アイテムの行列分解のパラメータ
+  
   theta_z <- array(0, c(hh, s2, k-1))
   for(j in 1:(k-1)){
     theta_z[, , j] <- u %*% alpha_z[, , j] + mvrnorm(hh, rep(0, s2), Cov_z)   #交互作用のパラメータ
@@ -239,18 +240,18 @@ repeat {
   uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec1)
 
   #交互作用のパラメータ
-  z_vec <- rep(0, N)
-  j_data_vec11 <- as.numeric(j_data11)[as.numeric(j_data11) > 0]; m <- length(j_data_vec11)
-  allocation_vec11 <- as.numeric(allocation_index11)[as.numeric(allocation_index11) > 0]
-  allocation_vec21 <- as.numeric(allocation_index21)[as.numeric(allocation_index21) > 0]
-  for(j in 1:length(j_data_vec11)){
-    z_vec <- z_vec + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec2
+  theta_vec <- theta_z[user_id, , ]; z_vec <- rep(0, f)
+  for(i in 1:length(combine_n)){
+    vv <- matrix(0, nrow=f, ncol=combine_n[[i]])
+    for(j in 1:combine_n[[i]]){
+      vv[, j] <- (theta_vec[, , i] * theta_vec[, , combine_list[[i]][j]]) %*% vec_s2
+    }
+    z_vec <- z_vec + as.numeric((z_list[[i]] * vv) %*% rep(1, combine_n[[i]]))
   }
-  z_vec <- as.numeric(z_vec)
   
   #潜在効用と応答変数を生成
-  mu <- x_mu + z_vec + uv   #期待値
-  U <- mu + rnorm(N, 0, sigma)   #潜在効用を生成
+  mu <- mut <- x_mu + z_vec + uv   #期待値
+  U <- mu + rnorm(f, 0, sigma)   #潜在効用を生成
   
   #購買ベクトルに変換
   y <- ifelse(U > 0, 1, 0)
@@ -281,7 +282,8 @@ iter <- 0
 burnin <- 100
 disp <- 10
 
-##インデックスを設定
+##インデックスとデータの定数を設定
+#行列分解のインデックスを作成
 user_index <- item_index <- list()
 ui_id <- iu_id <- list()
 for(i in 1:hh){
@@ -292,6 +294,33 @@ for(j in 1:item){
   item_index[[j]] <- which(item_id==j)
   iu_id[[j]] <- user_id[item_index[[j]]]
 }
+
+#交互作用項のインデックスを作成
+index_allocation1 <- rep(1:(ncol(z)-1), combine_n)
+index_allocation2 <- unlist(combine_list)
+index_allocation <- matrix(1:ncol(z), nrow=ncol(z), ncol=ncol(z), byrow=T); diag(index_allocation) <- 0
+
+index_z <- index_list1 <- index_list2 <- list()
+for(j in 1:(k-1)){
+  index_z[[j]] <- sort(c(which(index_allocation1==j), which(index_allocation2==j)))
+  index_list1[[j]] <- cbind(index_allocation1[index_z[[j]]], index_allocation2[index_z[[j]]])
+  index_list2[[j]] <- cbind(index_allocation1[-index_z[[j]]], index_allocation2[-index_z[[j]]])
+}
+
+#交互作用項のデータの設定
+zz_array1 <- array(0, dim=c(f, k-2, k-1))
+zz_array2 <- array(0, dim=c(f, ncol(zz)-(k-2), k-1))
+for(j in 1:(k-1)){
+  zz_array1[, , j] <- zz[, index_z[[j]]]
+  zz_array2[, , j] <- zz[, -index_z[[j]]]
+}
+
+#入力変数の定数を設定
+xx_list <- list()
+for(i in 1:hh){
+  xx_list[[i]] <- t(x[user_index[[i]], ]) %*% x[user_index[[i]], ]
+}
+
 
 ##事前分布の設定
 #変量効果の階層モデルの事前分布
@@ -345,13 +374,18 @@ sigma <- sigmat
 theta_x <- theta_xt; theta_u <- theta_ut; theta_v <- theta_vt; theta_z <- theta_zt
 user_mu <- as.numeric((x * theta_x[user_id, ]) %*% rep(1, ncol(x)))
 
-#行列分解と交互作用項のパラメータ
+#行列分解のパラメータ
 uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec1)
-z_vec <- rep(0, N)
-for(j in 1:length(j_data_vec11)){
-  z_vec <- z_vec + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec2
+
+#交互作用項のパラメータ
+theta_vec <- theta_z[user_id, , ]; z_vec <- rep(0, f)
+for(i in 1:length(combine_n)){
+  vv <- matrix(0, nrow=f, ncol=combine_n[[i]])
+  for(j in 1:combine_n[[i]]){
+    vv[, j] <- (theta_vec[, , i] * theta_vec[, , combine_list[[i]][j]]) %*% vec_s2
+  }
+  z_vec <- z_vec + as.numeric((z_list[[i]] * vv) %*% rep(1, combine_n[[i]]))
 }
-z_vec <- as.numeric(z_vec)
 
 
 ##パラメータの初期値
@@ -372,13 +406,19 @@ for(j in 1:(k-1)){
   theta_z[, , j] <- mvrnorm(hh, rep(0, s2), Cov_z[, , j])
 }
 
-#行列分解と交互作用項のパラメータ
+#行列分解のパラメータ
 uv <- as.numeric((theta_u[user_id, ] * theta_v[item_id, ]) %*% vec1)
-z_vec <- rep(0, N)
-for(j in 1:m){
-  z_vec <- z_vec + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec2
+
+#交互作用項のパラメータ
+theta_vec <- theta_z[user_id, , ]; z_vec <- rep(0, f)
+for(i in 1:length(combine_n)){
+  vv <- matrix(0, nrow=f, ncol=combine_n[[i]])
+  for(j in 1:combine_n[[i]]){
+    vv[, j] <- (theta_vec[, , i] * theta_vec[, , combine_list[[i]][j]]) %*% vec_s2
+  }
+  z_vec <- z_vec + as.numeric((z_list[[i]] * vv) %*% rep(1, combine_n[[i]]))
 }
-z_vec <- as.numeric(z_vec)
+
 
 ##パラメータの格納用配列
 #モデルパラメータの格納用配列
@@ -397,42 +437,6 @@ COV_X <- array(0, dim=c(k, k, R/keep))
 COV_U <- COV_V <- array(0, dim=c(s1, s1, R/keep))
 COV_Z <- array(0, dim=c(s2, s2, k-1, R/keep))
 
-##インデックスとデータの定数を設定
-#インデックスを設定
-index_list11 <- index_list12 <- list()
-index_list21 <- index_list22 <- index_list23 <- list()
-
-for(j in 1:(k-1)){
-  #データを抽出
-  index <- (allocation_index11==j) + (j_data11==j)
-  
-  #推定パラメータのインデックス
-  j_index <- z_index[rowSums(z_index * cbind(z_index[, 1]==j, z_index[, 2]==j)) > 0, ]
-  index_list11[[j]] <- j_index[j_index!=j]
-  index_list12[[j]] <- allocation_index21[index==1]
-  
-  #固定パラメータのインデックス
-  index1 <- as.numeric(t(allocation_index11 * (1-index)))
-  index2 <- as.numeric(t(allocation_index21 * (1-index)))
-  index3 <- as.numeric(t(j_data11 * (1-index)))
-  index_list21[[j]] <- index1[index1 > 0]
-  index_list22[[j]] <- index2[index2 > 0]
-  index_list23[[j]] <- index3[index3 > 0]
-}
-
-#データの定数を設定
-xx_list <- list()
-for(i in 1:hh){
-  xx_list[[i]] <- t(x[user_index[[i]], ]) %*% x[user_index[[i]], ]
-}
-z_list <- list()
-for(i in 1:hh){
-  z_array <- array(0, dim=c(length(user_index[[i]]), k-2, k-1))
-  for(j in 1:(k-1)){
-    z_array[, , j] <- z[user_index[[i]], index_list12[[j]]]
-  }
-  z_list[[i]] <- z_array
-}
 
 ##切断領域を定義
 index_y1 <- which(y==1)
@@ -441,16 +445,22 @@ a <- ifelse(y==0, -100, 0)
 b <- ifelse(y==1, 100, 0)
 
 ##対数尤度の基準値
+#1パラメータモデルの対数尤度
 prob <- mean(y)
 LLst <- sum(y*log(prob)) + sum((1-y)*log(1-prob))   #対数尤度
 
+#ベストモデルの対数尤度
+prob <- pnorm(mut, 0, sigmat)   #購買確率
+prob[prob==1] <- 0.9999999; prob[prob==0] <- 0.0000001
+LLbest <- sum(y*log(prob) + (1-y)*log(1-prob))   #対数尤度
+
 
 ####ギブスサンプリングでパラメータをサンプリング####
-  for(rp in 1:R){
+for(rp in 1:R){
     
   ##切断正規分布より潜在効用を生成
   mu <- user_mu + uv + z_vec   #潜在効用の期待値
-  U <- extraDistr::rtnorm(N, mu, sigma, a, b)   #潜在効用を生成
+  U <- extraDistr::rtnorm(f, mu, sigma, a, b)   #潜在効用を生成
   
   ##ユーザーの回帰ベクトルをサンプリング
   #モデルの応答変数
@@ -503,35 +513,37 @@ LLst <- sum(y*log(prob)) + sum((1-y)*log(1-prob))   #対数尤度
   ##交互作用項の特徴ベクトルをサンプリング
   #モデルの応答変数
   z_er <- U - user_mu - uv
-  
+
   for(i in 1:hh){
-    #データを抽出
-    zi <- z[user_index[[i]], ]
-    theta_zi <- t(theta_z[i, , ])
-    
-      for(j in 1:(k-1)){
-      #応答変数を設定
-      er <- z_er[user_index[[i]]] - as.numeric(zi[, index_list22[[j]]] %*%
-                                                 (theta_zi[index_list21[[j]], ] * theta_zi[index_list23[[j]], ]) %*% vec2)
+    #データの抽出
+    zz1 <- zz_array1[user_index[[i]], , ]; zz2 <- zz_array2[user_index[[i]], , ]
+    theta <- t(theta_z[i, , ])
+    er_vec <- z_er[user_index[[i]]]
+  
+    for(j in 1:(k-1))
+      #応答変数の設定
+      er <- er_vec - as.numeric(zz2[, , j] %*% (theta[index_list2[[j]][, 1], ] * theta[index_list2[[j]][, 2], ]) %*% vec_s2)
       
       #交互作用項の事後分布のパラメータ
-      X <- z_list[[i]][, , j] %*% theta_zi[index_list11[[j]], ]
+      X <- zz1[, , j] %*% theta[index_list1[[j]][, 2], ]
       Xy <- t(X) %*% er
       inv_XXV <- solve(t(X) %*% X + inv_Cov_z[, , j])
       mu <- as.numeric(inv_XXV %*% (Xy + inv_Cov_z[, , j] %*% z_mu[i, , j]))   #事後分布の平均
       
       #多変量正規分布から交互作用項をサンプリング
       theta_z[i, , j] <- mvrnorm(1, mu, sigma^2*inv_XXV)
-      theta_zi[j, ] <- theta_z[i, , j]
-    }
+      theta[j, ] <- theta_z[i, , j]
   }
   
   #交互作用項のパラメータを更新
-  z_vec <- rep(0, N)
-  for(j in 1:m){
-    z_vec <- z_vec + z[, allocation_vec21[j]] * (theta_z[user_id, , j_data_vec11[j]] * theta_z[user_id, , allocation_vec11[j]]) %*% vec2
+  theta_vec <- theta_z[user_id, , ]; z_vec <- rep(0, f)
+  for(i in 1:length(combine_n)){
+    vv <- matrix(0, nrow=f, ncol=combine_n[[i]])
+    for(j in 1:combine_n[[i]]){
+      vv[, j] <- (theta_vec[, , i] * theta_vec[, , combine_list[[i]][j]]) %*% vec_s2
+    }
+    z_vec <- z_vec + as.numeric((z_list[[i]] * vv) %*% rep(1, combine_n[[i]]))
   }
-  z_vec <- as.numeric(z_vec)
   
   
   ##ユーザーの回帰ベクトルの階層モデルのパラメータをサンプリング
@@ -594,6 +606,8 @@ LLst <- sum(y*log(prob)) + sum((1-y)*log(1-prob))   #対数尤度
     
     #サンプリング結果の表示
     print(rp)
-    print(c(LL, LLst))
+    print(c(LL, LLbest, LLst))
   }
 }
+
+
