@@ -52,9 +52,10 @@ for(i in 1:hh){
   item_id_list[[i]] <- as.numeric(rmnom(pt[i], 1, phi[z[user_id[user_list[[i]]]], ]) %*% 1:item)
 }
 item_id <- unlist(item_id_list)
-item_list <- list()
+item_list <- list(); item_n <- rep(0, item)
 for(j in 1:item){
   item_list[[j]] <- which(item_id==j)
+  item_n[j] <- length(item_list[[j]])   
 }
 
 #スパース行列を作成
@@ -171,7 +172,7 @@ for(j in 1:v){
 
 #トピック分布の期待値を設定
 Z_score <- matrix(0, nrow=item, ncol=k) 
-for(i in 1:d){
+for(i in 1:item){
   Z_score[i, ] <- colMeans(Z[doc_list[[i]], ])
 }
 
@@ -201,9 +202,8 @@ repeat {
   theta_v <- theta_vt <- g %*% alpha_v + rnorm(item, 0, Cov_v)
   theta_z <- theta_zt <- u %*% alpha_z + mvrnorm(hh, rep(0, k), Cov_z)
   
-  
   #正規分布からスコアを生成
-  mu <- as.numeric(x %*% beta + theta_u[user_id] + theta_v[item_id] + (Z_score[item_id, ] * theta_z[item_id, ]) %*% vec_k)
+  mu <- as.numeric(x %*% beta + theta_u[user_id] + theta_v[item_id] + (Z_score[item_id, ] * theta_z[user_id, ]) %*% vec_k)
   y0 <- rnorm(hhpt, mu, sigma)
   
   #break条件
@@ -239,6 +239,21 @@ disp <- 10
 iter <- 0
 burnin <- 1000/keep
 
+##インデックスとデータの設定
+#インデックスを設定
+index_u <- index_w <- y_vec <- z_dt <- list()
+for(j in 1:item){
+  index_y <- item_list[[j]]; n <- item_n[j]
+  index_u[[j]] <- rep(user_id[index_y], w[j]); index_w[[j]] <- rep(1:w[j], length(index_y))   #インデックス
+  y_vec[[j]] <- rep(y[index_y], w[j])   #スコアのベクトル
+  z_dt[[j]] <- sparseMatrix(rep(1:w[j], rep(n, w[j])), 1:(n*w[j]), x=rep(1, n*w[j]), dims=c(w[j], n*w[j]))   #和を取るための疎行列
+}
+
+#データの設定
+xx <- t(x) %*% x
+uu <- t(u) %*% u
+gg <- t(g) %*% g
+
 
 ##事前分布の設定
 #トピックモデルの事前分布
@@ -250,10 +265,13 @@ beta01 <- 0
 beta02 <- 0
 s0 <- 0.1
 v0 <- 0.1
+Cov_x <- 100 * diag(col_x); inv_Cov_x <- solve(Cov_x)
+tau_u <- 100 * diag(ncol(u)); inv_tau_u <- solve(tau_u)
+tau_v <- 100 * diag(ncol(g)); inv_tau_g <- solve(tau_v)
 Deltabar <- matrix(0, nrow=ncol(u), ncol=k)   #階層モデルの回帰係数の事前分布の平均
 ADelta <- 0.01 * diag(1, ncol(u))   #階層モデルの回帰係数の事前分布の分散
 nu <- k + 1   #逆ウィシャート分布の自由度
-V <- nu1 * diag(rep(1, k)) #逆ウィシャート分布のパラメータ
+V <- nu * diag(rep(1, k)) #逆ウィシャート分布のパラメータ
 
 
 ##パラメータの真値
@@ -266,21 +284,22 @@ Z_score <- wsum / w
 #素性ベクトルのパラメータ
 sigma <- sigmat
 beta <- betat
+beta_mu <- as.numeric(x %*% beta)
 
 #階層モデルの分散パラメータ
-Cov_u <- Cov_ut
-Cov_v <- Cov_vt   
-Cov_z <- Cov_zt  
+Cov_u <- Cov_ut; inv_Cov_u <- 1 / Cov_u 
+Cov_v <- Cov_vt; inv_Cov_v <- 1 / Cov_v 
+Cov_z <- Cov_zt; inv_Cov_z <- solve(Cov_z)
 
 #階層モデルの回帰係数を設定
-alpha_u <- alpha_ut
-alpha_v <- alpha_vt
-alpha_z <- alpha_zt
+alpha_u <- alpha_ut; u_mu <- as.numeric(u %*% alpha_u)
+alpha_v <- alpha_vt; v_mu <- as.numeric(g %*% alpha_v)
+alpha_z <- alpha_zt; z_mu <- u %*% alpha_z
 
 #変量効果と特徴ベクトルのパラメータ
-theta_u <- theta_ut
-theta_v <- theta_vt
-theta_z <- theta_zt
+theta_u <- theta_ut; theta_user <- theta_u[user_id]
+theta_v <- theta_vt; theta_item <- theta_v[item_id]
+theta_z <- theta_zt; theta_topic <- theta_z[user_id, ]
 
 
 ##初期値の設定
@@ -294,110 +313,254 @@ Z_score <- wsum / w
 #素性ベクトルのパラメータ
 sigma <- 1.0
 beta <- as.numeric(solve(t(x) %*% x) %*% t(x) %*% y)
+beta_mu <- as.numeric(x %*% beta)
 
 #階層モデルの分散パラメータ
-Cov_u <- 0.2
-Cov_v <- 0.2
-Cov_z <- 0.01 * diag(k)
+Cov_u <- 0.2; inv_Cov_u <- 1 / Cov_u 
+Cov_v <- 0.2; inv_Cov_v <- 1 / Cov_v
+Cov_z <- 0.01 * diag(k); inv_Cov_z <- solve(Cov_z)
 
 #階層モデルの回帰係数を設定
-alpha_u <- rnorm(col_u, 0, 0.1)
-alpha_v <- rnorm(col_g, 0, 0.1)
-alpha_z <- mvrnorm(col_u, rep(0, k), 0.01 * diag(k))
+alpha_u <- rnorm(col_u, 0, 0.1); u_mu <- as.numeric(u %*% alpha_u)
+alpha_v <- rnorm(col_g, 0, 0.1); v_mu <- as.numeric(g %*% alpha_v)
+alpha_z <- mvrnorm(col_u, rep(0, k), 0.01 * diag(k)); z_mu <- u %*% alpha_z
 
 #変量効果と特徴ベクトルのパラメータを生成
-theta_u <- u %*% alpha_u + rnorm(hh, 0, Cov_u)
-theta_v <- g %*% alpha_v + rnorm(item, 0, Cov_v)
-theta_z <- u %*% alpha_z + mvrnorm(hh, rep(0, k), Cov_z)
+theta_u <- u %*% alpha_u + rnorm(hh, 0, Cov_u); theta_user <- theta_u[user_id]
+theta_v <- g %*% alpha_v + rnorm(item, 0, Cov_v); theta_item <- theta_v[item_id]
+theta_z <- u %*% alpha_z + mvrnorm(hh, rep(0, k), Cov_z); theta_topic <- theta_z[user_id, ]
 
+
+##パラメータの格納用配列
+#トピックモデルのパラメータの格納用配列
+THETA <- array(0, dim=c(item, k, R/keep))
+PHI <- array(0, dim=c(k, v, R/keep))
+SEG <- matrix(0, nrow=f, ncol=k)
+storage.mode(SEG) <- "integer"
+
+#モデルパラメータの格納用配列
+d <- 0
+BETA <- matrix(0, nrow=R/keep, ncol=ncol(x))
+SIGMA <- rep(0, R/keep)
+THETA_U <- matrix(0, nrow=R/keep, ncol=hh)
+THETA_V <- matrix(0, nrow=R/keep, ncol=item)
+THETA_Z <- array(0, dim=c(hh, k, R/keep))
+
+#階層モデルの格納用配列
+ALPHA_U <- matrix(0, nrow=R/keep, ncol=col_u)
+ALPHA_V <- matrix(0, nrow=R/keep, ncol=col_g)
+ALPHA_Z <- array(0, dim=c(col_u, k, R/keep))
+COV_U <- COV_V <- rep(0, R/keep)
+COV_Z <- array(0, dim=c(k, k, R/keep))
+
+##対数尤度の基準値
+#1パラメータモデル
+LLst <- sum(dnorm(y, mean(y), sd(y), log=TRUE))
+
+#ベストモデルの対数尤度
+score <- as.matrix(d_data_T %*% Z / w)
+uz <- rowSums(score[item_id, ] * theta_zt[user_id, ])
+mu <- as.numeric(x %*% betat + theta_ut[user_id] + theta_vt[item_id] + uz)
+LLbest <- sum(dnorm(y, mu, sigmat, log=TRUE))
 
 
 ####ギブスサンプリングムでパラメータをサンプリング####
 for(rp in 1:R){
   
-  
   ##トピックごとの評価スコアの尤度を設定
-  #データの設定
-  mu_uv <- as.numeric(x %*% beta + theta_u[user_id] + theta_v[item_id])   #トピック因子を除いた期待値
-  wsum_z <- wsum[d_id, ] - Z   #単語ベクトルでのトピック割当
-  w_vec <- w[d_id]
+  #トピック因子を除いたスコアの期待値
+  mu_uv <- as.numeric(x %*% beta + theta_user + theta_item)   #トピック因子を除いた期待値
+  wsum_z <- (wsum - rmnom(item, 1, wsum / as.numeric(wsum %*% vec_k)))   #トピック分布に比例してトピックを除外
   
-  wsum_topic <- wsum_z
-  wsum_topic[, j]  <- wsum_topic[, j] + 1
-  Z_score <- wsum_topic / w_vec
-
-  
-  #トピック尤度からトピック割当確率を推定
-  theta_z
-  
-  
-  
-  #完全データの対数尤度
-  z_par <- theta[d_id, ] * t(phi)[wd, ]
-
-  #トピックの割当からトピックをサンプリング
-  z_rate <- z_par / rowSums(z_par)   #トピックの割当確率
-  Zi <- rmnom(f, L, z_rate) / L
-  Zi_T <- t(Zi)
-  
-  ##ユーザー特徴行列をサンプリング
-  #トピックスコアを設定
-  wsum0 <- matrix(0, nrow=d, ncol=k)
-  for(i in 1:d){
-    wsum0[i, ] <- Zi_T[, doc_list[[i]]] %*% doc_vec[[i]]
-  }
-  Zi_score <- (wsum0 / w)
-  
-  #ユーザーごとに特徴ベクトルをサンプリング
-  for(i in 1:hh){
+  #評価スコアのトピック割当ごとの対数尤度
+  LLi <- matrix(0, nrow=item, ncol=k)   #対数尤度の格納用配列
+  for(j in 1:k){
+    #トピックスコアの割当
+    wsum_z0 <- wsum_z; wsum_z0[, j] <- wsum_z0[, j] + 1
+    z_score <- (wsum_z0 / w)[item_id, ]
     
-    #特徴ベクトルの事後分布のパラメータ
-    index <- iu_list[[i]]   #アイテムインデックス
-    Xy <- sigma^-2 * (t(Zi_score[index, ]) %*% y[user_list[[i]]])
-    XXV <- sigma^-2 * (t(Zi_score[index, ]) %*% Zi_score[index, ]) + inv_tau
-    inv_XXV <- solve(XXV)
-    x <- inv_XXV %*% (Xy + inv_tau %*% mu)   #事後分布の平均
-    
-    #多変量正規分布からユーザー特徴ベクトルをサンプリング
-    u[i, ] <- colMeans(mvrnorm(L, x, inv_XXV))   #モンテカルロ平均
+    #対数尤度を計算
+    uz <- as.numeric((z_score * theta_topic) %*% vec_k)
+    LLi[, j] <- as.numeric(item_data_T %*% dnorm(y, mu_uv + uz, sigma, log=TRUE))
   }
 
-  ###Mステップで完全データの尤度を最大化
-  ##観測モデルの誤差パラメータを更新
-  uz_mu <- as.numeric(t(u %*% t(Zi_score)))[index_zt1]
-  er <- y - uz_mu
-  sigma <- sd(er)
-
+  ##単語トピックをサンプリング
+  #単語ごとにトピックの割当確率を設定
+  Lho <- theta[d_id, ] * t(phi)[wd, ] * exp(LLi - rowMaxs(LLi))[d_id, ]   #トピック割当ごとの尤度
+  topic_rate <- Lho / as.numeric(Lho %*% vec_k)   #トピックの割当確率
+  
+  #多項分布からトピックをサンプリング
+  Zi <- rmnom(f, 1, topic_rate)
+  z_vec <- as.numeric(Zi %*% 1:k)
+  
   
   ##トピックモデルのパラメータを推定
-  #トピック分布のパラメータを更新
-  wsum <- wsum0 + alpha1
-  theta <- wsum / (w + alpha1*k)
+  #トピック分布をサンプリング
+  wsum <- as.matrix(d_data_T %*% Zi)
+  theta <- extraDistr::rdirichlet(item, wsum + alpha01)
+  Z_score <- wsum / w; z_score <- Z_score[item_id, ]
   
-  #単語分布のパラメータを更新
-  vsum0 <- matrix(0, nrow=k, ncol=v)
-  for(j in 1:v){
-    vsum0[, j] <- Zi_T[, wd_list[[j]], drop=FALSE] %*% wd_vec[[j]]
+  #単語分布のサンプリング
+  vsum <- as.matrix(t(word_data_T %*% Zi)) + alpha02
+  phi <- extraDistr::rdirichlet(k, vsum)
+  
+  
+  ##素性ベクトルのパラメータをサンプリング
+  #応答変数の設定
+  uz <- as.numeric((z_score * theta_topic) %*% vec_k)
+  y_er <- y - theta_u[user_id] - theta_v[item_id] - uz
+  
+  #素性ベクトルの事後分布のパラメータ
+  Xy <- t(x) %*% y_er
+  inv_XXV <- solve(xx + inv_Cov_x)
+  mu_vec <- inv_XXV %*% Xy   #事後分布の平均
+  
+  #多変量正規分布から素性ベクトルをサンプリング
+  beta <- mvrnorm(1, mu_vec, sigma^2*inv_XXV)
+  beta_mu <- as.numeric(x %*% beta)
+  
+  ##モデルの標準偏差をサンプリング
+  #逆ガンマ分布のパラメータ
+  er <- y - beta_mu - theta_user - theta_item - uz   #モデルの誤差
+  s1 <- as.numeric(t(er) %*% er) + s0
+  v1 <- hhpt + v0
+  
+  #逆ガンマ分布から標準偏差をサンプリング
+  sigma <- sqrt(1/rgamma(1, v1/2, s1/2))
+  
+  
+  ##ユーザの変量効果をサンプリング
+  #ユーザー変量効果の応答変数の設定
+  y_er <- y - beta_mu - theta_item - uz
+  
+  for(i in 1:hh){
+    #ユーザー変量効果の事後分布のパラメータ
+    w_omega <- 1/Cov_u^2 + pt[i]/sigma^2
+    weight <- (1/Cov_u^2) / w_omega
+    mu_scalar <- weight*u_mu[i] + (1-weight)*mean(y_er[user_list[[i]]])
+  
+    #正規分布からパラメータサンプリング
+    theta_u[i] <- rnorm(1, mu_scalar, 1/ w_omega)
   }
-  vsum <- vsum0 + alpha2
-  phi <- vsum / as.numeric(vsum %*% rep(1, v))
+  theta_user <- theta_u[user_id]
+  
+  ##アイテムの変量効果をサンプリング
+  #アイテム変量効果の応答変数の設定
+  y_er <- y - beta_mu - theta_user - uz
+  
+  for(j in 1:item){
+    #アイテム変量効果の事後分布のパラメータ
+    w_omega <- 1/Cov_v^2 + item_n[j]/sigma^2
+    weight <- (1/Cov_v^2) / w_omega
+    mu_scalar <- weight*v_mu[j] + (1-weight)*mean(y_er[item_list[[j]]])
+    
+    #正規分布からユーザー変量効果をサンプリング
+    theta_v[j] <- rnorm(1, mu_scalar, 1/ w_omega)
+  }
+  theta_item <- theta_v[item_id]
+  
+  
+  ##ユーザーごとに特徴ベクトルをサンプリング
+  #応答変数の設定
+  y_er <- y - beta_mu - theta_user - theta_item
+  
+  for(i in 1:hh){
+    #特徴ベクトルの事後分布のパラメータ
+    index <- user_list[[i]]   #ユーザーインデックス
+    X <- z_score[index, ]   #トピックの経験分布
+    Xy <- t(X) %*% y_er[index]
+    inv_XXV <- solve(t(X) %*% X + inv_Cov_z)
+    mu_vec <- inv_XXV %*% (Xy + inv_Cov_z %*% z_mu[i, ])   #事後分布の平均
+    
+    #多変量正規分布から特徴ベクトルをサンプリング
+    theta_z[i, ] <- mvrnorm(1, mu_vec, sigma^2*inv_XXV)
+  }
+  theta_topic <- theta_z[user_id, ]
+  uz <- as.numeric((z_score * theta_topic) %*% vec_k)
+  
+  
+  ##ユーザーの変量効果の階層モデルのパラメータをサンプリング
+  #事後分布のパラメータ
+  Xy <- t(u) %*% theta_u
+  inv_XXV <- solve(t(u) %*% u + inv_tau_u)
+  mu_vec <- inv_XXV %*% Xy   #事後分布の平均
+  
+  #多変量正規分布から素性ベクトルをサンプリング
+  alpha_u <- mvrnorm(1, mu_vec, sigma^2*inv_XXV)
+  u_mu <- as.numeric(u %*% alpha_u)
+  
+  #モデルの標準偏差をサンプリング
+  #逆ガンマ分布のパラメータ
+  er <- theta_u - u_mu   #モデルの誤差
+  s1 <- as.numeric(t(er) %*% er) + s0
+  v1 <- hh + v0
+  
+  #逆ガンマ分布から標準偏差をサンプリング
+  Cov_u <- sqrt(1/rgamma(1, v1/2, s1/2))
+  
+  
+  ##アイテムの変量効果の階層モデルのパラメータをサンプリング
+  #事後分布のパラメータ
+  Xy <- t(g) %*% theta_v
+  inv_XXV <- solve(t(g) %*% g + inv_tau_g)
+  mu_vec <- inv_XXV %*% Xy   #事後分布の平均
+  
+  #多変量正規分布から素性ベクトルをサンプリング
+  alpha_v <- mvrnorm(1, mu_vec, sigma^2*inv_XXV)
+  v_mu <- as.numeric(g %*% alpha_v)
+  
+  #モデルの標準偏差をサンプリング
+  #逆ガンマ分布のパラメータ
+  er <- theta_v - v_mu   #モデルの誤差
+  s1 <- as.numeric(t(er) %*% er) + s0
+  v1 <- item + v0
+  
+  #逆ガンマ分布から標準偏差をサンプリング
+  Cov_v <- sqrt(1/rgamma(1, v1/2, s1/2))
   
   
   ##ユーザー特徴行列の階層モデルのパラメータを推定
-  mu <- colMeans(u)   #平均ベクトル
-  tau <- diag(diag(var(u) + alpha1))   #分散共分散行列
-  inv_tau <- solve(tau)
+  #多変量回帰モデルからパラメータをサンプリング
+  out <- rmultireg(theta_z, u, Deltabar, ADelta, nu, V)
+  alpha_z <- out$B; z_mu <- u %*% alpha_z   
+  Cov_z <- out$Sigma; inv_Cov_z <- solve(Cov_z)
   
-  ##アルゴリズムの収束判定
-  LLs1 <- sum(dnorm(y, uz_mu, sigma, log=TRUE))   #完全データの対数尤度
-  LLs2 <- sum(log(rowSums(theta[d_id, ] * t(phi)[wd, ])))
-  LL <- LLs1 + LLs2
-  iter <- iter + 1
-  dl <- LL - LL1
-  LL1 <- LL
-  LLs <- c(LLs, LL1)
-  print(c(LL, LLs1, LLs2))
+  ##パラメータの格納とサンプリング結果の格納
+  if(rp%%keep==0){
+    mkeep <- rp/keep
+    #トピックモデルのパラメータを格納
+    THETA[, , mkeep] <- theta
+    PHI[, , mkeep] <- phi
+    
+    #モデルパラメータの格納
+    BETA[mkeep, ] <- beta
+    SIGMA[mkeep] <- sigma
+    THETA_U[mkeep, ] <- theta_u
+    THETA_V[mkeep, ] <- theta_v
+    THETA_Z[, , mkeep] <- theta_z
+    
+    #階層モデルの格納
+    ALPHA_U[mkeep, ] <- alpha_u
+    ALPHA_V[mkeep, ] <- alpha_v
+    ALPHA_Z[, , mkeep] <- alpha_z 
+    COV_U[mkeep] <- Cov_u
+    COV_V[mkeep] <- Cov_v
+    COV_Z[, , mkeep] <- Cov_z
+
+    if(rp >= burnin){
+      d <- d + 1
+      SEG <- SEG + Zi
+    }
+  }
+  
+  if(rp%%disp==0){
+    #対数尤度を計算
+    mu <- beta_mu + theta_user + theta_item + uz   #期待値
+    LL <- sum(dnorm(y, mu, sigma, log=TRUE))   #対数尤度の和 
+    
+    #サンプリング結果の表示
+    print(rp)
+    print(c(LL, LLbest, LLst))
+  }
 }
-
-
 
