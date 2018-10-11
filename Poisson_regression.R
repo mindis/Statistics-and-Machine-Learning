@@ -1,68 +1,80 @@
 #####ポアソン回帰モデル#####
-####シミュレーションデータの発生####
-#set.seed(438297)
-options(digits = 5)
-col <- 10   #変数数
-n <- 5000   #サンプル数
-rn <- rnorm(n, 0, 1.5)
-x1 <- matrix(rn, nrow=n/col, ncol=col, byrow=T)
-x2 <- x1[, 1] > -0.3 & x1[, 2] < 0 
-Xm <- as.data.frame(cbind(x1, x2))
-round(head(Xm, 10), 3)
-n <- nrow(Xm)   #サンプル数
+library(knitr)
+library(caret)
+library(reshape2)
+library(plyr)
+library(matrixStats)
+library(extraDistr)
+library(ggplot2)
+library(lattice)
 
-#乱数発生用行列
-X <- cbind(1, Xm)
-names(X)[1] <- "intercept"
-names(X)[12] <- "v11"
-names(X)
+####データの発生####
+#set.seed(4543)
+##説明変数の発生
+#データの設定
+hh <- 250000   #レコード数
+k1 <- 5; k2 <- 10; k3 <- 8   #変数数
+k <- k1 + k2 + k3
 
-#ポアソン乱数を発生させる
-beta <- c(0.9, rnorm(11, 0, 0.4))
-yr <- as.matrix(X) %*% as.vector(beta)
-lambda <- exp(yr)   #ポアソン平均
-round(lambda, 3)   #データの確認
-y <- rpois(n, lambda)   #ポアソン乱数の発生
-round(y, 3)
-mean(y)
-#データを結合
-Xy <- cbind(y, Xm)[, -2]
-round(head(Xy, 20), 3)
-X1 <- X[, -1]
+#変数ごとにデータを発生
+x1 <- matrix(runif(hh*k1, 0, 1), nrow=hh, ncol=k1)
+x2 <- matrix(0, nrow=hh, ncol=k2)
+for(j in 1:k2){
+  pr <- runif(1, 0.25, 0.55)
+  x2[, j] <- rbinom(hh, 1, pr)
+}
+x3 <- rmnom(hh, 1, runif(k3, 0.2, 1.25)); x3 <- x3[, -which.min(colSums(x3))]
+x <- cbind(1, x1, x2, x3)   #データを結合
 
-####ポアソン回帰モデル推定する
-##対数尤度の設定
+##応答変数の発生
 #パラメータの設定
-fr <- function(b, x, y){
-  alpha <- b[1]
-  beta <- b[2:12]
+beta <- betat <- c(0.75, rnorm(k-1, 0, 0.5))
+
+#ポアソン分布から計数データを発生
+lambda <- exp(as.numeric(x %*% beta))   #期待値
+y <- rpois(hh, lambda)
+hist(y, breaks=50, col="grey", main="応答変数の分布", xlab="応答変数")
+
+
+####最尤法でポアソン回帰モデルを推定####
+##対数尤度関数を設定
+fr <- function(beta, x, y, y_lfactorial){
   
-  #尤度を定義して合計する
-  lambda <- exp(alpha + as.matrix(x) %*% as.vector(beta))
-  lambdal <- log(lambda)   #リンク関数
-  LLi <- y*log(lambda)-lambda - lfactorial(y)
-  LL <- sum(LLi)
+  #対数尤度の和
+  lambda <- as.numeric(x %*% beta)   #リンク関数
+  LL <- sum(y*lambda - exp(lambda) - y_lfactorial)
   return(LL)
 }
 
-##対数尤度を最大化する
-b0 <- c(rep(0, 12))   #初期パラメータの設定
-res <- optim(b0, fr, gr=NULL, x=X1, y=y, method="BFGS", hessian=TRUE, control=list(fnscale=-1))
+##対数尤度の微分関数を設定
+dpoisson <- function(beta, x, y, y_lfactorial){
+  
+  #対数尤度の勾配ベクトル
+  lambda <- as.numeric(x %*% beta)   #リンク関数
+  LLd <- colSums(y*x - x*exp(lambda))
+  return(LLd)
+}
 
-#結果
-(b <- res$par)   #推定されたパラメータ
-beta   #真のパラメータ
-(tval <- b/sqrt(-diag(solve(res$hessian))))   #t値
-(AIC <- -2*res$value + 2*length(res$par))   #AIC
-(BIC <- -2*res$value + log(n)*length(b))   #BIC
-
-#適合度
-lambdae <- round(exp(b[1] + as.matrix(X1) %*% as.vector(b[2:12])), 3)   #推定された計数の期待値
-round(cbind(y, lambda, lambdae, y-lambdae), 3)   #真の計数との誤差
-round(rbind(beta, b, beta-b), 5)   #パラメータの誤差
+##準ニュートン法で対数尤度を最大化する
+y_lfactorial <- lfactorial(y)   #定数
+b0 <- c(rep(0, k))   #初期パラメータの設定
+res1 <- optim(b0, fr, gr=dpoisson, x, y, y_lfactorial, method="BFGS", hessian=TRUE, control=list(fnscale=-1, trace=TRUE))
 
 #関数を使うなら
-res2 <- glm(y ~ ., data=cbind(y, X1), family = poisson(link=log))
+z <- x[, -1]
+res2 <- glm(y ~ z, family=poisson(link=log))
 summary(res2)
-round(coef(res2), 3)
-round(b, 3)
+beta_glm <- as.numeric(coef(res2))
+
+##結果を表示
+beta <- res1$par   #推定されたパラメータ
+round(rbind(beta, beta_glm, betat), 3)   #真のパラメータとの比較
+(tval <- beta / sqrt(-diag(solve(res1$hessian))))   #t値
+(AIC <- -2*res1$value + 2*length(res1$par))   #AIC
+(BIC <- -2*res1$value + log(hh)*length(beta))   #BIC
+
+##適合度
+#推定された期待値
+lambda1 <- exp(as.numeric(x %*% beta))   #推定されたパラメータでの期待値
+lambda2 <- exp(as.numeric(x %*% betat))   #真のパラメータでの期待値
+round(cbind(y, lambda1, lambda2), 3)
