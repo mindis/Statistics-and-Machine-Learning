@@ -1,247 +1,233 @@
 ####繰り返しのないコックス回帰モデル(セミパラメトリック生存モデル)####
 library(MASS)
+library(matrixStats)
+library(Matrix)
+library(data.table)
+library(bayesm)
 library(survival)
+library(extraDistr)
 library(reshape2)
+library(dplyr)
 library(plyr)
+library(ggplot2)
 
 ####データの発生####
 #set.seed(9843)
-t <- 100   #観測期間
-n <- 1000   #サンプル数
-col <- 10   #変数数
+pt <- 1000   #観測期間
+hh <- 20000   #ユーザー数
+hhpt <- hh*pt   #総サンプル数 
+k <- 12   #変数数
+g <- 5
+
+#idの設定
+id <- rep(1:hh, rep(pt, hh))
+no <- as.numeric(unlist(tapply(1:hhpt, id, rank)))
+user_list <- list(); user_dt <- matrix(1:hhpt, nrow=hh, ncol=pt, byrow=T)
+for(i in 1:hh){
+  user_list[[i]] <- user_dt[i, ]
+}
+rm(user_dt)
 
 ##ベースラインハザードの設定
-tb <- -4.7   #初期値
+base <- -6.5   #初期値
 trend <- numeric()
-s <- seq(0.5, 0.9, length=t)
-for(i in 1:t){
-  r <- rnorm(5, tb, 0.07)
-  sort <- sort(r)
-  bi <- rbinom(1, 1, s[i])
-  bb <- ifelse(bi == 1, sort[4], sort[2])
-  tb <- bb
-  trend <- c(trend, bb)
-}
-plot(1:length(trend), trend, type="l", xlab="time", lwd=2)   #トレンドのプロット
-round(exp(trend)/(1+exp(trend)), 3) 
+s <- seq(0.3, 0.8, length=pt)
 
-##説明変数の発生と回帰成分の設定
-##静的連続変数と静的二値変数の発生
-#静的変数の数
-s.cont <- 5
-s.bin <- 2
+for(i in 1:pt){
+  r <- rnorm(g, base, 0.025)
+  z <- rbinom(1, 1, s[i])
+  base <- ifelse(z==1, sort(r)[4], sort(r)[2])
+  trend <- c(trend, base)
+}
+hazard <- rep(trend, hh)
+plot(1:length(trend), trend, type="l", xlab="time", lwd=1)   #トレンドのプロット
+round(exp(trend) / (1+exp(trend)), 3) 
+
+
+##静的変数の発生
+s_cont <- 5; s_bin <- 5
 
 #静的連続変数の発生
-X.scont <- matrix(rnorm(n*s.cont, 0, 1), nrow=n, ncol=s.cont)
+x1_cont <- matrix(rnorm(hh*s_cont, 0, 1), nrow=hh, ncol=s_cont)
 
-#動的二値変数の発生
-X.sbin <- matrix(0, n, s.bin)
-pr_b <- runif(s.bin, 0.3, 0.7)
-for(i in 1:s.bin){
-  bin <- rbinom(n, 1, pr_b[i])
-  X.sbin[, i] <- bin
+#静的二値変数の発生
+x1_bin <- matrix(0, nrow=hh, ncol=s_bin)
+for(j in 1:s_bin){
+  prob <- runif(1, 0.25, 0.5)
+  x1_bin[, j] <- rbinom(hh, 1, prob)
+}
+x1 <- cbind(x1_cont, x1_bin)[id, ]
+rm(x1_cont); rm(x1_bin)
+
+##内的な動的変数の発生
+d_cont <- 3; d_bin <- 5; d_multi <- 5
+
+#内的な動的連続変数の発生
+x2_cont <- matrix(0, nrow=hhpt, ncol=d_cont)
+for(i in 1:hh){
+  x <- mvrnorm(1, rep(0, d_cont), diag(d_cont))
+  x2_cont[user_list[[i]], ] <- matrix(0, nrow=pt, ncol=d_cont, byrow=T) + mvrnorm(pt, rep(0, d_cont), 0.05 * diag(d_cont))
 }
 
-##動的連続変数と動的二値変数の発生
-#動的変数
-d.cont <- 1
-d.bin <- 2
-
-##動的連続変数の発生
-type1 <- 10   #連続変数(外生変数)のタイプ数
-X.d <- matrix(0, t, 10)
-for(i in 1:type1){
-  X.d[, i] <- matrix(rnorm(t, 0, 1), t, 1)
+#内的な動的二値変数および多値変数の発生
+x2_bin <- matrix(0, nrow=hhpt, ncol=d_bin)
+x2_multi <- matrix(0, nrow=hhpt, ncol=d_multi-1)
+for(i in 1:hh){
+  prob1 <- runif(d_bin, 0.2, 0.5)
+  prob2 <- as.numeric(extraDistr::rdirichlet(1, rep(2.0, d_multi)))
+  x2_bin[user_list[[i]], ] <- matrix(rbinom(pt*d_bin, 1, rep(prob1, rep(pt, d_bin))), nrow=pt, ncol=d_bin)
+  x2_multi[user_list[[i]], ] <- rmnom(pt, 1, prob2)[, -d_multi]
 }
+x2 <- cbind(x2_cont, x2_bin, x2_multi)
+rm(x2_cont); rm(x2_bin); rm(x2_multi)
 
-#動的連続変数の個人ごとに割り当てる
-r <- runif(type1, 0.2, 0.7)
-X.dcont <- matrix(0, n, t)
-X.dd <- t(X.d)
-for(i in 1:n){
-  m <- which.max(t(rmultinom(1, 1, r)))
-  X.dcont[i, ] <- X.dd[m, ]
-  print(i)
+##外的な動的変数を発生
+g_cont <- 2; g_bin <- 3
+
+#外的な動的連続変数を発生
+x3_cont <- mvrnorm(pt, rep(0, g_cont), diag(g_cont))[no, ]
+
+#外的な動的二値変数を発生
+x3_bin <- matrix(0, nrow=hhpt, ncol=g_bin)
+for(j in 1:g_bin){
+  prob <- runif(1, 0.2, 0.5)
+  x3_bin[, j] <- rbinom(pt, 1, prob)[no]
 }
+x3 <- cbind(x3_cont, x3_bin)
+rm(x3_cont); rm(x3_bin)
 
-##動的二値変数の発生
-type2 <- 10   #二値変数(二値変数)のタイプ数
-X.db <- matrix(0, t, 10)
+##データを結合
+x <- cbind(x1, x2)
+k <- ncol(x); k1 <- ncol(x1); k2 <- ncol(x2)
+rm(x1); rm(x2); rm(x3)
+gc(); gc()
 
-for(i in 1:type2){
-  X.db[, i] <- matrix(rbinom(t, 1, runif(1, 0.3, 0.7)), t, 1)
-}
+##応答変数を発生
+#回帰係数の設定
+beta <- betat <- rnorm(k, 0, 0.75)
 
-#動的二値変数を個人ごとに割り当てる
-r <- runif(type, 0.2, 0.7)
-X.dbin1 <- matrix(0, n, t)
-X.dd <- t(X.db)
+#リンク関数と確率を設定
+logit <- trend + as.numeric(x %*% beta)
+prob <- exp(logit) / (1+exp(logit))
 
-for(i in 1:n){
-  m <- which.max(t(rmultinom(1, 1, r)))
-  X.dbin1[i, ] <- X.dd[m, ]
-  print(i)
-}
+#イベント時間を発生させる(イベントが発生したら打ち切り)
+event_time <- rep(0, hh)
+y_list <- id_list <- no_list <- index_list <- list()
 
-##内的な動的二値変数の発生
-X.dbin2 <- matrix(0, n, t)
-
-for(i in 1:n){
-  r <- runif(1, -1.5, 1.5)
-  for(j in 1:t){
-    p <- exp(r)/(1+exp(r))
-    X.dbin2[i, j] <- rbinom(1, 1, p)
-    r <- r + rnorm(1, 0, 0.025)
+for(i in 1:hh){
+  #ベルヌーイ分布からイベントを生成
+  out <- rbinom(pt, 1, prob[user_list[[i]]])
+  time <- which.max(out)
+  
+  #イベントが発生した期間のデータを格納
+  if(max(out) > 0){
+    event_time[i] <- time
+    y_list[[i]] <- out[1:time]
+    id_list[[i]] <- rep(i, time)
+    no_list[[i]] <- 1:time
+    index_list[[i]] <- user_list[[i]][1:time]
+  } else {
+    y_list[[i]] <- out
+    id_list[[i]] <- id[user_list[[i]]]
+    no_list[[i]] <- no[user_list[[i]]]
+    index_list[[i]] <- user_list[[i]]
   }
 }
 
-##データをパネルデータ形式に変更
-#IDと時間および識別番号
-ID <- rep(1:n, rep(t, n))
-time <- rep(1:t, n)
-No. <- 1:(n*t)
+#リストを変換
+y <- unlist(y_list)
+id <- unlist(id_list)
+no <- unlist(no_list)
+z <- ifelse(event_time > 0, 1, 0)   #打ち切り変数
+Data <- x[unlist(index_list), ]   #打ち切り部分のデータを除外
+f <- nrow(Data)
 
-#ベースラインハザードをパネル形式に変換
-TREND <- rep(trend, n)
+#結果の頻度を見る
+hist(event_time[event_time!=0], breaks=20, col="grey", xlab="イベント時間", main="イベント時間の分布")  
+table(event_time)
 
-#静的変数をパネル形式に変換
-X.s <- matrix(0, nrow=n*t, ncol=s.cont+s.bin)
+#オブジェクトの消去
+rm(y_list); rm(id_list); rm(no_list); rm(index_list)
+rm(logit); rm(prob); rm(x)
+gc(); gc()
 
-for(i in 1:n){
-  x <- cbind(X.scont, X.sbin)[i, ]
-  X.s[ID==i, ] <- matrix(x, nrow=t, ncol=s.cont+s.bin, byrow=T)
-}
 
-#動的変数をパネル形式に変換
-xdc <- matrix(t(X.dcont), nrow=n*t, 1, byrow=T)
-xdb1 <- matrix(t(X.dbin1), nrow=n*t, 1, byrow=T)
-xdb2 <- matrix(t(X.dbin2), nrow=n*t, 1, byrow=T)
-
-X.d <- cbind(xdc, xdb1, xdb2)   #データの結合
-
-#すべてのデータを結合
-round(X <- data.frame(No., ID, time, S=X.s, D=X.d), 2)
-
-##回帰係数の設定
-betasc <- runif(s.cont, -0.15, 0.15) #静的連続変数の回帰係数
-betasb <- runif(s.bin, -0.2, 0.2)   #静的二値変数の回帰係数
-betadc <- runif(d.cont, -0.15, 0.15)   #動的連続変数の回帰係数
-betadb <- runif(d.bin, -0.2, 0.2)   #動的二値変数の回帰係数
-beta <- c(betasc, betasb, betadc, betadb)   #回帰係数を結合
-
-##リンク関数を計算
-s1 <- which.max(colnames(X)=="S.1")
-logit <- TREND + as.matrix(X[, s1:ncol(X)]) %*% beta
-Pr <- exp(logit)/(1+exp(logit))
-
-##イベント時間を発生させる(イベントが発生したら打ち切り)
-Y <- c()
-for(i in 1:n){
-  yr <- c()
-  for(j in 1:t){
-    yr <- c(yr, rbinom(1, 1, Pr[X$ID==i & time==j, ]))
-    if(max(yr[1:j])>0) break
-  }
-  yh <- if(max(yr)>0) which.max(yr)+round(runif(1, 0, 1), 1) else {0}
-  Y <- c(Y, yh)
-  print(i)
-}
-hist(Y, breaks=20, col="grey")   #結果の頻度を見る
-table(Y)
-
-##Cox回帰用のデータセットを作成
-yt <- rep(Y, rep(t, n))
-YXt <- data.frame(X, yt)
-
-#Cox回帰のイベント時間ごとに入る集合ごとにグルーピングする
-YXl <- list()
-for(i in 1:n){
-  if(Y[i]==0) next   #イベントが発生していないなら次のサンプルへ
-  index_y <- trunc(Y[i])   #イベント時間を抽出 
-  index_x <- subset(1:length(Y), Y[i] <= Y | Y == 0)   #イベントが発生していないサンプルを抽出
-  YXz <- data.frame(YXt[YXt$ID %in% index_x & YXt$time %in% index_y, ], T=i)   #インデックスで絞った変数をデータを抽出
-  YXl[[i]] <- YXz
-  print(i)
-}
-YX <- do.call(rbind, YXl)
-index_z <- unique(YX$T)
-
-Z <- list()
-for(i in 1:length(index_z)){
-  h <- subset(1:length(YX$yt[YX$T==index_z[i]]), YX$yt[YX$T==index_z[i]]>0)
-  m <- min(subset(YX$yt[YX$T==index_z[i]], YX$yt[YX$T==index_z[i]]>0))
-  z <- as.numeric(YX$yt[YX$T==index_z[i]]==m)
-  Z[[i]] <- z
-  print(i)
-}
-
-##データセットをまとめる
-Zn <- unlist(Z)   #リストをベクトル化
-YXz <- data.frame(YX[2:length(YX)], Zn, Z=ifelse(YX$yt>0, 1, 0))   #データを結合
-rownames(YXz) <- 1:nrow(YXz)
-
-#説明変数だけを取り出す
-val <- subset(1:ncol(YXz), colnames(YXz)==c("S.1", "D.3"))
-XX <- YXz[, val[1]:val[2]]
 
 ####Cox回帰モデルを推定する####
-##タイデータを特定
-#イベント時間ごとの出現数を数える
-(tac <- table(Y[Y!=0]))   
+##Cox回帰用のデータセットを作成
+#イベント時間の集合ごとにグルーピングする
+event_dt <- t(sparseMatrix((1:f)[y==1], no[y==1], x=rep(1, sum(y)), dims=c(f, pt)))
+set_data <- sparseMatrix(1:f, no, x=rep(1, f), dims=c(f, pt))
+set_dt <- t(set_data)
+n <- rowSums(event_dt)
 
-#イベント時間のユニークを特定し、昇順に並べ替え
-yu <- unique(YXz$yt[YXz$yt!=0])   
-sortlist <- order(yu)   
-(y.uni <- yu[sortlist])
+#Efron法の部分尤度のweight
+index_n <- rep(1:pt, n)
+k_vec <- as.numeric(unlist(tapply(1:length(index_n), index_n, rank)))
+weights <- (k_vec-1) / n[index_n]
+n_dt <- t(sparseMatrix(1:sum(n), index_n, x=rep(1, sum(n)), dims=c(sum(n), pt)))
 
-sum(as.numeric(rownames(tac))-y.uni)   #数値が一致しているかチェック
 
-#イベント時間のユニークごとにタイデータを記録
-index_d <- list()
-index_m <- list()
-for(i in 1:length(y.uni)){
-  ZT <- YXz[YXz$Zn==1 & YXz$yt==y.uni[i], "T"]
-  ind <- subset(1:nrow(YXz), YXz$T==ZT[1])
-  mi <- subset(1:nrow(YXz), YXz$Zn==1 & YXz$yt==y.uni[i])
-  index_d[[i]] <- ind
-  index_m[[i]] <- mi[1:tac[i]]
-  print(i)
-}
-
-##対数部分尤度を定義
-fr <- function(b, D, M, X, uni){
-  beta <- b[1:ncol(X)]
-  link.f <- exp(as.matrix(X) %*% beta)
-  LLs <- c()
+##タイデータを含む対数部分尤度(Efron法)
+fr <- function(beta, Data, event_dt, set_dt, n_dt, weights, index_n){
   
-  #タイデータを含む対数部分尤度(Efron法)
-  for(i in 1:length(uni)){
-    LLd <- log(prod(sum(link.f[D[[i]]]) - (1:length(M[[i]])-1)/length(M[[i]])*sum(link.f[M[[i]]])))
-    LLm <- colSums(X[M[[i]], ]) %*% beta
-    LLs <- c(LLs, LLm-LLd)
-  }
-  LL <- sum(LLs)
+  #リンク関数を設定
+  mu <- as.numeric(Data %*% beta)
+  mu_exp <- exp(mu)
+  
+  #部分尤度のイベント集合
+  Lho1 <- as.numeric(event_dt %*% mu)
+  event_mu <- as.numeric(event_dt %*% mu_exp)
+  set_mu <- as.numeric(set_dt %*% mu_exp)
+  
+  #部分尤度の分母部分
+  Li <- log(set_mu[index_n] - weights * event_mu[index_n])
+  Lho2 <- as.numeric(n_dt %*% Li)
+  
+  #部分尤度の和
+  LL <- sum(Lho1 - Lho2)
   return(LL)
 }
 
-##部分尤度を最大化して、Cox回帰を推定
-D <- index_d   #生存時間がtのリスク集合イベント
-M <- index_m   #イベント時間tに発生したサンプル
-b0 <- runif(10, -0.5, 0.5)   #パラメータの初期値
+##Efronの対数部分尤度の微分関数
+dll <- function(beta, Data, event_dt, set_dt, n_dt, weights, index_n){
+
+  #リンク関数を設定
+  mu <- as.numeric(Data %*% beta)
+  mu_exp <- exp(mu)
+  
+  #イベント集合の和
+  u <- Data * mu_exp
+  event_mu <- as.numeric(event_dt %*% mu_exp)
+  set_mu <- as.numeric(set_dt %*% mu_exp)
+  event_u <- as.matrix(event_dt %*% u)
+  set_u <- as.matrix(set_dt %*% u)
+  
+  #勾配ベクトルを定義
+  wsum_mu <- set_mu[index_n] - weights * event_mu[index_n]
+  wsum_u <- set_u[index_n, ] - weights * event_u[index_n, ]
+  LLd <- colSums2(as.matrix(event_dt %*% Data - n_dt %*% (wsum_u / wsum_mu)))
+  return(LLd)
+}
+
+##部分尤度を最大化して、Cox回帰のパラメータを推定
+#初期値の設定
+b <- rep(0, k)   #パラメータの初期値
 
 #部分尤度を準ニュートン法で最大化
-fit <- optim(b0, fr, gr=NULL, D=D, M=M, X=XX, uni=y.uni,
-             method="BFGS", hessian=T, control=list(fnscale=-1))
+res <- optim(b, fr, gr=dll, Data, event_dt, set_dt, n_dt, weights, index_n,
+             method="BFGS", hessian=TRUE, control=list(fnscale=-1, trace=TRUE))
 
-fit$value   #最大化された対数尤度
-round(betan <- fit$par, 2)    #推定されたパラメータ
-round(exp(betan), 2)   #推定されたパラメータ(ハザード比基準)
-round(exp(beta), 2)   #真のパラメータ(オッズ比基準)
+#推定結果を表示
+res$value   #最大化された対数尤度
+round(beta <- res$par, 3)   #推定されたパラメータ
+round(cbind(beta, betat), 3)   #真のパラメータとの比較
+round(cbind(exp(beta), exp(betat)), 3)   #推定されたパラメータのハザード比
 
-betan/sqrt(-diag(solve(fit$hessian)))   #t値
-(AIC <- -2*fit$value + 2*length(fit$par))   #AIC
+#適合度を確認
+beta / sqrt(-diag(solve(res$hessian)))   #t値
+(AIC <- -2*res$value + 2*length(res$par))   #AIC
 
 
-####ベースラインハザード関数と生存関数の推定####
 
 
