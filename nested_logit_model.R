@@ -1,13 +1,34 @@
 #####ネステッドロジットモデル#####
-library(mlogit)
-library(nnet)
 library(MASS)
-library(plyr)
+library(matrixStats)
+library(Matrix)
+library(data.table)
+library(bayesm)
+library(mlogit)
+library(extraDistr)
 library(reshape2)
+library(dplyr)
+library(plyr)
+library(ggplot2)
+
 ####データの発生####
 #set.seed(58904)
+##データの設定
+k <- 5   #ブランド数
+hh <- 1000   #家計数 
+pt <- rtpois(hh, rgamma(hh, 10, 0.5), a=0, b=Inf)   #期間中の購買数
+hhpt <- sum(pt)   #総購買数
+
+#idの設定
+id <- rep(1:hh, pt)
+no <- as.numeric(unlist(tapply(1:hhpt, id, rank)))
+id_list <- list()
+for(i in 1:hh){
+  id_list[[i]] <- which(id==i)
+}
+
 ##パラメータの設定
-##ブランド1をベースブランドに設定
+#モデルパラメータを設定
 beta1 <- -4.2   #割引率のパラメータ
 beta2 <- 3.1   #特別陳列のパラメータ
 beta3 <- 2.3   #限定キャンペーンのパラメータ
@@ -16,126 +37,94 @@ beta02 <- 2.0   #ブランド2のベース販売力
 beta03 <- 1.0   #ブランド3のベース販売力  
 beta04 <- 1.8   #ブランド4のベース販売力
 beta05 <- 3.1   #ブランド5のベース販売力
+lambda <- lambdat <- 0.6   #ブランドロイヤルティの繰越パラメータ
+beta <- betat <- c(beta02, beta03, beta04, beta05, beta1, beta2, beta3, beta4)   #回帰ベクトル
+
+#相関パラメータを設定
+clust <- 2
+clust1 <- c(1, 2, 3); clust2 <- c(4, 5)
 rho1 <- 0.3   #クラスター1(ブランド1、2、3)の相関パラメータ
 rho2 <- 0.5   #クラスター2(ブランド4、5)の相関パラメータ
-lambda <- 0.6   #ブランドロイヤルティの繰越パラメータ
-betaT <- c(beta1, beta2, beta3, beta4, beta02, beta03, beta04, beta05, rho1, rho2, lambda)   #真のパラメータ
+rho_vec <- rho_flag <- matrix(1, nrow=clust, ncol=k)
+rho_vec[1, clust1] <- rho1; rho_flag[1, clust2] <- 0
+rho_vec[2, clust2] <- 0.5; rho_flag[2, clust1] <- 0
 
-hh <- 1000   #家計数 
-pt <- round(runif(hh, 15, 35), 0)   #期間中の購買数は15～35回
-hhpt <- sum(pt)   #総購買数
-
-ID <- matrix(0, hhpt, 3)   #個人IDと購買回数
-ID[, 1] <- c(1:hhpt)   #識別番号を入れる 
-P <- matrix(0, hhpt, 5)   #購買確率
-BUY <- matrix(0, hhpt, 5)   #購買ダミー
-PRICE <- matrix(0, hhpt, 5)    #価格
-DISP <- matrix(0, hhpt, 5)   #特別陳列
-CAMP <- matrix(0, hhpt, 5)   #キャンペーン
-ROY <- matrix(0, hhpt, 5)   #ブランドロイヤルティ
-
-#ブランドロイヤルティの初期値
-firstroy <- matrix(runif(hhpt*5), hhpt, 5)
+#パラメータの結合
+theta <- thetat <- c(beta, rho1, rho2)
+index_beta <- 1:length(beta)
+index_rho1 <- (length(beta)+1)
+index_rho2 <- length(theta)
 
 ##データを発生させる
-#不釣り合いデータの繰り返し
-for(i in 1:hh){
-  for(j in 1:pt[i]){  
-    r <- sum(pt[0:(i-1)])+j   
-    #ID番号、購買回数を設定
-    ID[r, 2] <- i
-    ID[r, 3] <- j
-    
-    #ブランド1の販売価格、特別陳列、キャンペーンの有無の発生
-    rn <- runif(3)
-    #確率0.6で価格は0.85、確率0.2で価格は0.7、確率0.2で価格は0.6
-    if(rn[1] < 0.6) SP <- 0.85 else
-    {if(rn[1] < 0.8) SP <- 0.7 else SP <- 0.6}
-    PRICE[r, 1] <- SP
-    #確率0.3で特別陳列あり
-    DISP[r, 1] <- (rn[2] > 0.7)
-    #確率0.1でキャンペーンあり
-    CAMP[r, 1] <- (rn[3] > 0.9)
-    
-    #ブランド2の販売価格、特別陳列、キャンペーンの有無の発生
-    rn <- runif(3)
-    #確率0.8で価格は1、確率0.15で価格は0.9、確率0.05で価格は0.65
-    if(rn[1] < 0.6) SP <- 1 else
-    {if(rn[1] < 0.9) SP <- 0.85 else SP <- 0.65}
-    PRICE[r, 2] <- SP
-    #確率0.4で特別陳列あり
-    DISP[r, 2] <- (rn[2] > 0.6)
-    #確率0.2でキャンペーンあり
-    CAMP[r, 2] <- (rn[3] > 0.8)
-    
-    #ブランド3の販売価格、特別陳列、キャンペーンの有無の発生
-    rn <- runif(3)
-    #確率0.5で価格は0.9、確率0.3で価格は0.8、確率0.2で価格は0.6
-    if(rn[1] < 0.7) SP <- 0.9 else
-    {if(rn[1] < 0.85) SP <- 0.8 else SP <- 0.6}
-    PRICE[r, 3] <- SP
-    #確率0.3で特別陳列あり
-    DISP[r, 3] <- (rn[2] > 0.7)
-    #確率0.2でキャンペーンあり
-    CAMP[r, 3] <- (rn[3] > 0.8)
-    
-    #ブランド4の販売価格、特別陳列、キャンペーンの有無の発生
-    rn <- runif(3)
-    #確率0.7で価格は1、確率0.15で価格は0.8、確率0.15で価格は0.7
-    if(rn[1] < 0.7) SP <- 1 else
-    {if(rn[1] < 0.85) SP <- 0.8 else SP <- 0.7}
-    PRICE[r, 4] <- SP
-    #確率0.15で特別陳列あり
-    DISP[r, 4] <- (rn[2] > 0.85)
-    #確率0.3でキャンペーンあり
-    CAMP[r, 4] <- (rn[3] > 0.7)
+#説明変数の格納用配列
+Prob <- matrix(0, nrow=hhpt, ncol=k)   #購買確率
+BUY <- matrix(0, nrow=hhpt, ncol=k)   #購買ダミー
+PRICE <- matrix(0, nrow=hhpt, ncol=k)    #価格
+DISP <- matrix(0, nrow=hhpt, ncol=k)   #特別陳列
+CAMP <- matrix(0, nrow=hhpt, ncol=k)   #キャンペーン
+ROY <- matrix(0, nrow=hhpt, ncol=k)   #ブランドロイヤルティ
+DT_list <- list()
 
-    #ブランド5の販売価格、特別陳列、キャンペーンの有無の発生
-    rn <- runif(3)
-    #確率0.8で価格は1、確率0.1で価格は0.9、確率0.1で価格は0.85
-    if(rn[1] < 0.8) SP <- 1 else
-    {if(rn[1] < 0.9) SP <- 0.9 else SP <- 0.85}
-    PRICE[r, 5] <- SP
-    #確率0.2で特別陳列あり
-    DISP[r, 5] <- (rn[2] > 0.8)
-    #確率0.15でキャンペーンあり
-    CAMP[r, 5] <- (rn[3] > 0.85)
+#ブランドロイヤルティの初期値
+firstroy <- matrix(runif(hhpt*k), nrow=hhpt, ncol=k)
+
+#ブランドごとの説明変数の設定
+v <- 10
+price_prob <- extraDistr::rdirichlet(k, rep(1.0, v))
+price_set <- matrix(runif(k*v, 0.5, 1.0), nrow=k, ncol=v)
+disp_prob <- rbeta(k, 50.0, 140.0)
+camp_prob <- rbeta(k, 10.0, 40)
+
+
+#購買機会ごとにデータを発生
+for(i in 1:hh){
+  index <- id_list[[i]]
+  for(j in 1:pt[i]){  
+    r <- index[j]   #購買機会にインデックス
+    
+    #ブランドごとのマーケティング変数を発生
+    PRICE[r, ] <- rowSums2(rmnom(k, 1, price_prob) * price_set)   #価格を発生
+    DISP[r, ] <- rbinom(k, 1, disp_prob)   #特別陳列を発生
+    CAMP[r, ] <- rbinom(k, 1, camp_prob)   #キャンペーンを発生
     
     #ブランドロイヤルティ変数の作成
-    if(j == 1) ROY[r, ] <- firstroy[r, ] else
-    {ROY[r, ]<- lambda*ROY[r-1, ] + BUY[r-1, ]}
+    if(j == 1){
+      ROY[r, ] <- firstroy[r, ]
+    } else {
+      ROY[r, ] <- lambda*ROY[r-1, ] + BUY[r-1, ]
+    }
+    
+    #データをパネル形式に変換
+    BRAND <- diag(k)[, -k] 
+    DT <- cbind(BRAND, PRICE[r, ], DISP[r, ], CAMP[r, ], ROY[r, ])
+    DT_list[[r]] <- DT
     
     ##選択確率の計算
     #効用の計算
-    U1 <- beta1*PRICE[r, 1] + beta2*DISP[r, 1] + beta3*CAMP[r, 1] + beta4*ROY[r, 1]
-    U2 <- beta1*PRICE[r, 2] + beta2*DISP[r, 2] + beta3*CAMP[r, 2] + beta4*ROY[r, 2] + beta02
-    U3 <- beta1*PRICE[r, 3] + beta2*DISP[r, 3] + beta3*CAMP[r, 3] + beta4*ROY[r, 3] + beta03
-    U4 <- beta1*PRICE[r, 4] + beta2*DISP[r, 4] + beta3*CAMP[r, 4] + beta4*ROY[r, 4] + beta04
-    U5 <- beta1*PRICE[r, 5] + beta2*DISP[r, 5] + beta3*CAMP[r, 5] + beta4*ROY[r, 5] + beta05
+    U <- as.numeric(DT %*% beta)
     
     #ログサム変数の定義
-    logsum1 <- log(exp(U1/rho1) + exp(U2/rho1) + exp(U3/rho1))    #クラスター1(ブランド1、2、3)のログサム変数
-    logsum2 <- log(exp(U4/rho2) + exp(U5/rho2))   #クラスター2(ブランド4、5)のログサム変数
+    logsum1 <- log(sum(rho_flag[1, ] * exp(U/rho_vec[1, ])))   #クラスター1のログサム変数
+    logsum2 <- log(sum(rho_flag[2, ] * exp(U/rho_vec[2, ])))   #クラスター2のログサム変数
     
     #クラスターごとの選択確率
-    CL1 <- exp(rho1*logsum1)/(exp(rho1*logsum1) + exp(rho2*logsum2))
-    CL2 <- exp(rho2*logsum2)/(exp(rho1*logsum1) + exp(rho2*logsum2))
+    CL1 <- exp(rho1*logsum1) / (exp(rho1*logsum1) + exp(rho2*logsum2))
+    CL2 <- exp(rho2*logsum2) / (exp(rho1*logsum1) + exp(rho2*logsum2))
     
     #ブランドごとの選択確率
-    P1 <- CL1 * exp(U1/rho1)/(exp(U1/rho1) + exp(U2/rho1) + exp(U3/rho1))
-    P2 <- CL1 * exp(U2/rho1)/(exp(U1/rho1) + exp(U2/rho1) + exp(U3/rho1))
-    P3 <- CL1 * exp(U3/rho1)/(exp(U1/rho1) + exp(U2/rho1) + exp(U3/rho1))
-    P4 <- CL2 * exp(U4/rho2)/(exp(U4/rho2) + exp(U5/rho2))
-    P5 <- CL2 * exp(U5/rho2)/(exp(U4/rho2) + exp(U5/rho2))
-    
-    Pr <- c(P1, P2, P3, P4, P5)   #選択確率の格納
-    P[r, ] <- Pr
+    Prob1 <- CL1 * exp(U[clust1]/rho1) / sum(exp(U[clust1]/rho1))
+    Prob2 <- CL2 * exp(U[clust2]/rho2) / sum(exp(U[clust2]/rho2))
+    Prob[r, ] <- c(Prob1, Prob2)
+
     ##選択確率より選択結果を発生させる
-    BUY[r, ] <- t(rmultinom(1, 1, Pr))
+    BUY[r, ] <- as.numeric(rmnom(1, 1, Prob[r, ]))
   }
 }
-YX <- cbind(ID, BUY, PRICE, DISP, CAMP, ROY)   #データを結合
-round(YX, 3)
+
+#リストを変換
+Data <- do.call(rbind, DT_list)
+colMeans(BUY)
+
 
 ##発生させたデータを要約集計
 apply(BUY, 2, mean)   #購買率
@@ -146,121 +135,131 @@ apply(CAMP, 2, mean)   #キャンペーン率
 apply(ROY, 2, max)   #最大ブランドロイヤルティ
 apply(ROY, 2, mean)   #平均ブランドロイヤルティ
 
+
 ####ネステッドロジットモデルのパラメータ推定####
 ##ブランドロイヤルティ変数を新しく定義
-lambdaE <- c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)   #グリッドサーチでロイヤルティの繰越値を決めるために設定
+lambda_vec <- c(0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9)   #グリッドサーチでロイヤルティの繰越値を決めるために設定
 ROYl <- list()
-for(lam in 1:length(lambdaE)){
+for(lam in 1:length(lambda_vec)){
   ROYm <- matrix(0, nrow=hhpt, ncol=5)
   for(i in 1:hh){
+    index <- id_list[[i]]
     for(j in 1:pt[i]){
-      r <- sum(pt[0:(i-1)])+j
+      r <- index[j]
       if(j==1) ROYm[r, ] <- firstroy[r, ] else
-        ROYm[r, ] <- lambdaE[lam]*ROY[r-1, ] + BUY[r-1, ]
+        ROYm[r, ] <- lambda_vec[lam]*ROYm[r-1, ] + BUY[r-1, ]
     }
   }
   ROYl[[lam]] <- ROYm
 }  
 
 ##ネステッドロジットモデルの対数尤度の定義
-frnested <- function(theta, BUY, PRICE, DISP, CAMP, ROY){
-  b1 <- theta[1]   #価格弾力性
-  b2 <- theta[2]   #特別陳列の係数
-  b3 <- theta[3]   #キャンペーンの係数
-  b4 <- theta[4]   #ブランドロイヤルティの係数
-  b02 <- theta[5]   #ブランド2のベース販売力
-  b03 <- theta[6]   #ブランド3のベース販売力
-  b04 <- theta[7]   #ブランド4のベース販売力
-  b05 <- theta[8]   #ブランド5のベース販売力
-  rho1 <- theta[9]   #クラスター1の相関係数
-  rho2 <- theta[10]   #クラスター2の相関係数
+fr <- function(theta, BUY, Data, ROYl, clust, clust1, clust2, rho_flag, vec1, vec2, k){
   
+  #パラメータの抽出
+  beta <- theta[index_beta]
+  rho1 <- theta[index_rho1]
+  rho2 <- theta[index_rho2] 
+  
+  #相関パラメータの設定
+  rho_vec <- matrix(1, nrow=clust, ncol=k)
+  rho_vec[1, clust1] <- rho1; rho_vec[2, clust2] <- rho2
+  
+  ##効用と選択確率を定義
   #効用の定義
-  U1 <- b1*PRICE[, 1] + b2*DISP[, 1] + b3*CAMP[, 1] + b4*ROY[, 1]
-  U2 <- b1*PRICE[, 2] + b2*DISP[, 2] + b3*CAMP[, 2] + b4*ROY[, 2] + b02
-  U3 <- b1*PRICE[, 3] + b2*DISP[, 3] + b3*CAMP[, 3] + b4*ROY[, 3] + b03 
-  U4 <- b1*PRICE[, 4] + b2*DISP[, 4] + b3*CAMP[, 4] + b4*ROY[, 4] + b04
-  U5 <- b1*PRICE[, 5] + b2*DISP[, 5] + b3*CAMP[, 5] + b4*ROY[, 5] + b05
+  Data[, ncol(Data)] <- as.numeric(t(ROYl))
+  U <- matrix(as.numeric(Data %*% beta), nrow=hhpt, ncol=k, byrow=T)
   
   #ログサム変数の定義
-  logsum1 <- log(exp(U1/rho1) + exp(U2/rho1) + exp(U3/rho1))    #クラスター1(ブランド1、2、3)のログサム変数
-  logsum2 <- log(exp(U4/rho2) + exp(U5/rho2))   #クラスター2(ブランド4、5)のログサム変数
+  logsum1 <-  log(as.numeric((rho_flag[vec1, ] * exp(U/rho_vec[vec1, ])) %*% rep(1, k)))   #クラスター1のログサム変数
+  logsum2 <- log(as.numeric((rho_flag[vec2, ] * exp(U/rho_vec[vec2, ])) %*% rep(1, k)))   #クラスター2のログサム変数
   
-  #クラスターの選択確率
-  CL1 <- exp(rho1*logsum1)/(exp(rho1*logsum1) + exp(rho2*logsum2))
-  CL2 <- exp(rho2*logsum2)/(exp(rho1*logsum1) + exp(rho2*logsum2))
+  #クラスターごとの選択確率
+  logsum_exp1 <- exp(rho1*logsum1); logsum_exp2 <- exp(rho2*logsum2)
+  CL1 <- logsum_exp1 / (logsum_exp1 + logsum_exp2)
+  CL2 <- logsum_exp2 / (logsum_exp1 + logsum_exp2)
   
-  #選択確率の計算
-  P1 <- CL1 * exp(U1/rho1)/(exp(U1/rho1) + exp(U2/rho1) + exp(U3/rho1)) 
-  P2 <- CL1 * exp(U2/rho1)/(exp(U1/rho1) + exp(U2/rho1) + exp(U3/rho1)) 
-  P3 <- CL1 * exp(U3/rho1)/(exp(U1/rho1) + exp(U2/rho1) + exp(U3/rho1)) 
-  P4 <- CL2 * exp(U4/rho2)/(exp(U4/rho2) + exp(U5/rho2)) 
-  P5 <- CL2 * exp(U5/rho2)/(exp(U4/rho2) + exp(U5/rho2)) 
+  #ブランドごとの選択確率
+  u_exp1 <- exp(U[, clust1] / rho1); u_exp2 <- exp(U[, clust2] / rho2)
+  Prob1 <- CL1 * u_exp1 / rowSums2(u_exp1)
+  Prob2 <- CL2 * u_exp2 / rowSums2(u_exp2)
+  Prob <- cbind(Prob1, Prob2)[,  c(clust1, clust2)]
   
-  #対数尤度の計算
-  L <- BUY[, 1]*log(P1) + BUY[, 2]*log(P2) + BUY[, 3]*log(P3) + BUY[, 4]*log(P4) + BUY[, 5]*log(P5)
-  LL <- sum(L)
+  #対数尤度の和
+  LL <- sum((BUY * log(Prob)) %*% rep(1, k))
   return(LL)
 }
 
+
 ##ブランドロイヤルティのパラメータを動かしながら対数尤度を最大化
+#初期値とデータの設定
+b0 <- c(rep(0, ncol(Data)), 0.5, 0.5)   #パラメータの初期値
+theta <- matrix(0, nrow=length(lambda_vec), ncol=length(theta))
+vec1 <- rep(1, hhpt)
+vec2 <- rep(2, hhpt)
+
+#準ニュートン法とグリットサーチでパラメータを推定
 res <- list()
-b0 <- c(-1, 1, 1, 0.5, 1.5, 0.6, 0.8, 1.5, 0.5, 0.5)   #パラメータの初期値
-for(i in 1:length(lambdaE)){
-res[[i]] <- optim(b0, frnested, gr=NULL, BUY, PRICE, DISP, CAMP, ROY=ROYl[[i]], 
-                  method="BFGS", hessian=TRUE, control=list(fnscale=-1))
-b0 <- res[[i]]$par
-print(res[[i]]$value)
+for(j in 1:length(lambda_vec)){
+  
+  res[[j]] <- optim(b0, fr, gr=NULL, BUY, Data, ROYl[[j]], clust, clust1, clust2, rho_flag, vec1, vec2, k, 
+                    method="BFGS", hessian=TRUE, control=list(fnscale=-1, trace=TRUE))
+  theta[j, ] <- res[[j]]$par
+  print(res[[j]]$value)
 }
 
 #対数尤度が最大のlambdaを選ぶ
-value <- numeric()
-for(lam in 1:length(lambdaE)){
+value <- c()
+for(lam in 1:length(lambda_vec)){
   val <- res[[lam]]$value
   value <- c(value, val)
 }
 value   #推定された最大対数尤度
-(maxres <- res[[which.max(value)]])   #対数尤度が最大の推定結果
+(max_res <- res[[which.max(value)]])   #対数尤度が最大の推定結果
 
 ##推定されたパラメータと統計量の推定値
 op <- which.max(value)
-(maxlambda <- lambdaE[which.max(value)])   #推定された繰越パラメータ
-0.6   #真の繰越パラメータ
-round(theta <- c(maxres$par, maxlambda), 2)   #推定されたパラメータ
-betaT   #真のパラメーター
+(max_lambda <- lambda_vec[which.max(value)])   #推定された繰越パラメータ
+lambdat   #真の繰越パラメータ
+round(theta <- c(max_res$par, max_lambda), 2)   #推定されたパラメータ
+c(betat, rho1, rho2, lambdat)   #真のパラメーター
 
-(tval <- theta[1:length(maxres$par)]/sqrt(-diag(solve(maxres$hessian))))   #t値
-(AIC <- -2*maxres$value + 2*length(maxres$par))   #AIC
-(BIC <- -2*maxres$value + log(nrow(BUY))*length(maxres$par))   #BIC
+(tval <- theta[1:length(max_res$par)]/sqrt(-diag(solve(max_res$hessian))))   #t値
+(AIC <- -2*max_res$value + 2*length(max_res$par))   #AIC
+(BIC <- -2*max_res$value + log(nrow(BUY))*length(max_res$par))   #BIC
+
 
 ##推定された選択確率
-#効用の計算
-U1 <- theta[1]*PRICE[, 1] + theta[2]*DISP[, 1] + theta[3]*CAMP[, 1] + theta[4]*ROYl[[op]][, 1]
-U2 <- theta[1]*PRICE[, 2] + theta[2]*DISP[, 2] + theta[3]*CAMP[, 2] + theta[4]*ROYl[[op]][, 2] + theta[5]
-U3 <- theta[1]*PRICE[, 3] + theta[2]*DISP[, 3] + theta[3]*CAMP[, 3] + theta[4]*ROYl[[op]][, 3] + theta[6]
-U4 <- theta[1]*PRICE[, 4] + theta[2]*DISP[, 4] + theta[3]*CAMP[, 4] + theta[4]*ROYl[[op]][, 4] + theta[7]
-U5 <- theta[1]*PRICE[, 5] + theta[2]*DISP[, 5] + theta[3]*CAMP[, 5] + theta[4]*ROYl[[op]][, 5] + theta[8]
+#パラメータの抽出
+beta <- theta[index_beta]
+rho1 <- theta[index_rho1]
+rho2 <- theta[index_rho2] 
+
+#相関パラメータの設定
+rho_vec <- matrix(1, nrow=clust, ncol=k)
+rho_vec[1, clust1] <- rho1; rho_vec[2, clust2] <- rho2
+
+##効用と選択確率を定義
+#効用の定義
+Data[, ncol(Data)] <- as.numeric(t(ROYl[[which.max(value)]]))
+U <- matrix(as.numeric(Data %*% beta), nrow=hhpt, ncol=k, byrow=T)
 
 #ログサム変数の定義
-logsum1 <- log(exp(U1/theta[9]) + exp(U2/theta[9]) + exp(U3/theta[9]))   #クラスター1(ブランド1、2、3)のログサム変数
-logsum2 <- log(exp(U4/theta[10]) + exp(U5/theta[10]))   #クラスター2(ブランド4、5)のログサム変数
+logsum1 <-  log(as.numeric((rho_flag[vec1, ] * exp(U/rho_vec[vec1, ])) %*% rep(1, k)))   #クラスター1のログサム変数
+logsum2 <- log(as.numeric((rho_flag[vec2, ] * exp(U/rho_vec[vec2, ])) %*% rep(1, k)))   #クラスター2のログサム変数
 
 #クラスターごとの選択確率
-CL1 <- exp(theta[9]*logsum1)/(exp(theta[9]*logsum1) + exp(theta[10]*logsum2))
-CL2 <- exp(theta[10]*logsum2)/(exp(theta[9]*logsum1) + exp(theta[10]*logsum2))
+logsum_exp1 <- exp(rho1*logsum1); logsum_exp2 <- exp(rho2*logsum2)
+CL1 <- logsum_exp1 / (logsum_exp1 + logsum_exp2)
+CL2 <- logsum_exp2 / (logsum_exp1 + logsum_exp2)
 
 #ブランドごとの選択確率
-P1 <- CL1 * exp(U1/theta[9])/(exp(U1/theta[9]) + exp(U2/theta[9]) + exp(U3/theta[9]))
-P2 <- CL1 * exp(U2/theta[9])/(exp(U1/theta[9]) + exp(U2/theta[9]) + exp(U3/theta[9]))
-P3 <- CL1 * exp(U3/theta[9])/(exp(U1/theta[9]) + exp(U2/theta[9]) + exp(U3/theta[9]))
-P4 <- CL2 * exp(U4/theta[10])/(exp(U4/theta[10]) + exp(U5/theta[10]))
-P5 <- CL2 * exp(U5/theta[10])/(exp(U4/theta[10]) + exp(U5/theta[10]))
-
-Pr <- data.frame(ID[, -1], P1, P2, P3, P4, P5, P)   #選択確率の格納
-names(Pr) <- c("hh", "pt", "P1", "P2", "P3", "P4", "P5","Pr1", "Pr2", "Pr3", "Pr4", "Pr5")   #名前の変更
-round(Pr, 2)   #データの確認
+u_exp1 <- exp(U[, clust1] / rho1); u_exp2 <- exp(U[, clust2] / rho2)
+Prob1 <- CL1 * u_exp1 / rowSums2(u_exp1)
+Prob2 <- CL2 * u_exp2 / rowSums2(u_exp2)
+Prob <- cbind(Prob1, Prob2)[,  c(clust1, clust2)]
 
 ##要約集計
-round(meanP <- apply(Pr[, 3:12], 2, mean), 2)   #平均選択確率
-round(quantileP <- apply(Pr[, 3:ncol(Pr)], 2, quantile), 2)   #選択確率の四分位点
-round(summaryP <- apply(Pr[, 3:ncol(Pr)], 2, summary), 2)   #選択確率の要約統計量
+round(Prob_mean <- apply(Prob, 2, mean), 2)   #平均選択確率
+round(Prob_quantile <- apply(Prob, 2, quantile), 2)   #選択確率の四分位点
+round(Prob_summary <- apply(Prob, 2, summary), 2)   #選択確率の要約統計量
