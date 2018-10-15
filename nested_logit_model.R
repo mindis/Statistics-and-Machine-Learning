@@ -43,6 +43,7 @@ beta <- betat <- c(beta02, beta03, beta04, beta05, beta1, beta2, beta3, beta4)  
 #相関パラメータを設定
 clust <- 2
 clust1 <- c(1, 2, 3); clust2 <- c(4, 5)
+index_clust <- c(clust1/clust1, clust2/clust2*2)
 rho1 <- 0.3   #クラスター1(ブランド1、2、3)の相関パラメータ
 rho2 <- 0.5   #クラスター2(ブランド4、5)の相関パラメータ
 rho_vec <- rho_flag <- matrix(1, nrow=clust, ncol=k)
@@ -154,7 +155,7 @@ for(lam in 1:length(lambda_vec)){
 }  
 
 ##ネステッドロジットモデルの対数尤度の定義
-fr <- function(theta, BUY, Data, ROYl, clust, clust1, clust2, rho_flag, vec1, vec2, k){
+fr <- function(theta, BUY, Data, ROYl, clust, clust1, clust2, index_clust, rho_flag, vec1, vec2, k){
   
   #パラメータの抽出
   beta <- theta[index_beta]
@@ -164,6 +165,7 @@ fr <- function(theta, BUY, Data, ROYl, clust, clust1, clust2, rho_flag, vec1, ve
   #相関パラメータの設定
   rho_vec <- matrix(1, nrow=clust, ncol=k)
   rho_vec[1, clust1] <- rho1; rho_vec[2, clust2] <- rho2
+  rho_dt <- matrix(c(rho1, rho2)[index_clust], nrow=hhpt, ncol=k, byrow=T)
   
   ##効用と選択確率を定義
   #効用の定義
@@ -175,21 +177,17 @@ fr <- function(theta, BUY, Data, ROYl, clust, clust1, clust2, rho_flag, vec1, ve
   logsum2 <- log(as.numeric((rho_flag[vec2, ] * exp(U/rho_vec[vec2, ])) %*% rep(1, k)))   #クラスター2のログサム変数
   
   #クラスターごとの選択確率
-  logsum_exp1 <- exp(rho1*logsum1); logsum_exp2 <- exp(rho2*logsum2)
-  CL1 <- logsum_exp1 / (logsum_exp1 + logsum_exp2)
-  CL2 <- logsum_exp2 / (logsum_exp1 + logsum_exp2)
-  
+  logsum_exp <- cbind(exp(rho1*logsum1), exp(rho2*logsum2))
+  CL <- logsum_exp / as.numeric(logsum_exp %*% rep(1, clust))
+
   #ブランドごとの選択確率
-  u_exp1 <- exp(U[, clust1] / rho1); u_exp2 <- exp(U[, clust2] / rho2)
-  Prob1 <- CL1 * u_exp1 / rowSums2(u_exp1)
-  Prob2 <- CL2 * u_exp2 / rowSums2(u_exp2)
-  Prob <- cbind(Prob1, Prob2)[,  c(clust1, clust2)]
-  
+  u_exp <- exp(U / rho_dt)
+  Prob <- CL[, index_clust] * (u_exp / (u_exp %*% t(rho_flag))[, index_clust])
+
   #対数尤度の和
   LL <- sum((BUY * log(Prob)) %*% rep(1, k))
   return(LL)
 }
-
 
 ##ブランドロイヤルティのパラメータを動かしながら対数尤度を最大化
 #初期値とデータの設定
@@ -201,8 +199,7 @@ vec2 <- rep(2, hhpt)
 #準ニュートン法とグリットサーチでパラメータを推定
 res <- list()
 for(j in 1:length(lambda_vec)){
-  
-  res[[j]] <- optim(b0, fr, gr=NULL, BUY, Data, ROYl[[j]], clust, clust1, clust2, rho_flag, vec1, vec2, k, 
+  res[[j]] <- optim(b0, fr, gr=NULL, BUY, Data, ROYl[[j]], clust, clust1, clust2, index_clust, rho_flag, vec1, vec2, k, 
                     method="BFGS", hessian=TRUE, control=list(fnscale=-1, trace=TRUE))
   theta[j, ] <- res[[j]]$par
   print(res[[j]]$value)
