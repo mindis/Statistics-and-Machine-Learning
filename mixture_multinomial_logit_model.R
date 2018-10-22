@@ -16,7 +16,7 @@ library(ggplot2)
 #set.seed(8437)
 ##データの設定
 segment <- 5
-hh <- 5000   #サンプル数
+hh <- 10000   #サンプル数
 pt <- rtpois(hh, rgamma(hh, 5.0, 0.5), a=0, b=Inf)   #購買機会(購買機会数が0なら1に置き換え)
 hhpt <- sum(pt)
 member <- 10   #選択可能メンバー数
