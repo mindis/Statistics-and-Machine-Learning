@@ -294,6 +294,7 @@ for(rp in 1:R){
                                           runif(1, -5, rank_u[, 3])))), U[, j])
     U[is.infinite(U)==TRUE | is.nan(U)==TRUE] <- 0
   }
+  
   ##SURモデルにより回帰係数をサンプリング
   #入力変数と応答変数を設定
   Chol <- chol(inv_Cov)   #分散共分散行列の逆行列をコレツキー分解
