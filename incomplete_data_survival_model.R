@@ -19,13 +19,14 @@ library(lattice)
 ##データの設定
 hh <- 10000
 seg <- 2
-dt <- 100   #観測期間
+dt <- 80   #観測期間
 seg_id <- rep(1:seg, rep(hh/seg, seg))   #セグメントを設定
 S <- matrix(as.numeric(table(1:hh, seg_id)), nrow=hh, ncol=seg)
 
+
 ##説明変数の発生
 type <- rbinom(hh, 1, 0.5)   #治療群の設定
-level <- rmnom(hh, 1, c(0.3, 0.25, 0.2, 0.15, 0.1)) %*% (1:5/5)   #疾患レベル
+level <- as.numeric(rmnom(hh, 1, c(0.3, 0.25, 0.2, 0.15, 0.1)) %*% (1:5/5))   #疾患レベル
 Bun <- runif(hh, 0.5, 2)   #血中尿素窒素
 Ca <- runif(hh, 0.1, 1.5)   #血清カルシウム
 Hb <- runif(hh, 0.4, 1.5)   #血中ヘモグロビン
@@ -49,7 +50,7 @@ repeat {
 
   #スケールパラメータの設定
   beta01 <- c(runif(1, 1.8, 2.5), runif(1, 2.5, 3.0))
-  beta02 <- matrix(runif((k-1)*seg, -0.5, 0.6), nrow=k-1, ncol=seg)
+  beta02 <- matrix(runif((k-1)*seg, -0.5, 0.4), nrow=k-1, ncol=seg)
   beta <- betat <- rbind(beta01, beta02)   #パラメータの結合  
   
   ##対数ロジスティック分布およびワイブル分布から生存時間を発生
@@ -69,10 +70,12 @@ repeat {
   y_censor[y_censor > dt] <- dt
   
   #不完全観測の打ち切りを設定
-  section <- 3
+  section <- 5
   y_lower <- floor(y_censor/section) * section
+  y_lower[y_lower==0] <- 1
   y_upper <- ceiling(y_censor/section) * section
-  if(abs(mean(y_censor1) - mean(y_censor2)) > 10 & sum(1-Z) < hh/10 & sum(1-Z) > hh/(k*2)){ 
+
+  if(abs(mean(y_censor1) - mean(y_censor2)) > 10 & sum(1-Z) < (hh/10) & sum(1-Z) > hh/(k*2)){ 
     break
   }
 }
@@ -81,12 +84,13 @@ repeat {
 y_censorl <- log(y_censor)
 y_upperl <- log(y_upper)
 y_lowerl <- log(y_lower)
+y_lowerl[is.infinite(y_lowerl)] <- 0
 
 #可視化と集計
 hist(y_censor1, main="対数ロジスティック分布からの生存時間", xlab="生存時間", col="grey", breaks=20)
 hist(y_censor2, main="ワイブル分布からの生存時間", xlab="生存時間", col="grey", breaks=20)
-hist(y_censor1, breaks=seq(0, dt, 2.0), col="#FF00007F", xlim=c(0, dt), main="混合分布からの生存時間", xlab="生存時間")
-hist(y_censor2, breaks=seq(0, dt, 2.0), col="#0000FF7F", add=T)
+hist(y_censor1[seg_id==1], breaks=seq(0, dt, 2.0), col="#FF00007F", xlim=c(0, dt), main="混合分布からの生存時間", xlab="生存時間")
+hist(y_censor2[seg_id==2], breaks=seq(0, dt, 2.0), col="#0000FF7F", add=T)
 summary(y_censor1)
 summary(y_censor2)
 
@@ -125,10 +129,11 @@ obsll <- function(alpha, beta, r, y_censor, y_censorl, y_upper, y_upperl, y_lowe
 }
 
 ##完全データの対数尤度
-fr <- function(theta, y_upper, y_lower, z1, z, X, hh, index_alpha, index_beta1, index_beta2){
+fr <- function(theta, zpt, Data, y_censor, y_censorl, y_upper, y_upperl, y_lower, y_lowerl, index_z){
   
   #パラメータの設定
-  alpha <- theta[index_alpha]
+  alpha1 <- exp(theta[index_alpha[1]])
+  alpha2 <- exp(theta[index_alpha[2]])
   beta <- cbind(theta[index_beta1], theta[index_beta2])
 
   #線形結合
@@ -136,29 +141,100 @@ fr <- function(theta, y_upper, y_lower, z1, z, X, hh, index_alpha, index_beta1, 
   lambda2 <- as.numeric(Data %*% beta[, 2])
   
   #対数ロジスティックモデルの対数尤度
+  Li1 <- rep(0, hh)
+  scale_upper1 <- -(y_upperl - lambda1) / alpha1
+  scale_lower1 <- -(y_lowerl - lambda1) / alpha1
+  Li1[index_z] <- log(1 / (1 + exp(scale_upper1[index_z])) - 1 / (1 + exp(scale_lower1[index_z])))
+  Li1[-index_z] <- log(1 - (1 / (1 + exp((y_censorl[-index_z] - lambda1[-index_z]) / alpha1))))
+  
+  #ワイブルモデルの対数尤度
+  Li2 <- rep(0, hh)
+  #Li2[index_z] <- log((1 - exp(-(y_upper[index_z] / exp(lambda2[index_z]))^alpha2)) - 
+  #                      (1 - exp(-(y_lower[index_z] / exp(lambda2[index_z]))^alpha2)))
+  Li2[index_z] <- log(exp(-(y_lower / exp(lambda2))[index_z]^alpha2) - exp(-(y_upper / exp(lambda2))[index_z]^alpha2))
+  Li2[-index_z] <- -(y_censor[-index_z] / exp(lambda2[-index_z]))^alpha2
+  
+  
+  
+  #Li2[index_z] <- log((1-exp(-exp((y_upperl - lambda2)[index_z] / alpha2))) - (1-exp(-exp((y_lowerl - lambda2)[index_z] / alpha2))))
+  #Li2[-index_z] <- -exp((y_censorl[-index_z] - lambda2[-index_z]) / alpha2)
+ 
+
+  
+  #cbind((1 - exp(-(y_upper / exp(lambda2))[index_z]^alpha2)) - (1 - exp(-(y_lower / exp(lambda2))[index_z]^alpha2)),
+  #(1 - exp(-(y_upper[index_z] / exp(lambda2[index_z]))^alpha2)) -  (1 - exp(-(y_lower[index_z] / exp(lambda2[index_z]))^alpha2)),
+  #(1-exp(-exp((y_upperl - lambda2)[index_z] / alpha2))) - (1-exp(-exp((y_lowerl - lambda2)[index_z] / alpha2))),
+  #(1 - exp(-exp(y_upperl - lambda2)[index_z] / alpha2)) -  (1 - exp(-exp(y_lowerl - lambda2)[index_z] / alpha2)))
+  
+
+  #重み付き対数尤度の和
+  LL <- sum(zpt * cbind(Li1, Li2))   #潜在変数zの重み付き対数尤度の和
+  return(LL)
+}
+
+##完全データの対数微分尤度
+dll <- function(theta, zpt, Data, y_censor, y_censorl, y_upper, y_upperl, y_lower, y_lowerl, index_z){
+  
+  #パラメータの設定
+  alpha1 <- exp(theta[index_alpha[1]])
+  alpha2 <- exp(theta[index_alpha[1]])
+  beta <- cbind(theta[index_beta1-1], theta[index_beta1-1])
   
   #線形結合
   lambda1 <- as.numeric(Data %*% beta[, 1])
   lambda2 <- as.numeric(Data %*% beta[, 2])
+  lambda_exp2 <- exp(lambda2)
   
-  #対数ロジスティックモデルの尤度
-  Li1 <- rep(0, hh)
-  scale_upper1 <- -(y_upperl - lambda1) / alpha[1]
-  scale_lower1 <- -(y_lowerl - lambda1) / alpha[1]
-  Li1[index_z] <- (1 / (1 + exp(scale_upper1[index_z]))) - (1 / (1 + exp(scale_lower1[index_z])))
-  Li1[-index_z] <- 1 - (1 / (1 + exp((y_censorl[-index_z] - lambda1[-index_z]) / alpha[1])))
+  ##対数ロジスティックモデルの対数微分関数を設定
+  #対数微分関数の定数を設定
+  scale_upper <- -(y_upperl - lambda1)[index_z] / alpha1; scale_upper_d <- (y_upperl - lambda1)[index_z] / alpha1^2
+  scale_lower <- -(y_lowerl - lambda1)[index_z] / alpha1; scale_lower_d <- (y_lowerl - lambda1)[index_z] / alpha1^2
+  scale <- -as.numeric(y_censorl - lambda1)[-index_z] / alpha1
+  scale_d <- as.numeric(y_censorl - lambda1)[-index_z] / alpha1^2
+
+  #形状パラメータの勾配パラメータ
+  LLd_log <- 1 / (1 + exp(scale_upper)) - 1 / (1 + exp(scale_lower))
+  LLd_upper <- -(exp(scale_upper) * (scale_upper_d) / (1 + exp(scale_upper))^2)
+  LLd_lower <- -(exp(scale_lower) * (scale_lower_d) / (1 + exp(scale_lower))^2)
+  LLd_f11 <- (LLd_upper - LLd_lower) / LLd_log
+  LLd_S11 <- scale_d - scale_d * exp(scale) / (1 + exp(scale))
+  LLd11 <- sum(zpt[index_z, 1] * LLd_f11) + sum(zpt[-index_z, 1] * LLd_S11)
   
-  #ワイブルモデルの尤度
-  Li2 <- rep(0, hh)
-  Li2[index_z] <- (1 - exp(-(y_upper[index_z] / exp(lambda2[index_z]))^alpha[2])) - 
-    (1 - exp(-(y_lower[index_z] / exp(lambda2[index_z]))^alpha[2]))
-  Li2[-index_z] <- exp(-(y_censor[-index_z] / exp(lambda2[-index_z]))^alpha[2])
+  #回帰ベクトルの勾配ベクトル
+  LLd_upper <- -(exp(scale_upper) * (Data[index_z, ]/alpha1) / (1 + exp(scale_upper))^2)
+  LLd_lower <- -(exp(scale_lower) * (Data[index_z, ]/alpha1) / (1 + exp(scale_lower))^2)
+  LLd_f12 <- (LLd_upper - LLd_lower) / LLd_log
+  LLd_S12 <- Data[-index_z, ]/alpha1 - Data[-index_z, ]/alpha1 * exp(scale) / (1+exp(scale))
+  LLd12 <- colSums2(zpt[index_z, 1] * LLd_f12) + sum(zpt[-index_z, 1] * LLd_S12)
   
-  #重み付き対数尤度の和
-  LLi <- log(cbind(Li1, Li2))
-  LL <- sum(z1 * LLi)   #潜在変数zの重み付き対数尤度の和
-  return(LL)
+  ##ワイブルモデルの対数微分関数を設定
+  #対数微分関数の定数を設定
+  scale_upper <- -(y_upper / lambda_exp2)[index_z]^alpha2; scale_upper_d <- (y_upper / lambda_exp2)[index_z]
+  scale_lower <- -(y_lower / lambda_exp2)[index_z]^alpha2; scale_lower_d <- (y_lower / lambda_exp2)[index_z]
+  scale <- y_censor[-index_z] / exp(lambda2[-index_z])
+  
+  #形状パラメータの勾配パラメータ
+  LLd_log <- (1 - exp(scale_upper)) -  (1 - exp(scale_lower)); LLd_log[LLd_log==0] <- min(LLd_log[LLd_log > 0])
+  LLd_upper <- -(scale_upper_d^alpha2 * log(scale_upper_d)) * -exp(scale_upper)
+  LLd_lower <- -(scale_lower_d^alpha2 * log(scale_lower_d)) * -exp(scale_lower)
+  LLd_f21 <- (LLd_upper - LLd_lower) / LLd_log
+  LLd_S21 <- -(scale^alpha2 * log(scale))
+  LLd21 <- sum(zpt[index_z, 2] * LLd_f21) + sum(zpt[-index_z, 2] * LLd_S21)
+  
+  #回帰ベクトルの勾配ベクトル
+  LLd_upper <- -exp(scale_upper) * (scale_upper_d^(alpha2-1) * 
+                                      (alpha2 * (y_upper * (lambda_exp2 * Data) / lambda_exp2^2)[index_z, ]))
+  LLd_lower <- -exp(scale_lower) * (scale_lower_d^(alpha2-1) * 
+                                      (alpha2 * (y_lower * (lambda_exp2 * Data) / lambda_exp2^2)[index_z, ]))
+  LLd_f22 <- (LLd_upper - LLd_lower) / LLd_log
+  LLd_S22 <- scale^(alpha2-1) * (alpha2 * (y_censor * (lambda_exp2 * Data) / lambda_exp2^2)[-index_z, ])
+  LLd22 <- colSums2(zpt[index_z, 2] * LLd_f22) + colSums2(zpt[-index_z, 2] * LLd_S22)
+  
+  #勾配ベクトルの結合
+  LLd <- c(LLd11, LLd12)
+  return(LLd)
 }
+
 
 ##EMアルゴリズムの設定
 iter <- 0
@@ -169,22 +245,30 @@ tol <- 1
 index_alpha <- 1:seg
 index_beta1 <- (1+seg):(seg+k)
 index_beta2 <- (1+seg+k):(2*k+seg)
-theta <- c(alphat, as.numeric(betat))
+theta <- thetat <- c(log(alphat), as.numeric(betat))
+
 
 ##パラメータの初期値の設定
 r <- rep(0.5, 2)   #混合率の初期値
-z1 <- matrix(1, nrow=hh, ncol=2, byrow=T)
+z1 <- matrix(1, nrow=hh, ncol=seg, byrow=T)
 
 #準ニュートン法で初期パラメータを設定
-alpha <- c(1, 1)
-beta <- rep(0, ncol(X)*2)
+alpha <- rep(0, seg)
+beta <- runif(k*seg, -0.25, 0.25)
 theta <- c(alpha, beta)
-theta[index_beta1[1]] <- 1
-theta[index_beta2[1]] <- 1
+#theta[index_beta1] <- betat[, 1]
+#theta[index_beta2] <- betat[, 2]
 
 #準ニュートン法で最尤推定
-res <- try(optim(theta, fr, gr=NULL, y1_upper, y1_lower, z1, z, XM, hh, index_alpha, index_beta1, index_beta2, method="BFGS", 
-                 hessian=FALSE, control=list(fnscale=-1, trace=TRUE)), silent=FALSE)
+res <- try(optim(theta, fr, gr=NULL, S, Data, y_censor, y_censorl, y_upper, y_upperl, y_lower, y_lowerl, index_z, 
+                 method="BFGS", hessian=FALSE, control=list(fnscale=-1, trace=TRUE, maxit=200)), silent=FALSE)
+theta <- res$par
+
+res$par[index_alpha[1]]
+res$par[index_alpha[2]]
+cbind(res$par[index_beta1], betat[, 1])
+cbind(res$par[index_beta2], betat[, 2])
+
 
 #推定されたパラメータを格納
 alpha <- res$par[index_alpha]
@@ -195,7 +279,6 @@ obzll <- obsll(alpha, beta, y1_upper, y1_lower, XM, z, r, hh)
 z1 <- obzll$z1
 LL1 <- obzll$LLobz
 
-beta
 
 ####EMアルゴリズムでパラメータを最尤推定####
 while(abs(dl) >= tol){
