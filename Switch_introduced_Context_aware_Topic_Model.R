@@ -20,7 +20,7 @@ k1 <- 15   #同行者トピック数
 k2 <- 12   #同行者単語トピック数
 k3 <- 15   #単語トピック数
 d <- 5000   #文書数
-m <- 50   #同行者種類数
+m <- 100   #同行者種類数
 v1 <- 500   #同行者依存の語彙数
 v2 <- 700   #トピック依存の語彙数
 v <- v1 + v2   #総語彙数
@@ -28,6 +28,8 @@ index_v1 <- 1:v1   #同行者依存の語彙のインデックス
 index_v2 <- (max(index_v1)+1):v   #トピック依存の語彙のインデックス
 w <- rpois(d, rgamma(d, 45, 0.3))   #文書あたりの単語数
 f <- sum(w)   #総単語数
+u <- rtpois(d, 1.75, a=0, b=Inf)   #同行者数
+g <- sum(u)   #同行者総数
 vec_k1 <- rep(1, k1)
 vec_k2 <- rep(1, k2)
 vec_k3 <- rep(1, k3)
@@ -39,11 +41,11 @@ a_id <- as.numeric(unlist(tapply(1:f, d_id, rank)))
 ##パラメータの設定
 #事前分布のパラメータを設定
 alpha1 <- rep(5.0, k1)
-alpha2 <- rep(0.2, k2)
+alpha2 <- rep(0.15, k2)
 alpha3 <- rep(0.15, k3)
-beta1 <- rep(0.15, m)
-beta2 <- c(rep(0.05, v1), rep(0.001, v2))
-beta3 <- c(rep(0.001, v1), rep(0.05, v2))
+beta1 <- rep(0.025, m)
+beta2 <- c(rep(0.075, v1), rep(0.001, v2))
+beta3 <- c(rep(0.001, v1), rep(0.075, v2))
 tau <- c(20.0, 40.0)
 
 ##モデルに基づきデータを生成
@@ -62,8 +64,8 @@ repeat {
   phi2 <- extraDistr::rdirichlet(k3, beta3)
 
   #単語出現確率が低いトピックを入れ替える
-  index_v1 <- which(colMaxs(phi1) < (k3*k3)/f)[which(colMaxs(phi1) < (k3*k3)/f) %in% index_v1]
-  index_v2 <- which(colMaxs(phi2) < (k3*k3)/f)[which(colMaxs(phi2) < (k3*k3)/f) %in% index_v2]
+  index_v1 <- which(colMaxs(phi1) < (k3*k3*2)/f)[which(colMaxs(phi1) < (k3*k3*2)/f) %in% index_v1]
+  index_v2 <- which(colMaxs(phi2) < (k3*k3*2)/f)[which(colMaxs(phi2) < (k3*k3*2)/f) %in% index_v2]
   for(j in 1:length(index_v1)){
     phi1[as.numeric(rmnom(1, 1, extraDistr::rdirichlet(1, rep(2.0, k2))) %*% 1:k2), index_v1[j]] <- (k3*k3)/f
   }
@@ -73,7 +75,7 @@ repeat {
   phit1 <- phi1; phit2 <- phi2
   
   #スイッチングパラメータを生成
-  pi <- rbeta(d, tau[1], tau[2])
+  pi <- pit <- rbeta(d, tau[1], tau[2])
   
   ##文書ごとにトピックと単語を生成
   Z1_list <- Z2_list <- list()
@@ -124,6 +126,7 @@ repeat {
 }
 
 #データを変換
+S <- unlist(switch_list)
 Z1 <- do.call(rbind, Z1_list)
 Z2 <- do.call(rbind, Z2_list)
 storage.mode(WX) <- "integer"
@@ -145,10 +148,148 @@ burden_fr <- function(theta, phi, wd, w, k, vec_k){
 }
 
 ##アルゴリズムの設定
-R <- 5000
+R <- 2000
 keep <- 2  
 iter <- 0
 burnin <- 1000/keep
 disp <- 10
+
+##インデックスの設定
+d_dt <- sparseMatrix(d_id, 1:f, x=rep(1, f), dims=c(d, f))
+w_dt <- t(word_data)
+
+
+##事前分布の設定
+#ディリクレ分布の事前分布
+alpha01 <- 0.1
+beta01 <- 0.1
+s0 <- 1.0
+v0 <- 1.0
+er <- 0.0001
+
+##パラメータの真値
+#トピック分布の真値
+theta1 <- thetat1
+theta2 <- thetat2
+theta3 <- thetat3
+pi <- pit
+pi_vec <- pi[d_id]
+
+#単語分布の真値
+phi1 <- phit1
+phi2 <- phit2
+gamma <- gammat
+
+
+##パラメータの初期値
+#トピック分布の初期値
+theta1 <- as.numeric(extraDistr::rdirichlet(1, rep(10.0, k1)))
+theta2 <- extraDistr::rdirichlet(k1, rep(2.5, k2))
+theta3 <- extraDistr::rdirichlet(d, rep(2.5, k3))
+pi <- rep(0.5, d)
+pi_vec <- pi[d_id]
+
+#単語分布の初期値
+phi1 <- extraDistr::rdirichlet(k2, rep(2.5, v))
+phi2 <- extraDistr::rdirichlet(k3, rep(2.5, v))
+gamma <- extraDistr::rdirichlet(k1, rep(2.5, m))
+
+##対数尤度の基準値
+#ユニグラムモデルの対数尤度
+LLst <- sum(word_data %*% log(colSums2(WX)/f))
+
+#ベストモデルの対数尤度
+LLbest1 <- sum(log(as.numeric((thetat2[as.numeric(M %*% 1:k1)[d_id], ] * t(phit1)[wd, ])[S==1, ] %*% vec_k2)))
+LLbest2 <- sum(log(as.numeric((thetat3[d_id, ] * t(phit2)[wd, ])[S==0, ] %*% vec_k3)))
+LLbest <- LLbest1 + LLbest2
+
+
+####ギブスサンプリングでパラメータをサンプリング####
+for(rp in 1:R){
+  
+  ##同行者トピックを生成
+  #潜在変数の割当確率を設定
+  Lho_context <- matrix(theta1, nrow=d, ncol=k1, byrow=T) * t(gamma)[context_vec, ]
+  context_rate <- Lho_context / as.numeric(Lho_context %*% vec_k1)
+  
+  #多項分布からトピックを生成
+  Mi <- rmnom(d, 1, context_rate)
+  m_vec <- as.numeric(Mi %*% 1:k1)[d_id]   #単語長の同行者トピックベクトル
+  m_dt <- sparseMatrix(m_vec, 1:f, x=rep(1, f), dims=c(k1, f)) 
+  
+  ##スイッチング変数を生成
+  #トピックごとの尤度を設定
+  Lho1 <- theta2[m_vec, ] * t(phi1)[wd, ]
+  Lho2 <- theta3[d_id, ] * t(phi2)[wd, ]
+  
+  #潜在変数の割当確率を設定
+  Lho_mu1 <- as.numeric(Lho1 %*% vec_k2)
+  Lho_mu2 <- as.numeric(Lho2 %*% vec_k3)
+  switching_rate <- (pi_vec*Lho_mu1) / (pi_vec*Lho_mu1 + (1-pi_vec)*Lho_mu2)
+  
+  #ベルヌーイ分布からスイッチング変数を生成
+  y <- rbinom(f, 1, switching_rate)
+  index_y <- which(y==1)
+  sn <- length(index_y)
+  
+  
+  #ベータ分布から混合率をサンプリング
+  n <- as.numeric(d_dt %*% y)
+  tau1 <- n + s0
+  tau2 <- w - n + v0
+  pi <- rbeta(d, tau1, tau2)   #パラメータをサンプリング
+  pi_vec <- pi[d_id]
+  
+  
+  ##同行者依存単語および一般語のトピックを生成
+  #潜在変数の割当確率を設定
+  Lho_rate1 <- Lho1[index_y, ] / Lho_mu1[index_y]
+  Lho_rate2 <- Lho2[-index_y, ] / Lho_mu2[-index_y]
+  
+  #多項分布からトピックを生成
+  Zi1 <- matrix(0, nrow=f, ncol=k2)
+  Zi2 <- matrix(0, nrow=f, ncol=k3)
+  Zi1[index_y, ] <- rmnom(sn, 1, Lho_rate1)
+  Zi2[-index_y, ] <- rmnom(f-sn, 1, Lho_rate2)
+  
+  
+  ##トピック分布のパラメータを生成
+  #ディリクレ分布のパラメータを設定
+  wsum1 <- colSums2(Mi) + alpha01
+  wsum2 <- as.matrix(m_dt %*% Zi1) + alpha01
+  wsum3 <- as.matrix(d_dt %*% Zi2) + alpha01
+  
+  #ディリクレ分布からトピック分布を生成
+  theta1 <- as.numeric(extraDistr::rdirichlet(1, wsum1))
+  theta2 <- extraDistr::rdirichlet(k1, wsum2)
+  theta3 <- extraDistr::rdirichlet(d, wsum3)
+  
+  
+  ##同行者分布および単語分布のパラメータを生成
+  #ディリクレ分布のパラメータ
+  vsum1 <- t(Mi) %*% context + beta01
+  vsum2 <- as.matrix(t(w_dt %*% Zi1)) + beta01
+  vsum3 <- as.matrix(t(w_dt %*% Zi2)) + beta01
+  
+  #ディリクレ分布から同行者分布および単語分布を生成
+  gamma <- extraDistr::rdirichlet(k1, vsum1)
+  phi1 <- extraDistr::rdirichlet(k2, vsum2)
+  phi2 <- extraDistr::rdirichlet(k3, vsum3)
+
+  ##パラメータの格納とサンプリング結果の表示
+  if(rp%%disp==0){
+    #対数尤度を計算
+    LL1 <- sum(log(as.numeric((theta2[m_vec, ] * t(phi1)[wd, ])[index_y, ] %*% vec_k2)))
+    LL2 <- sum(log(as.numeric((theta3[d_id, ] * t(phi2)[wd, ])[-index_y, ] %*% vec_k3)))
+    LL <- LL1 + LL2
+    
+    #サンプリング結果を確認
+    print(rp)
+    print(c(mean(y), mean(S)))
+    print(round(phi2[, (v1-9):(v1+10)], 3))
+    print(c(LL, LLbest, LLst))
+  }
+}
+
 
 
