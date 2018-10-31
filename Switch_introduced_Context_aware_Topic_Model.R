@@ -20,7 +20,7 @@ k1 <- 15   #同行者トピック数
 k2 <- 12   #同行者単語トピック数
 k3 <- 15   #単語トピック数
 d <- 5000   #文書数
-m <- 100   #同行者種類数
+m <- 50   #同行者種類数
 v1 <- 500   #同行者依存の語彙数
 v2 <- 700   #トピック依存の語彙数
 v <- v1 + v2   #総語彙数
@@ -44,8 +44,8 @@ alpha1 <- rep(5.0, k1)
 alpha2 <- rep(0.15, k2)
 alpha3 <- rep(0.15, k3)
 beta1 <- rep(0.025, m)
-beta2 <- c(rep(0.075, v1), rep(0.001, v2))
-beta3 <- c(rep(0.001, v1), rep(0.075, v2))
+beta2 <- c(rep(0.05, v1), rep(0.001, v2))
+beta3 <- c(rep(0.001, v1), rep(0.05, v2))
 tau <- c(20.0, 40.0)
 
 ##モデルに基づきデータを生成
@@ -64,8 +64,8 @@ repeat {
   phi2 <- extraDistr::rdirichlet(k3, beta3)
 
   #単語出現確率が低いトピックを入れ替える
-  index_v1 <- which(colMaxs(phi1) < (k3*k3*2)/f)[which(colMaxs(phi1) < (k3*k3*2)/f) %in% index_v1]
-  index_v2 <- which(colMaxs(phi2) < (k3*k3*2)/f)[which(colMaxs(phi2) < (k3*k3*2)/f) %in% index_v2]
+  index_v1 <- which(colMaxs(phi1) < (k3*k3*3)/f)[which(colMaxs(phi1) < (k3*k3*3)/f) %in% index_v1]
+  index_v2 <- which(colMaxs(phi2) < (k3*k3*3)/f)[which(colMaxs(phi2) < (k3*k3*3)/f) %in% index_v2]
   for(j in 1:length(index_v1)){
     phi1[as.numeric(rmnom(1, 1, extraDistr::rdirichlet(1, rep(2.0, k2))) %*% 1:k2), index_v1[j]] <- (k3*k3)/f
   }
@@ -104,7 +104,6 @@ repeat {
     #トピックを生成
     z2 <- rmnom(w[i], 1, theta3[i, ])
     z2_vec <- as.numeric(z2 %*% 1:k3)
-    
     
     #スイッチング変数とトピックから単語を生成
     word <- matrix(0, nrow=w[i], ncol=v)
@@ -163,9 +162,9 @@ w_dt <- t(word_data)
 #ディリクレ分布の事前分布
 alpha01 <- 0.1
 beta01 <- 0.1
-s0 <- 1.0
-v0 <- 1.0
-er <- 0.0001
+s0 <- 7.5
+v0 <- 7.5
+er <- 0.00001
 
 ##パラメータの真値
 #トピック分布の真値
@@ -180,6 +179,10 @@ phi1 <- phit1
 phi2 <- phit2
 gamma <- gammat
 
+#潜在変数の真値
+Zi1 <- Z1 * S
+z_vec1 <- as.numeric(Zi1 %*% 1:k2)
+index_y <- which(S==1)
 
 ##パラメータの初期値
 #トピック分布の初期値
@@ -190,9 +193,16 @@ pi <- rep(0.5, d)
 pi_vec <- pi[d_id]
 
 #単語分布の初期値
-phi1 <- extraDistr::rdirichlet(k2, rep(2.5, v))
-phi2 <- extraDistr::rdirichlet(k3, rep(2.5, v))
+phi1 <- extraDistr::rdirichlet(k2, rep(10.0, v))
+phi2 <- extraDistr::rdirichlet(k3, rep(10.0, v))
 gamma <- extraDistr::rdirichlet(k1, rep(2.5, m))
+
+#潜在変数の初期値
+y <- rbinom(f, 1, 0.5)
+Zi1 <- rmnom(f, 1, rep(k2/1, k2)) * y
+z_vec1 <- as.numeric(Zi1 %*% 1:k2)
+index_y <- which(y==1)
+
 
 ##対数尤度の基準値
 #ユニグラムモデルの対数尤度
@@ -209,9 +219,10 @@ for(rp in 1:R){
   
   ##同行者トピックを生成
   #潜在変数の割当確率を設定
-  Lho_context <- matrix(theta1, nrow=d, ncol=k1, byrow=T) * t(gamma)[context_vec, ]
+  Lho_z1 <- exp(as.matrix(d_dt %*% (Zi1 %*% log(t(theta2)))))
+  Lho_context <- matrix(theta1, nrow=d, ncol=k1, byrow=T) * t(gamma)[context_vec, ] * Lho_z1
   context_rate <- Lho_context / as.numeric(Lho_context %*% vec_k1)
-  
+
   #多項分布からトピックを生成
   Mi <- rmnom(d, 1, context_rate)
   m_vec <- as.numeric(Mi %*% 1:k1)[d_id]   #単語長の同行者トピックベクトル
