@@ -203,8 +203,7 @@ theta <- rep(1/segment, segment)
 zpt <- matrix(theta, nrow=hhpt, ncol=segment, byrow=T)
 
 #パラメータの初期値
-mu <- as.numeric(solve(t(Data) %*% Data) %*% t(Data) %*% y_vec*segment)
-beta <- t(mvrnorm(segment, mu, 0.01 * diag(k)))
+beta = matrix(runif(segment*k, -0.25, 0.25), nrow=k, ncol=segment)
 b <- as.numeric(beta)
 
 ##観測データの対数尤度と潜在変数
@@ -255,4 +254,5 @@ round(LL, 3)   #最大化された観測データの対数尤度
 round(AIC <- -2*LL + 2*(length(res$par)+segment-1), 3)   #AIC
 round(BIC <- -2*LL + log(hhpt)*length(res$par+segment-1), 3) #BIC
 
+id
 
