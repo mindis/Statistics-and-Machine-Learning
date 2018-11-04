@@ -243,7 +243,7 @@ for(rp in 1:R){
   pi_dt1[index_t22, ] <- pi2[z1_vec[index_t21], ]   #1単語前の混合率
   pi_dt2[index_t21, ] <- t(pi2)[z1_vec[index_t22], ]   #1単語後の混合率
   
-  
+
   ##多項分布からHMMの潜在変数をサンプリング
   #潜在変数の割当確率
   Li <- pi_dt1 * pi_dt2 * Li0   #結合分布
@@ -316,9 +316,6 @@ for(rp in 1:R){
     }
   }
 }
-
-plot(1:length(LL), LL, type="l")
-LL
 
 ####サンプリング結果の可視化と要約####
 burnin <- 1000/keep   #バーンイン期間
