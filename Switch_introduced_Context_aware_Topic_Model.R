@@ -73,10 +73,10 @@ repeat {
   phi2 <- extraDistr::rdirichlet(k3, beta3)
 
   #単語出現確率が低いトピックを入れ替える
-  index_v1 <- which(colMaxs(phi1) < (k3*k3*2)/f)[which(colMaxs(phi1) < (k3*k3*2)/f) %in% index_v1]
-  index_v2 <- which(colMaxs(phi2) < (k3*k3*2)/f)[which(colMaxs(phi2) < (k3*k3*2)/f) %in% index_v2]
+  index_v1 <- which(colMaxs(phi1) < (k3*k3*2)/f)[which(colMaxs(phi1) < (k3*k3*3)/f) %in% index_v1]
+  index_v2 <- which(colMaxs(phi2) < (k3*k3*2)/f)[which(colMaxs(phi2) < (k3*k3*3)/f) %in% index_v2]
   for(j in 1:length(index_v1)){
-    phi1[as.numeric(rmnom(1, 1, extraDistr::rdirichlet(1, rep(2.0, k2))) %*% 1:k2), index_v1[j]] <- (k3*k3)/f
+    phi1[as.numeric(rmnom(1, 1, extraDistr::rdirichlet(1, rep(2.0, k2))) %*% 1:k2), index_v1[j]] <- (k3*k3*3)/f
   }
   for(j in 1:length(index_v2)){
     phi2[as.numeric(rmnom(1, 1, extraDistr::rdirichlet(1, rep(2.0, k3))) %*% 1:k3), index_v2[j]] <- (k3*k3)/f
@@ -170,7 +170,7 @@ w_dt <- t(word_data)
 ##事前分布の設定
 #ディリクレ分布の事前分布
 alpha01 <- 0.1
-beta01 <- 0.1
+beta01 <- 0.01
 s0 <- 0.1
 v0 <- 0.1
 er <- 0.00001
